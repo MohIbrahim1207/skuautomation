@@ -1,0 +1,936 @@
+[
+  {
+    "sku": "FF4186",
+    "productName": "Marine Plate 4mm x 5' x 20'",
+    "category": "Raw Materials",
+    "subCategory": "Marine Plates",
+    "material": "Marine Steel Plate",
+    "size": "4mm x 5ft x 20ft",
+    "unit": "Sheet",
+    "weightKg": 292,
+    "brand": "PT Persada Nusantara Steel",
+    "sourceFile": "Marine_Plates_PT_Persada_Nusantara_Steel.xlsx",
+    "sourceSheet": "Marine Plates",
+    "specificAttributes": {
+      "Thickness": "4 mm",
+      "Width": "5 ft",
+      "Length": "20 ft",
+      "Weight": "292 kg"
+    }
+  },
+  {
+    "sku": "FF4187",
+    "productName": "Marine Plate 4.5mm x 5' x 20'",
+    "category": "Raw Materials",
+    "subCategory": "Marine Plates",
+    "material": "Marine Steel Plate",
+    "size": "4.5mm x 5ft x 20ft",
+    "unit": "Sheet",
+    "weightKg": 328,
+    "brand": "PT Persada Nusantara Steel",
+    "sourceFile": "Marine_Plates_PT_Persada_Nusantara_Steel.xlsx",
+    "sourceSheet": "Marine Plates",
+    "specificAttributes": {
+      "Thickness": "4.5 mm",
+      "Width": "5 ft",
+      "Length": "20 ft",
+      "Weight": "328 kg"
+    }
+  },
+  {
+    "sku": "FF4188",
+    "productName": "Marine Plate 6mm x 5' x 20'",
+    "category": "Raw Materials",
+    "subCategory": "Marine Plates",
+    "material": "Marine Steel Plate",
+    "size": "6mm x 5ft x 20ft",
+    "unit": "Sheet",
+    "weightKg": 438,
+    "brand": "PT Persada Nusantara Steel",
+    "sourceFile": "Marine_Plates_PT_Persada_Nusantara_Steel.xlsx",
+    "sourceSheet": "Marine Plates",
+    "specificAttributes": {
+      "Thickness": "6 mm",
+      "Width": "5 ft",
+      "Length": "20 ft",
+      "Weight": "438 kg"
+    }
+  },
+  {
+    "sku": "FF4189",
+    "productName": "Marine Plate 8mm x 5' x 20'",
+    "category": "Raw Materials",
+    "subCategory": "Marine Plates",
+    "material": "Marine Steel Plate",
+    "size": "8mm x 5ft x 20ft",
+    "unit": "Sheet",
+    "weightKg": 583,
+    "brand": "PT Persada Nusantara Steel",
+    "sourceFile": "Marine_Plates_PT_Persada_Nusantara_Steel.xlsx",
+    "sourceSheet": "Marine Plates",
+    "specificAttributes": {
+      "Thickness": "8 mm",
+      "Width": "5 ft",
+      "Length": "20 ft",
+      "Weight": "583 kg"
+    }
+  },
+  {
+    "sku": "FF4190",
+    "productName": "Marine Plate 9mm x 5' x 20'",
+    "category": "Raw Materials",
+    "subCategory": "Marine Plates",
+    "material": "Marine Steel Plate",
+    "size": "9mm x 5ft x 20ft",
+    "unit": "Sheet",
+    "weightKg": 656,
+    "brand": "PT Persada Nusantara Steel",
+    "sourceFile": "Marine_Plates_PT_Persada_Nusantara_Steel.xlsx",
+    "sourceSheet": "Marine Plates",
+    "specificAttributes": {
+      "Thickness": "9 mm",
+      "Width": "5 ft",
+      "Length": "20 ft",
+      "Weight": "656 kg"
+    }
+  },
+  {
+    "sku": "FF4191",
+    "productName": "Marine Plate 10mm x 5' x 20'",
+    "category": "Raw Materials",
+    "subCategory": "Marine Plates",
+    "material": "Marine Steel Plate",
+    "size": "10mm x 5ft x 20ft",
+    "unit": "Sheet",
+    "weightKg": 729,
+    "brand": "PT Persada Nusantara Steel",
+    "sourceFile": "Marine_Plates_PT_Persada_Nusantara_Steel.xlsx",
+    "sourceSheet": "Marine Plates",
+    "specificAttributes": {
+      "Thickness": "10 mm",
+      "Width": "5 ft",
+      "Length": "20 ft",
+      "Weight": "729 kg"
+    }
+  },
+  {
+    "sku": "FF4192",
+    "productName": "Marine Plate 12mm x 5' x 20'",
+    "category": "Raw Materials",
+    "subCategory": "Marine Plates",
+    "material": "Marine Steel Plate",
+    "size": "12mm x 5ft x 20ft",
+    "unit": "Sheet",
+    "weightKg": 875,
+    "brand": "PT Persada Nusantara Steel",
+    "sourceFile": "Marine_Plates_PT_Persada_Nusantara_Steel.xlsx",
+    "sourceSheet": "Marine Plates",
+    "specificAttributes": {
+      "Thickness": "12 mm",
+      "Width": "5 ft",
+      "Length": "20 ft",
+      "Weight": "875 kg"
+    }
+  },
+  {
+    "sku": "FF4193",
+    "productName": "Marine Plate 16mm x 5' x 20'",
+    "category": "Raw Materials",
+    "subCategory": "Marine Plates",
+    "material": "Marine Steel Plate",
+    "size": "16mm x 5ft x 20ft",
+    "unit": "Sheet",
+    "weightKg": 1167,
+    "brand": "PT Persada Nusantara Steel",
+    "sourceFile": "Marine_Plates_PT_Persada_Nusantara_Steel.xlsx",
+    "sourceSheet": "Marine Plates",
+    "specificAttributes": {
+      "Thickness": "16 mm",
+      "Width": "5 ft",
+      "Length": "20 ft",
+      "Weight": "1167 kg"
+    }
+  },
+  {
+    "sku": "FF4194",
+    "productName": "Marine Plate 19mm x 5' x 20'",
+    "category": "Raw Materials",
+    "subCategory": "Marine Plates",
+    "material": "Marine Steel Plate",
+    "size": "19mm x 5ft x 20ft",
+    "unit": "Sheet",
+    "weightKg": 1386,
+    "brand": "PT Persada Nusantara Steel",
+    "sourceFile": "Marine_Plates_PT_Persada_Nusantara_Steel.xlsx",
+    "sourceSheet": "Marine Plates",
+    "specificAttributes": {
+      "Thickness": "19 mm",
+      "Width": "5 ft",
+      "Length": "20 ft",
+      "Weight": "1386 kg"
+    }
+  },
+  {
+    "sku": "FF4195",
+    "productName": "Marine Plate 22mm x 5' x 20'",
+    "category": "Raw Materials",
+    "subCategory": "Marine Plates",
+    "material": "Marine Steel Plate",
+    "size": "22mm x 5ft x 20ft",
+    "unit": "Sheet",
+    "weightKg": 1604,
+    "brand": "PT Persada Nusantara Steel",
+    "sourceFile": "Marine_Plates_PT_Persada_Nusantara_Steel.xlsx",
+    "sourceSheet": "Marine Plates",
+    "specificAttributes": {
+      "Thickness": "22 mm",
+      "Width": "5 ft",
+      "Length": "20 ft",
+      "Weight": "1604 kg"
+    }
+  },
+  {
+    "sku": "FF4196",
+    "productName": "Mild Steel Plate 1.2mm x 4' x 8'",
+    "category": "Raw Materials",
+    "subCategory": "Mild Steel 4x8",
+    "material": "Mild Steel",
+    "size": "1.2mm x 4ft x 8ft",
+    "unit": "Sheet",
+    "weightKg": 28,
+    "brand": "PT Persada Nusantara Steel",
+    "sourceFile": "PT_Persada_Nusantara_Steel_Full_Catalog.xlsx",
+    "sourceSheet": "Mild Steel 4x8",
+    "specificAttributes": {
+      "Thickness": "1.2 mm",
+      "Width": "4 ft",
+      "Length": "8 ft",
+      "Weight": "28 kg"
+    }
+  },
+  {
+    "sku": "FF4197",
+    "productName": "Mild Steel Plate 1.4mm x 4' x 8'",
+    "category": "Raw Materials",
+    "subCategory": "Mild Steel 4x8",
+    "material": "Mild Steel",
+    "size": "1.4mm x 4ft x 8ft",
+    "unit": "Sheet",
+    "weightKg": 33,
+    "brand": "PT Persada Nusantara Steel",
+    "sourceFile": "PT_Persada_Nusantara_Steel_Full_Catalog.xlsx",
+    "sourceSheet": "Mild Steel 4x8",
+    "specificAttributes": {
+      "Thickness": "1.4 mm",
+      "Width": "4 ft",
+      "Length": "8 ft",
+      "Weight": "33 kg"
+    }
+  },
+  {
+    "sku": "FF4198",
+    "productName": "Mild Steel Plate 1.5mm x 4' x 8'",
+    "category": "Raw Materials",
+    "subCategory": "Mild Steel 4x8",
+    "material": "Mild Steel",
+    "size": "1.5mm x 4ft x 8ft",
+    "unit": "Sheet",
+    "weightKg": 35,
+    "brand": "PT Persada Nusantara Steel",
+    "sourceFile": "PT_Persada_Nusantara_Steel_Full_Catalog.xlsx",
+    "sourceSheet": "Mild Steel 4x8",
+    "specificAttributes": {
+      "Thickness": "1.5 mm",
+      "Width": "4 ft",
+      "Length": "8 ft",
+      "Weight": "35 kg"
+    }
+  },
+  {
+    "sku": "FF4199",
+    "productName": "Mild Steel Plate 1.6mm x 4' x 8'",
+    "category": "Raw Materials",
+    "subCategory": "Mild Steel 4x8",
+    "material": "Mild Steel",
+    "size": "1.6mm x 4ft x 8ft",
+    "unit": "Sheet",
+    "weightKg": 37.5,
+    "brand": "PT Persada Nusantara Steel",
+    "sourceFile": "PT_Persada_Nusantara_Steel_Full_Catalog.xlsx",
+    "sourceSheet": "Mild Steel 4x8",
+    "specificAttributes": {
+      "Thickness": "1.6 mm",
+      "Width": "4 ft",
+      "Length": "8 ft",
+      "Weight": "37.5 kg"
+    }
+  },
+  {
+    "sku": "FF4200",
+    "productName": "Mild Steel Plate 1.8mm x 4' x 8'",
+    "category": "Raw Materials",
+    "subCategory": "Mild Steel 4x8",
+    "material": "Mild Steel",
+    "size": "1.8mm x 4ft x 8ft",
+    "unit": "Sheet",
+    "weightKg": 42,
+    "brand": "PT Persada Nusantara Steel",
+    "sourceFile": "PT_Persada_Nusantara_Steel_Full_Catalog.xlsx",
+    "sourceSheet": "Mild Steel 4x8",
+    "specificAttributes": {
+      "Thickness": "1.8 mm",
+      "Width": "4 ft",
+      "Length": "8 ft",
+      "Weight": "42 kg"
+    }
+  },
+  {
+    "sku": "FF4201",
+    "productName": "Mild Steel Plate 2mm x 4' x 8'",
+    "category": "Raw Materials",
+    "subCategory": "Mild Steel 4x8",
+    "material": "Mild Steel",
+    "size": "2mm x 4ft x 8ft",
+    "unit": "Sheet",
+    "weightKg": 46.7,
+    "brand": "PT Persada Nusantara Steel",
+    "sourceFile": "PT_Persada_Nusantara_Steel_Full_Catalog.xlsx",
+    "sourceSheet": "Mild Steel 4x8",
+    "specificAttributes": {
+      "Thickness": "2 mm",
+      "Width": "4 ft",
+      "Length": "8 ft",
+      "Weight": "46.7 kg"
+    }
+  },
+  {
+    "sku": "FF4202",
+    "productName": "Mild Steel Plate 2.3mm x 4' x 8'",
+    "category": "Raw Materials",
+    "subCategory": "Mild Steel 4x8",
+    "material": "Mild Steel",
+    "size": "2.3mm x 4ft x 8ft",
+    "unit": "Sheet",
+    "weightKg": 54,
+    "brand": "PT Persada Nusantara Steel",
+    "sourceFile": "PT_Persada_Nusantara_Steel_Full_Catalog.xlsx",
+    "sourceSheet": "Mild Steel 4x8",
+    "specificAttributes": {
+      "Thickness": "2.3 mm",
+      "Width": "4 ft",
+      "Length": "8 ft",
+      "Weight": "54 kg"
+    }
+  },
+  {
+    "sku": "FF4203",
+    "productName": "Cold Rolled Sheet 0.5mm x 3' x 8'",
+    "category": "Raw Materials",
+    "subCategory": "Cold Rolled 3x8",
+    "material": "Cold Rolled Steel",
+    "size": "0.5mm x 3ft x 8ft",
+    "unit": "Sheet",
+    "weightKg": 8.75,
+    "brand": "PT Persada Nusantara Steel",
+    "sourceFile": "PT_Persada_Nusantara_Steel_Full_Catalog.xlsx",
+    "sourceSheet": "Cold Rolled 3x8",
+    "specificAttributes": {
+      "Thickness": "0.5 mm",
+      "Width": "3 ft",
+      "Length": "8 ft",
+      "Weight": "8.75 kg"
+    }
+  },
+  {
+    "sku": "FF4204",
+    "productName": "Cold Rolled Sheet 0.6mm x 3' x 8'",
+    "category": "Raw Materials",
+    "subCategory": "Cold Rolled 3x8",
+    "material": "Cold Rolled Steel",
+    "size": "0.6mm x 3ft x 8ft",
+    "unit": "Sheet",
+    "weightKg": 10.5,
+    "brand": "PT Persada Nusantara Steel",
+    "sourceFile": "PT_Persada_Nusantara_Steel_Full_Catalog.xlsx",
+    "sourceSheet": "Cold Rolled 3x8",
+    "specificAttributes": {
+      "Thickness": "0.6 mm",
+      "Width": "3 ft",
+      "Length": "8 ft",
+      "Weight": "10.5 kg"
+    }
+  },
+  {
+    "sku": "FF4205",
+    "productName": "Cold Rolled Sheet 0.65mm x 3' x 8'",
+    "category": "Raw Materials",
+    "subCategory": "Cold Rolled 3x8",
+    "material": "Cold Rolled Steel",
+    "size": "0.65mm x 3ft x 8ft",
+    "unit": "Sheet",
+    "weightKg": 11.5,
+    "brand": "PT Persada Nusantara Steel",
+    "sourceFile": "PT_Persada_Nusantara_Steel_Full_Catalog.xlsx",
+    "sourceSheet": "Cold Rolled 3x8",
+    "specificAttributes": {
+      "Thickness": "0.65 mm",
+      "Width": "3 ft",
+      "Length": "8 ft",
+      "Weight": "11.5 kg"
+    }
+  },
+  {
+    "sku": "FF4206",
+    "productName": "Cold Rolled Sheet 0.7mm x 3' x 8'",
+    "category": "Raw Materials",
+    "subCategory": "Cold Rolled 3x8",
+    "material": "Cold Rolled Steel",
+    "size": "0.7mm x 3ft x 8ft",
+    "unit": "Sheet",
+    "weightKg": 12.3,
+    "brand": "PT Persada Nusantara Steel",
+    "sourceFile": "PT_Persada_Nusantara_Steel_Full_Catalog.xlsx",
+    "sourceSheet": "Cold Rolled 3x8",
+    "specificAttributes": {
+      "Thickness": "0.7 mm",
+      "Width": "3 ft",
+      "Length": "8 ft",
+      "Weight": "12.3 kg"
+    }
+  },
+  {
+    "sku": "FF4207",
+    "productName": "Cold Rolled Sheet 0.8mm x 3' x 8'",
+    "category": "Raw Materials",
+    "subCategory": "Cold Rolled 3x8",
+    "material": "Cold Rolled Steel",
+    "size": "0.8mm x 3ft x 8ft",
+    "unit": "Sheet",
+    "weightKg": 14,
+    "brand": "PT Persada Nusantara Steel",
+    "sourceFile": "PT_Persada_Nusantara_Steel_Full_Catalog.xlsx",
+    "sourceSheet": "Cold Rolled 3x8",
+    "specificAttributes": {
+      "Thickness": "0.8 mm",
+      "Width": "3 ft",
+      "Length": "8 ft",
+      "Weight": "14 kg"
+    }
+  },
+  {
+    "sku": "FF4208",
+    "productName": "Checkered Plate 2.3mm x 4' x 8'",
+    "category": "Raw Materials",
+    "subCategory": "Checkered Plate",
+    "material": "Checkered Steel",
+    "size": "2.3mm x 4ft x 8ft",
+    "unit": "Sheet",
+    "weightKg": 59,
+    "brand": "PT Persada Nusantara Steel",
+    "sourceFile": "PT_Persada_Nusantara_Steel_Full_Catalog.xlsx",
+    "sourceSheet": "Checkered Plate",
+    "specificAttributes": {
+      "Thickness": "2.3 mm",
+      "Width": "4 ft",
+      "Length": "8 ft",
+      "Weight": "59 kg"
+    }
+  },
+  {
+    "sku": "FF4209",
+    "productName": "Checkered Plate 3mm x 4' x 8'",
+    "category": "Raw Materials",
+    "subCategory": "Checkered Plate",
+    "material": "Checkered Steel",
+    "size": "3mm x 4ft x 8ft",
+    "unit": "Sheet",
+    "weightKg": 75,
+    "brand": "PT Persada Nusantara Steel",
+    "sourceFile": "PT_Persada_Nusantara_Steel_Full_Catalog.xlsx",
+    "sourceSheet": "Checkered Plate",
+    "specificAttributes": {
+      "Thickness": "3 mm",
+      "Width": "4 ft",
+      "Length": "8 ft",
+      "Weight": "75 kg"
+    }
+  },
+  {
+    "sku": "FF4210",
+    "productName": "Checkered Plate 3.2mm x 4' x 8'",
+    "category": "Raw Materials",
+    "subCategory": "Checkered Plate",
+    "material": "Checkered Steel",
+    "size": "3.2mm x 4ft x 8ft",
+    "unit": "Sheet",
+    "weightKg": 79.6,
+    "brand": "PT Persada Nusantara Steel",
+    "sourceFile": "PT_Persada_Nusantara_Steel_Full_Catalog.xlsx",
+    "sourceSheet": "Checkered Plate",
+    "specificAttributes": {
+      "Thickness": "3.2 mm",
+      "Width": "4 ft",
+      "Length": "8 ft",
+      "Weight": "79.6 kg"
+    }
+  },
+  {
+    "sku": "FF4211",
+    "productName": "Checkered Plate 4mm x 4' x 8'",
+    "category": "Raw Materials",
+    "subCategory": "Checkered Plate",
+    "material": "Checkered Steel",
+    "size": "4mm x 4ft x 8ft",
+    "unit": "Sheet",
+    "weightKg": 98.5,
+    "brand": "PT Persada Nusantara Steel",
+    "sourceFile": "PT_Persada_Nusantara_Steel_Full_Catalog.xlsx",
+    "sourceSheet": "Checkered Plate",
+    "specificAttributes": {
+      "Thickness": "4 mm",
+      "Width": "4 ft",
+      "Length": "8 ft",
+      "Weight": "98.5 kg"
+    }
+  },
+  {
+    "sku": "FF4212",
+    "productName": "Checkered Plate 4.5mm x 4' x 8'",
+    "category": "Raw Materials",
+    "subCategory": "Checkered Plate",
+    "material": "Checkered Steel",
+    "size": "4.5mm x 4ft x 8ft",
+    "unit": "Sheet",
+    "weightKg": 110,
+    "brand": "PT Persada Nusantara Steel",
+    "sourceFile": "PT_Persada_Nusantara_Steel_Full_Catalog.xlsx",
+    "sourceSheet": "Checkered Plate",
+    "specificAttributes": {
+      "Thickness": "4.5 mm",
+      "Width": "4 ft",
+      "Length": "8 ft",
+      "Weight": "110 kg"
+    }
+  },
+  {
+    "sku": "FF4213",
+    "productName": "Wide Flange Beam 150x75x5x7 x 12m",
+    "category": "Raw Materials",
+    "subCategory": "Wide Flange Beams",
+    "material": "Structural Steel",
+    "size": "150x75x5x7 x 12m",
+    "unit": "Length",
+    "weightKg": 168,
+    "brand": "PT Persada Nusantara Steel",
+    "sourceFile": "PT_Persada_Nusantara_Steel_Full_Catalog.xlsx",
+    "sourceSheet": "Wide Flange Beams",
+    "specificAttributes": {
+      "Size": "150x75x5x7",
+      "Length": "12 m",
+      "Weight": "168 kg"
+    }
+  },
+  {
+    "sku": "FF4214",
+    "productName": "Wide Flange Beam 175x90x5x8 x 12m",
+    "category": "Raw Materials",
+    "subCategory": "Wide Flange Beams",
+    "material": "Structural Steel",
+    "size": "175x90x5x8 x 12m",
+    "unit": "Length",
+    "weightKg": 217.2,
+    "brand": "PT Persada Nusantara Steel",
+    "sourceFile": "PT_Persada_Nusantara_Steel_Full_Catalog.xlsx",
+    "sourceSheet": "Wide Flange Beams",
+    "specificAttributes": {
+      "Size": "175x90x5x8",
+      "Length": "12 m",
+      "Weight": "217.2 kg"
+    }
+  },
+  {
+    "sku": "FF4215",
+    "productName": "Wide Flange Beam 198x99x4.5x7 x 12m",
+    "category": "Raw Materials",
+    "subCategory": "Wide Flange Beams",
+    "material": "Structural Steel",
+    "size": "198x99x4.5x7 x 12m",
+    "unit": "Length",
+    "weightKg": 218.4,
+    "brand": "PT Persada Nusantara Steel",
+    "sourceFile": "PT_Persada_Nusantara_Steel_Full_Catalog.xlsx",
+    "sourceSheet": "Wide Flange Beams",
+    "specificAttributes": {
+      "Size": "198x99x4.5x7",
+      "Length": "12 m",
+      "Weight": "218.4 kg"
+    }
+  },
+  {
+    "sku": "FF4216",
+    "productName": "Wide Flange Beam 200x100x5.5x8 x 12m",
+    "category": "Raw Materials",
+    "subCategory": "Wide Flange Beams",
+    "material": "Structural Steel",
+    "size": "200x100x5.5x8 x 12m",
+    "unit": "Length",
+    "weightKg": 256,
+    "brand": "PT Persada Nusantara Steel",
+    "sourceFile": "PT_Persada_Nusantara_Steel_Full_Catalog.xlsx",
+    "sourceSheet": "Wide Flange Beams",
+    "specificAttributes": {
+      "Size": "200x100x5.5x8",
+      "Length": "12 m",
+      "Weight": "256 kg"
+    }
+  },
+  {
+    "sku": "FF4217",
+    "productName": "Wide Flange Beam 248x124x5x8 x 12m",
+    "category": "Raw Materials",
+    "subCategory": "Wide Flange Beams",
+    "material": "Structural Steel",
+    "size": "248x124x5x8 x 12m",
+    "unit": "Length",
+    "weightKg": 308.4,
+    "brand": "PT Persada Nusantara Steel",
+    "sourceFile": "PT_Persada_Nusantara_Steel_Full_Catalog.xlsx",
+    "sourceSheet": "Wide Flange Beams",
+    "specificAttributes": {
+      "Size": "248x124x5x8",
+      "Length": "12 m",
+      "Weight": "308.4 kg"
+    }
+  },
+  {
+    "sku": "FF4218",
+    "productName": "U Channel 50 x 38 x 5 x 6m",
+    "category": "Raw Materials",
+    "subCategory": "U Channel",
+    "material": "Structural Steel",
+    "size": "50 x 38 x 5 x 6m",
+    "unit": "Length",
+    "weightKg": 31,
+    "brand": "PT Persada Nusantara Steel",
+    "sourceFile": "PT_Persada_Nusantara_Steel_Structural_Complete.xlsx",
+    "sourceSheet": "U Channel",
+    "specificAttributes": {
+      "Size": "50 x 38 x 5",
+      "Length": "6 m",
+      "Weight": "31 kg"
+    }
+  },
+  {
+    "sku": "FF4219",
+    "productName": "U Channel 65 x 42 x 5.5 x 6m",
+    "category": "Raw Materials",
+    "subCategory": "U Channel",
+    "material": "Structural Steel",
+    "size": "65 x 42 x 5.5 x 6m",
+    "unit": "Length",
+    "weightKg": 42,
+    "brand": "PT Persada Nusantara Steel",
+    "sourceFile": "PT_Persada_Nusantara_Steel_Structural_Complete.xlsx",
+    "sourceSheet": "U Channel",
+    "specificAttributes": {
+      "Size": "65 x 42 x 5.5",
+      "Length": "6 m",
+      "Weight": "42 kg"
+    }
+  },
+  {
+    "sku": "FF4220",
+    "productName": "U Channel 80 x 45 x 6 x 6m",
+    "category": "Raw Materials",
+    "subCategory": "U Channel",
+    "material": "Structural Steel",
+    "size": "80 x 45 x 6 x 6m",
+    "unit": "Length",
+    "weightKg": 49,
+    "brand": "PT Persada Nusantara Steel",
+    "sourceFile": "PT_Persada_Nusantara_Steel_Structural_Complete.xlsx",
+    "sourceSheet": "U Channel",
+    "specificAttributes": {
+      "Size": "80 x 45 x 6",
+      "Length": "6 m",
+      "Weight": "49 kg"
+    }
+  },
+  {
+    "sku": "FF4221",
+    "productName": "U Channel 100 x 50 x 6 x 6m",
+    "category": "Raw Materials",
+    "subCategory": "U Channel",
+    "material": "Structural Steel",
+    "size": "100 x 50 x 6 x 6m",
+    "unit": "Length",
+    "weightKg": 56.2,
+    "brand": "PT Persada Nusantara Steel",
+    "sourceFile": "PT_Persada_Nusantara_Steel_Structural_Complete.xlsx",
+    "sourceSheet": "U Channel",
+    "specificAttributes": {
+      "Size": "100 x 50 x 6",
+      "Length": "6 m",
+      "Weight": "56.2 kg"
+    }
+  },
+  {
+    "sku": "FF4222",
+    "productName": "Equal Angle 25 x 25 x 3 x 6m",
+    "category": "Raw Materials",
+    "subCategory": "Equal Angles",
+    "material": "Structural Steel",
+    "size": "25 x 25 x 3 x 6m",
+    "unit": "Length",
+    "weightKg": 6.72,
+    "brand": "PT Persada Nusantara Steel",
+    "sourceFile": "PT_Persada_Nusantara_Steel_Structural_Complete.xlsx",
+    "sourceSheet": "Equal Angles",
+    "specificAttributes": {
+      "Size": "25 x 25 x 3",
+      "Length": "6 m",
+      "Weight": "6.72 kg"
+    }
+  },
+  {
+    "sku": "FF4223",
+    "productName": "Equal Angle 30 x 30 x 3 x 6m",
+    "category": "Raw Materials",
+    "subCategory": "Equal Angles",
+    "material": "Structural Steel",
+    "size": "30 x 30 x 3 x 6m",
+    "unit": "Length",
+    "weightKg": 8.16,
+    "brand": "PT Persada Nusantara Steel",
+    "sourceFile": "PT_Persada_Nusantara_Steel_Structural_Complete.xlsx",
+    "sourceSheet": "Equal Angles",
+    "specificAttributes": {
+      "Size": "30 x 30 x 3",
+      "Length": "6 m",
+      "Weight": "8.16 kg"
+    }
+  },
+  {
+    "sku": "FF4224",
+    "productName": "Equal Angle 40 x 40 x 3 x 6m",
+    "category": "Raw Materials",
+    "subCategory": "Equal Angles",
+    "material": "Structural Steel",
+    "size": "40 x 40 x 3 x 6m",
+    "unit": "Length",
+    "weightKg": 11,
+    "brand": "PT Persada Nusantara Steel",
+    "sourceFile": "PT_Persada_Nusantara_Steel_Structural_Complete.xlsx",
+    "sourceSheet": "Equal Angles",
+    "specificAttributes": {
+      "Size": "40 x 40 x 3",
+      "Length": "6 m",
+      "Weight": "11 kg"
+    }
+  },
+  {
+    "sku": "FF4225",
+    "productName": "Equal Angle 40 x 40 x 4 x 6m",
+    "category": "Raw Materials",
+    "subCategory": "Equal Angles",
+    "material": "Structural Steel",
+    "size": "40 x 40 x 4 x 6m",
+    "unit": "Length",
+    "weightKg": 14.5,
+    "brand": "PT Persada Nusantara Steel",
+    "sourceFile": "PT_Persada_Nusantara_Steel_Structural_Complete.xlsx",
+    "sourceSheet": "Equal Angles",
+    "specificAttributes": {
+      "Size": "40 x 40 x 4",
+      "Length": "6 m",
+      "Weight": "14.5 kg"
+    }
+  },
+  {
+    "sku": "FF4226",
+    "productName": "Mild Steel Round Bar 6 mm x 12m",
+    "category": "Raw Materials",
+    "subCategory": "Mild Steel Round Bars",
+    "material": "Mild Steel",
+    "size": "6 mm x 12m",
+    "unit": "Length",
+    "weightKg": 2.66,
+    "brand": "PT Persada Nusantara Steel",
+    "sourceFile": "PT_Persada_Nusantara_Steel_Converted.xlsx",
+    "sourceSheet": "Mild Steel Round Bars",
+    "specificAttributes": {
+      "Diameter": "6 mm",
+      "Length": "12 m",
+      "Weight": "2.66 kg"
+    }
+  },
+  {
+    "sku": "FF4227",
+    "productName": "Mild Steel Round Bar 8 mm x 12m",
+    "category": "Raw Materials",
+    "subCategory": "Mild Steel Round Bars",
+    "material": "Mild Steel",
+    "size": "8 mm x 12m",
+    "unit": "Length",
+    "weightKg": 4.74,
+    "brand": "PT Persada Nusantara Steel",
+    "sourceFile": "PT_Persada_Nusantara_Steel_Converted.xlsx",
+    "sourceSheet": "Mild Steel Round Bars",
+    "specificAttributes": {
+      "Diameter": "8 mm",
+      "Length": "12 m",
+      "Weight": "4.74 kg"
+    }
+  },
+  {
+    "sku": "FF4228",
+    "productName": "Mild Steel Round Bar 10 mm x 12m",
+    "category": "Raw Materials",
+    "subCategory": "Mild Steel Round Bars",
+    "material": "Mild Steel",
+    "size": "10 mm x 12m",
+    "unit": "Length",
+    "weightKg": 7.4,
+    "brand": "PT Persada Nusantara Steel",
+    "sourceFile": "PT_Persada_Nusantara_Steel_Converted.xlsx",
+    "sourceSheet": "Mild Steel Round Bars",
+    "specificAttributes": {
+      "Diameter": "10 mm",
+      "Length": "12 m",
+      "Weight": "7.4 kg"
+    }
+  },
+  {
+    "sku": "FF4229",
+    "productName": "Deformed Bar D10 x 12m",
+    "category": "Raw Materials",
+    "subCategory": "Deformed Bars",
+    "material": "Deformed Steel Bar",
+    "size": "D10 x 12m",
+    "unit": "Length",
+    "weightKg": 7.4,
+    "brand": "PT Persada Nusantara Steel",
+    "sourceFile": "PT_Persada_Nusantara_Steel_Converted.xlsx",
+    "sourceSheet": "Deformed Bars",
+    "specificAttributes": {
+      "Diameter": "D10",
+      "Length": "12 m",
+      "Weight": "7.4 kg"
+    }
+  },
+  {
+    "sku": "FF4230",
+    "productName": "Deformed Bar D13 x 12m",
+    "category": "Raw Materials",
+    "subCategory": "Deformed Bars",
+    "material": "Deformed Steel Bar",
+    "size": "D13 x 12m",
+    "unit": "Length",
+    "weightKg": 12.48,
+    "brand": "PT Persada Nusantara Steel",
+    "sourceFile": "PT_Persada_Nusantara_Steel_Converted.xlsx",
+    "sourceSheet": "Deformed Bars",
+    "specificAttributes": {
+      "Diameter": "D13",
+      "Length": "12 m",
+      "Weight": "12.48 kg"
+    }
+  },
+  {
+    "sku": "FF4231",
+    "productName": "Square Tube Rectangular 75 x 45 x 2mm x 6m",
+    "category": "Raw Materials",
+    "subCategory": "Square Tube Rectangular",
+    "material": "Steel Hollow Section",
+    "size": "75 x 45 x 2mm x 6m",
+    "unit": "Length",
+    "weightKg": 22,
+    "brand": "PT Persada Nusantara Steel",
+    "sourceFile": "PT_Persada_Nusantara_Steel_Pipes_Tubes.xlsx",
+    "sourceSheet": "Square Tube Rectangular",
+    "specificAttributes": {
+      "Size": "75 x 45 mm",
+      "Thickness": "2 mm",
+      "Length": "6 m",
+      "Weight": "22 kg"
+    }
+  },
+  {
+    "sku": "FF4232",
+    "productName": "Square Tube Rectangular 75 x 45 x 2.3mm x 6m",
+    "category": "Raw Materials",
+    "subCategory": "Square Tube Rectangular",
+    "material": "Steel Hollow Section",
+    "size": "75 x 45 x 2.3mm x 6m",
+    "unit": "Length",
+    "weightKg": 25.28,
+    "brand": "PT Persada Nusantara Steel",
+    "sourceFile": "PT_Persada_Nusantara_Steel_Pipes_Tubes.xlsx",
+    "sourceSheet": "Square Tube Rectangular",
+    "specificAttributes": {
+      "Size": "75 x 45 mm",
+      "Thickness": "2.3 mm",
+      "Length": "6 m",
+      "Weight": "25.28 kg"
+    }
+  },
+  {
+    "sku": "FF4233",
+    "productName": "Pipe SCH 80 1/2\" x 3.7mm",
+    "category": "Raw Materials",
+    "subCategory": "Pipe SCH 80",
+    "material": "Carbon Steel Pipe",
+    "size": "1/2\" (Thk: 3.7mm, ID: 14.3mm)",
+    "unit": "Length",
+    "weightKg": 9.84,
+    "brand": "PT Persada Nusantara Steel",
+    "sourceFile": "PT_Persada_Nusantara_Steel_Pipes_Tubes.xlsx",
+    "sourceSheet": "Pipe SCH 80",
+    "specificAttributes": {
+      "Size": "1/2\"",
+      "Thickness": "3.7 mm",
+      "ID": "14.3 mm",
+      "Weight": "9.84 kg"
+    }
+  },
+  {
+    "sku": "FF4234",
+    "productName": "Pipe SCH 80 3/4\" x 3.9mm",
+    "category": "Raw Materials",
+    "subCategory": "Pipe SCH 80",
+    "material": "Carbon Steel Pipe",
+    "size": "3/4\" (Thk: 3.9mm, ID: 19.4mm)",
+    "unit": "Length",
+    "weightKg": 13.44,
+    "brand": "PT Persada Nusantara Steel",
+    "sourceFile": "PT_Persada_Nusantara_Steel_Pipes_Tubes.xlsx",
+    "sourceSheet": "Pipe SCH 80",
+    "specificAttributes": {
+      "Size": "3/4\"",
+      "Thickness": "3.9 mm",
+      "ID": "19.4 mm",
+      "Weight": "13.44 kg"
+    }
+  },
+  {
+    "sku": "FF4235",
+    "productName": "Wire Mesh M-4 (Dia 4 x 4mm)",
+    "category": "Raw Materials",
+    "subCategory": "Wire Mesh",
+    "material": "Steel Wire Mesh",
+    "size": "M-4 (Dia 4 x 4mm, Spacing 150 x 150mm, Sheet 5.4 x 2.1m)",
+    "unit": "Sheet",
+    "weightKg": 15.45,
+    "brand": "PT Persada Nusantara Steel",
+    "sourceFile": "PT_Persada_Nusantara_Steel_Pipes_Tubes.xlsx",
+    "sourceSheet": "Wire Mesh",
+    "specificAttributes": {
+      "Type": "M-4",
+      "Diameter": "4 x 4 mm",
+      "Spacing": "150 x 150 mm",
+      "Sheet Size": "5.4 x 2.1 m",
+      "Roll Size": "54 x 2.1 m",
+      "Sheet Weight": "15.45 kg"
+    }
+  }
+]

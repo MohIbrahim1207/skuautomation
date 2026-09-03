@@ -1,0 +1,750 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Enterprise SKU & Purchase Request Automation Portal</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+
+  <!-- =========================================================================
+       APP HEADER
+       ========================================================================= -->
+  <header class="app-header">
+    <div class="header-brand">
+      <img src="assets/flow-force-logo.png" alt="Flow Force — Bulk Material Handling and Processing Equipment Specialists" class="flow-force-logo" id="flowForceHeaderLogo">
+    </div>
+
+    <!-- Navigation Bar -->
+    <nav class="header-nav">
+      <button class="nav-btn active" data-view-target="dashboard">
+        <span>📊 Dashboard</span>
+      </button>
+      <button class="nav-btn" data-view-target="catalog">
+        <span>📦 Raw Materials</span>
+        <span class="nav-badge" id="navCatalogBadge">50</span>
+      </button>
+      <button class="nav-btn" data-view-target="prs">
+        <span>📋 PR Register</span>
+        <span class="nav-badge" id="navPrBadge">0</span>
+      </button>
+      <button class="nav-btn" data-view-target="settings">
+        <span>⚙️ Settings</span>
+      </button>
+    </nav>
+
+    <!-- Header Actions -->
+    <div class="header-actions">
+      <button class="btn btn-primary btn-sm" id="btnOpenNewSku">
+        <span>+ New SKU (Engineering)</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- =========================================================================
+       MAIN CONTENT CONTAINER
+       ========================================================================= -->
+  <main class="app-main">
+
+    <!-- =======================================================================
+         VIEW 1: DASHBOARD
+         ======================================================================= -->
+    <section id="view-dashboard" class="view-section active">
+      <div class="dashboard-header">
+        <h2 class="dashboard-title">Material Procurement & SKU Management</h2>
+        <p class="dashboard-desc">
+          Automated SKU verification and Purchase Request generation system. Browse master items, verify technical specifications, and generate standardized purchase requests directly linked to approved company catalog items.
+        </p>
+      </div>
+
+      <!-- KPI Ribbon -->
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <div class="kpi-info">
+            <div class="kpi-label">Master Raw Materials</div>
+            <div class="kpi-val" id="kpiTotalSkus">50</div>
+          </div>
+          <div class="kpi-icon primary">📦</div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-info">
+            <div class="kpi-label">Active Trial Category</div>
+            <div class="kpi-val" style="font-size: 1.2rem; color: var(--accent-emerald);">Raw Materials</div>
+          </div>
+          <div class="kpi-icon emerald">🛡️</div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-info">
+            <div class="kpi-label">Total PRs Generated</div>
+            <div class="kpi-val" id="kpiTotalPrs">0</div>
+          </div>
+          <div class="kpi-icon indigo">📋</div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-info">
+            <div class="kpi-label">Pending Purchasing Review</div>
+            <div class="kpi-val" id="kpiPendingPrs">0</div>
+          </div>
+          <div class="kpi-icon amber">⏳</div>
+        </div>
+      </div>
+
+      <!-- Category Section -->
+      <div class="section-head">
+        <div>
+          <h2>Material Categories</h2>
+          <div class="section-tagline">Fixed-size modular category grid with expandable architecture for enterprise materials</div>
+        </div>
+        <div>
+          <span style="font-size: 0.8rem; color: var(--text-dim);">Trial Mode: Raw Materials Active</span>
+        </div>
+      </div>
+
+      <!-- Category Grid: Fixed/Equal Sized Architecture -->
+      <div class="category-grid">
+        
+        <!-- [ RAW MATERIALS ] - The 1 Active Category for this Trial -->
+        <div class="category-card active-category" id="cardRawMaterials">
+          <div class="category-card-top">
+            <div class="category-icon-box">🏗️</div>
+            <span class="category-status-pill">● Active Trial</span>
+          </div>
+          <div class="category-card-body">
+            <h3 class="category-card-title">RAW MATERIALS</h3>
+            <p class="category-card-desc">
+              Plates, Sheets, Structural Beams, Channels, Angle Profiles, Round & Deformed Rebars, Pipes, and Tubes.
+            </p>
+            <div class="category-card-meta">
+              <span>Items: <strong>50 Verified Rows</strong></span>
+              <span>•</span>
+              <span>SKU: <strong>FF4186–FF4235</strong></span>
+            </div>
+          </div>
+          <div class="category-card-footer">
+            <span class="action-cue">Explore Catalog & Create PR →</span>
+          </div>
+        </div>
+
+        <!-- Future Category 1: Fasteners (Expandable Placeholder) -->
+        <div class="category-card future-card" title="Upcoming Phase: Fasteners & Hardware (DIN 933, DIN 125, DIN 127)">
+          <div class="category-card-top">
+            <div class="category-icon-box">🔩</div>
+            <span class="category-status-pill disabled">Upcoming Phase</span>
+          </div>
+          <div class="category-card-body">
+            <h3 class="category-card-title">FASTENERS</h3>
+            <p class="category-card-desc">
+              Hex bolts full thread, spring lock washers, flat washers, nuts, studs (DIN 933, DIN 125, DIN 127).
+            </p>
+            <div class="category-card-meta">
+              <span>Status: <strong>Catalog Spec Ready</strong></span>
+            </div>
+          </div>
+          <div class="category-card-footer">
+            <span style="font-size: 0.8rem; color: var(--text-dim);">Architecture Expandable</span>
+          </div>
+        </div>
+
+        <!-- Future Category 2: Piping & Fittings (Expandable Placeholder) -->
+        <div class="category-card future-card" title="Upcoming Phase: Piping, Flanges & Valves">
+          <div class="category-card-top">
+            <div class="category-icon-box">🚰</div>
+            <span class="category-status-pill disabled">Upcoming Phase</span>
+          </div>
+          <div class="category-card-body">
+            <h3 class="category-card-title">PIPING & FITTINGS</h3>
+            <p class="category-card-desc">
+              Process pipes, flanges, elbows, tees, reducers, industrial valves, and gaskets.
+            </p>
+            <div class="category-card-meta">
+              <span>Status: <strong>In Design</strong></span>
+            </div>
+          </div>
+          <div class="category-card-footer">
+            <span style="font-size: 0.8rem; color: var(--text-dim);">Architecture Expandable</span>
+          </div>
+        </div>
+
+        <!-- Future Category 3: Electrical & Instrumentation -->
+        <div class="category-card future-card" title="Upcoming Phase: Electrical & Instrumentation">
+          <div class="category-card-top">
+            <div class="category-icon-box">⚡</div>
+            <span class="category-status-pill disabled">Upcoming Phase</span>
+          </div>
+          <div class="category-card-body">
+            <h3 class="category-card-title">ELECTRICAL</h3>
+            <p class="category-card-desc">
+              Cables, conduits, cable trays, junction boxes, switchgears, and control components.
+            </p>
+            <div class="category-card-meta">
+              <span>Status: <strong>In Design</strong></span>
+            </div>
+          </div>
+          <div class="category-card-footer">
+            <span style="font-size: 0.8rem; color: var(--text-dim);">Architecture Expandable</span>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- =======================================================================
+         VIEW 2: RAW MATERIALS MASTER CATALOG (50 ROWS TABLE)
+         ======================================================================= -->
+    <section id="view-catalog" class="view-section">
+      <div class="section-head">
+        <div>
+          <h2>Raw Materials Master Catalog</h2>
+          <div class="section-tagline">Single source of truth for raw material procurement specifications</div>
+        </div>
+        <div>
+          <button class="btn btn-primary" onclick="UI.openNewSkuModal()">
+            <span>+ Create New SKU (Engineering)</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Toolbar: Search & Subcategory Filters -->
+      <div class="catalog-toolbar">
+        <div class="toolbar-row-top">
+          <div class="search-box-wrapper">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="catalogSearchInput" class="search-input" placeholder="Search by SKU (e.g. FF4186), Product Name, Material, Size, or Spec...">
+          </div>
+          <div class="toolbar-actions">
+            <button class="btn btn-secondary btn-sm" onclick="UI.switchView('prs')">
+              <span>📋 View PR Register</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Dynamic Filter Chips -->
+        <div class="filter-chips-container" id="filterChipsContainer">
+          <!-- Populated by JavaScript -->
+        </div>
+      </div>
+
+      <!-- Master Items Data Table (50 Rows) -->
+      <div class="table-card">
+        <div class="table-stats-bar">
+          <span id="catalogRowCount">Loading Master Items...</span>
+          <span style="font-size: 0.78rem; color: var(--text-dim);">Single Source of Truth • PT Persada Nusantara Steel Specifications</span>
+        </div>
+
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th style="width: 50px;">#</th>
+                <th style="width: 110px;">SKU</th>
+                <th>Product Name & Source</th>
+                <th>Subcategory</th>
+                <th>Material / Grade</th>
+                <th>Size / Dimensions</th>
+                <th>Unit</th>
+                <th>Weight</th>
+                <th style="width: 170px;">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="masterCatalogTbody">
+              <!-- Rendered by JavaScript: Exactly 50 rows -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- =======================================================================
+         VIEW 3: PURCHASE REQUESTS REGISTER
+         ======================================================================= -->
+    <section id="view-prs" class="view-section">
+      <div class="section-head">
+        <div>
+          <h2>Purchase Requisitions Register</h2>
+          <div class="section-tagline">Logged procurement requisitions submitted by Engineering & Warehouse</div>
+        </div>
+        <div>
+          <button class="btn btn-primary" onclick="UI.switchView('catalog')">
+            <span>+ New PR from Catalog</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="table-card">
+        <div class="table-stats-bar">
+          <span id="prRegisterCount">Total 0 Purchase Requisitions</span>
+          <span style="font-size: 0.78rem; color: var(--text-dim);">Standard PR Numbering Format (PR-YYYY-XXXX)</span>
+        </div>
+
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th style="width: 50px;">#</th>
+                <th style="width: 140px;">PR Number</th>
+                <th style="width: 110px;">SKU</th>
+                <th>Product Description</th>
+                <th>Quantity</th>
+                <th>Project / Reason</th>
+                <th>Urgency & Required Date</th>
+                <th>Status & Requester</th>
+                <th style="width: 100px;">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="prRegisterTbody">
+              <!-- Rendered by JavaScript -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- =======================================================================
+         VIEW 4: SETTINGS & SYSTEM CONFIGURATION
+         ======================================================================= -->
+    <section id="view-settings" class="view-section">
+      <div class="section-head">
+        <div>
+          <h2>System Configuration</h2>
+          <div class="section-tagline">SKU Numbering rules and backend storage driver settings</div>
+        </div>
+      </div>
+
+      <div class="settings-card">
+        <h3>1. Company SKU Generation Engine</h3>
+        <p class="settings-desc">
+          Configure default SKU prefix and sequence numbers. Current company standard uses FF-series sequential numbering (e.g. FF4186–FF4235).
+        </p>
+
+        <form id="formSettings">
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">SKU Prefix <span class="req">*</span></label>
+              <input type="text" id="cfgSkuPrefix" class="form-input" value="FF" required>
+              <span class="form-hint">Company prefix (e.g., "FF" for standard raw materials)</span>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Next Sequence Number <span class="req">*</span></label>
+              <input type="number" id="cfgNextNum" class="form-input" value="4236" required>
+              <span class="form-hint">Next suggested number for newly created master items</span>
+            </div>
+
+            <div class="form-group span-2">
+              <label class="form-label">Storage Adapter (Seamless Google Sheets Migration)</label>
+              <select id="cfgDriver" class="form-select">
+                <option value="localStorage">Local Storage (Active Proof-of-Concept Mode)</option>
+                <option value="googleAppsScript">Google Sheets + Google Apps Script Web App Endpoint</option>
+              </select>
+              <span class="form-hint">The application is architected to switch to Google Sheets + Google Apps Script Web App without altering UI components.</span>
+            </div>
+
+            <div class="form-group span-2">
+              <label class="form-label">Google Apps Script Web App URL (Optional / Future Deployment)</label>
+              <input type="url" id="cfgApiUrl" class="form-input" placeholder="https://script.google.com/macros/s/.../exec">
+            </div>
+          </div>
+
+          <div style="margin-top: 1.5rem; display: flex; gap: 1rem;">
+            <button type="submit" class="btn btn-primary">Save Settings</button>
+            <button type="button" class="btn btn-danger" id="btnResetCatalog">Reset to Default 50 Items</button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- =========================================================================
+       MODAL 1: CREATE NEW SKU (ENGINEERING VERIFICATION & DUPLICATE PREVENTION)
+       ========================================================================= -->
+  <div class="modal-backdrop" id="modalNewSku">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <div class="modal-icon" style="background: rgba(14, 165, 233, 0.15); color: var(--primary-400);">🛡️</div>
+          <div>
+            <h3>New Master Item Technical Entry</h3>
+            <div class="modal-subtitle">Engineering Specification Verification & Duplicate Prevention</div>
+          </div>
+        </div>
+        <button class="modal-close-btn" data-modal-close>&times;</button>
+      </div>
+
+      <form id="formNewSku">
+        <div class="modal-body">
+          
+          <!-- Live Duplicate Alert Banner -->
+          <div class="duplicate-alert-banner" id="skuDuplicateAlert">
+            <!-- Populated by JavaScript if duplicate detected -->
+          </div>
+
+          <div class="form-grid">
+            
+            <!-- SKU Input with Configurable Sequential Generator -->
+            <div class="form-group">
+              <label class="form-label">
+                <span>Unique SKU <span class="req">*</span></span>
+                <button type="button" id="btnRegenerateSku" class="btn btn-secondary btn-sm" style="padding: 2px 6px; font-size: 0.7rem;">Auto-Generate Next</button>
+              </label>
+              <input type="text" id="newSkuCode" class="form-input" placeholder="e.g. FF4236" required style="font-family: var(--font-mono); font-weight: 700; color: var(--primary-400);">
+              <span class="form-hint" style="color: var(--accent-amber);">[Company standard FF-series numbering (Configurable)]</span>
+            </div>
+
+            <!-- Subcategory -->
+            <div class="form-group">
+              <label class="form-label">Subcategory <span class="req">*</span></label>
+              <select id="newSkuSubcategory" class="form-select" required>
+                <option value="Marine Plates">Marine Plates</option>
+                <option value="Mild Steel 4x8">Mild Steel 4x8</option>
+                <option value="Cold Rolled 3x8">Cold Rolled 3x8</option>
+                <option value="Checkered Plate">Checkered Plate</option>
+                <option value="Wide Flange Beams">Wide Flange Beams</option>
+                <option value="U Channel">U Channel</option>
+                <option value="Equal Angles">Equal Angles</option>
+                <option value="Mild Steel Round Bars">Mild Steel Round Bars</option>
+                <option value="Deformed Bars">Deformed Bars</option>
+                <option value="Square Tube Rectangular">Square Tube Rectangular</option>
+                <option value="Pipe SCH 80">Pipe SCH 80</option>
+                <option value="Wire Mesh">Wire Mesh</option>
+                <option value="Special Raw Material">Other Raw Material</option>
+              </select>
+            </div>
+
+            <!-- Product Name -->
+            <div class="form-group span-2">
+              <label class="form-label">Product Name / Catalogue Description <span class="req">*</span></label>
+              <input type="text" id="newSkuName" class="form-input" placeholder="e.g. Marine Plate 25mm x 5' x 20'" required>
+            </div>
+
+            <!-- Material Grade -->
+            <div class="form-group">
+              <label class="form-label">Material / Grade <span class="req">*</span></label>
+              <input type="text" id="newSkuMaterial" class="form-input" placeholder="e.g. Marine Steel Grade A / SS400" required>
+            </div>
+
+            <!-- Dimensions / Sizing -->
+            <div class="form-group">
+              <label class="form-label">Size / Nominal Dimensions <span class="req">*</span></label>
+              <input type="text" id="newSkuSize" class="form-input" placeholder="e.g. 25mm x 5ft x 20ft" required>
+            </div>
+
+            <!-- Unit of Measure -->
+            <div class="form-group">
+              <label class="form-label">Standard Unit (UOM) <span class="req">*</span></label>
+              <select id="newSkuUnit" class="form-select" required>
+                <option value="Sheet">Sheet (Plates / Sheets / Mesh)</option>
+                <option value="Length">Length (Beams / Channels / Angles / Bars / Pipes)</option>
+                <option value="PCS">PCS (Pieces)</option>
+                <option value="KG">KG (Kilograms)</option>
+                <option value="MTR">MTR (Meters)</option>
+              </select>
+            </div>
+
+            <!-- Theoretical Weight -->
+            <div class="form-group">
+              <label class="form-label">Theoretical Weight (kg / pc) <span class="req">*</span></label>
+              <input type="number" step="0.01" id="newSkuWeight" class="form-input" placeholder="e.g. 1820.0" required>
+            </div>
+
+            <!-- Manufacturer / Brand -->
+            <div class="form-group span-2">
+              <label class="form-label">Manufacturer / Mill Brand</label>
+              <input type="text" id="newSkuBrand" class="form-input" value="PT Persada Nusantara Steel">
+            </div>
+
+            <!-- Dynamic Category-Specific Technical Specs Container -->
+            <div class="form-group span-2" style="background: rgba(0,0,0,0.2); padding: 1rem; border-radius: var(--radius-md); border: 1px solid var(--border-subtle);">
+              <div style="font-size: 0.8rem; font-weight: 700; text-transform: uppercase; color: var(--primary-400); margin-bottom: 0.75rem; letter-spacing: 0.05em;">
+                Category-Specific Technical Specifications
+              </div>
+              <div class="form-grid" id="dynamicSpecFieldsContainer">
+                <!-- Dynamically injected based on selected subcategory -->
+              </div>
+            </div>
+
+            <!-- Engineering Verification Details -->
+            <div class="form-group">
+              <label class="form-label">Verified By Engineer <span class="req">*</span></label>
+              <input type="text" id="newSkuEngineer" class="form-input" placeholder="Engineer Name / ID" value="Materials Engineer" required>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Engineering Technical Notes</label>
+              <input type="text" id="newSkuNotes" class="form-input" placeholder="e.g. Mill test certificate 3.1 required">
+            </div>
+
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-modal-close>Cancel</button>
+          <button type="submit" class="btn btn-primary" id="btnSubmitNewSku">
+            <span>Verify & Save to Master Catalog</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       MODAL 2: CREATE PURCHASE REQUEST (WHITE DOCUMENT-STYLE INTERFACE)
+       ========================================================================= -->
+  <div class="modal-backdrop" id="modalCreatePr">
+    <div class="modal-box pr-white-document-modal">
+      
+      <!-- PR Document Header -->
+      <div class="pr-doc-header">
+        <div class="pr-doc-header-grid">
+          <div class="pr-doc-header-left">
+            <img src="assets/flow-force-logo.png" alt="Flow Force" class="flow-force-pr-logo" id="flowForcePrLogo">
+          </div>
+          
+          <div class="pr-doc-header-center">
+            <h2 class="pr-doc-main-title">PURCHASE REQUEST</h2>
+          </div>
+
+          <div class="pr-doc-header-right">
+            <div class="pr-header-meta-box">
+              <div class="pr-header-meta-line">
+                <span class="meta-label">PR No:</span>
+                <span class="meta-val pr-code" id="prDisplayNumber">PR-2026-XXXX</span>
+              </div>
+              <div class="pr-header-meta-line">
+                <span class="meta-label">Date:</span>
+                <span class="meta-val" id="prDisplayDate">DD/MM/YYYY</span>
+              </div>
+            </div>
+            <button type="button" class="pr-doc-close-btn" data-modal-close title="Close / Cancel">&times;</button>
+          </div>
+        </div>
+      </div>
+
+      <form id="formCreatePr" class="pr-white-form">
+        <div class="pr-doc-body">
+          
+          <!-- SECTION 1: PURCHASE REQUEST SUMMARY -->
+          <div class="pr-doc-section">
+            <div class="pr-doc-section-title">
+              <span>PURCHASE REQUEST SUMMARY</span>
+            </div>
+            
+            <div class="pr-doc-grid-summary">
+              <div class="pr-form-field">
+                <label class="pr-form-label">Project / PID <span class="pr-req">*</span></label>
+                <input type="text" id="prProjectId" class="pr-form-input" placeholder="e.g. PRJ-2026-FPSO-01" required>
+                <div class="pr-quick-presets">
+                  <button type="button" class="pr-preset-pill btn-pid-preset" data-pid="PRJ-FPSO-2026-01">+ FPSO-01</button>
+                  <button type="button" class="pr-preset-pill btn-pid-preset" data-pid="PRJ-HULL-REFIT-04">+ HULL-04</button>
+                  <button type="button" class="pr-preset-pill btn-pid-preset" data-pid="PRJ-WH-STOCK">+ WH-STOCK</button>
+                </div>
+              </div>
+
+              <div class="pr-form-field">
+                <label class="pr-form-label">Department <span class="pr-req">*</span></label>
+                <select id="prDepartment" class="pr-form-select" required>
+                  <option value="Engineering">Engineering &amp; Design</option>
+                  <option value="Warehouse / Inventory">Warehouse &amp; Inventory</option>
+                  <option value="Fabrication / Production">Fabrication &amp; Production</option>
+                  <option value="Maintenance / QA">Maintenance &amp; QA</option>
+                </select>
+              </div>
+
+              <div class="pr-form-field">
+                <label class="pr-form-label">Requested By <span class="pr-req">*</span></label>
+                <input type="text" id="prRequester" class="pr-form-input" placeholder="Requester Name / Staff ID" value="Engineering Team" required>
+              </div>
+
+              <div class="pr-form-field">
+                <label class="pr-form-label">Required Date <span class="pr-req">*</span></label>
+                <input type="date" id="prRequiredDate" class="pr-form-input" required>
+              </div>
+
+              <div class="pr-form-field">
+                <label class="pr-form-label">Urgency <span class="pr-req">*</span></label>
+                <select id="prUrgency" class="pr-form-select" required>
+                  <option value="Standard (1-2 Weeks)">Standard (1-2 Weeks)</option>
+                  <option value="Urgent (48-72h)">Urgent (48-72h)</option>
+                  <option value="Critical Breakdown">Emergency / Critical Breakdown</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- SECTION 2: ITEM DETAILS (SINGLE SOURCE OF TRUTH: MASTER ITEM LOCKED) -->
+          <div class="pr-doc-section">
+            <div class="pr-doc-section-title">
+              <span>ITEM DETAILS</span>
+              <span class="pr-source-truth-tag">🔒 Master Item Information (Auto-Populated &amp; Locked)</span>
+            </div>
+
+            <div class="pr-item-details-card">
+              <table class="pr-spec-table">
+                <tbody>
+                  <tr>
+                    <th style="width: 18%;">SKU</th>
+                    <td style="width: 32%;"><span class="pr-sku-pill" id="prLockedSku">-</span></td>
+                    <th style="width: 18%;">Category</th>
+                    <td style="width: 32%;" id="prLockedCategory">Raw Materials</td>
+                  </tr>
+                  <tr>
+                    <th>Product Name</th>
+                    <td colspan="3" class="pr-product-name-highlight" id="prLockedName">-</td>
+                  </tr>
+                  <tr>
+                    <th>Subcategory</th>
+                    <td id="prLockedSubcat">-</td>
+                    <th>Material / Grade</th>
+                    <td class="pr-bold-cell" id="prLockedMaterial">-</td>
+                  </tr>
+                  <tr>
+                    <th>Size / Dimensions</th>
+                    <td class="pr-mono-cell" id="prLockedSize">-</td>
+                    <th>Specification</th>
+                    <td id="prLockedSpec">PT Persada Nusantara Steel Standard</td>
+                  </tr>
+                  <tr>
+                    <th>Manufacturer / Brand</th>
+                    <td id="prLockedBrand">PT Persada Nusantara Steel</td>
+                    <th>Unit</th>
+                    <td id="prLockedUnit">Sheet</td>
+                  </tr>
+                  <tr class="pr-qty-highlight-row">
+                    <th>Quantity <span class="pr-req">*</span></th>
+                    <td>
+                      <div class="pr-qty-input-wrapper">
+                        <input type="number" step="1" min="1" id="prQuantity" class="pr-form-input pr-qty-input" placeholder="Qty" required>
+                        <span class="pr-qty-unit-label" id="prQtyUnitBadge">Sheet</span>
+                      </div>
+                    </td>
+                    <th>Weight</th>
+                    <td>
+                      <div style="font-weight: 700; color: #0f172a;"><span id="prLockedWeight">-</span></div>
+                      <div class="pr-calc-total-wt" id="prCalculatedTotalWeight">Total Est: -</div>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- SECTION 3: REASON / REQUIREMENT -->
+          <div class="pr-doc-section">
+            <div class="pr-doc-section-title">
+              <span>REASON / REQUIREMENT</span>
+            </div>
+
+            <div class="pr-doc-grid-reason">
+              <div class="pr-form-field span-full">
+                <label class="pr-form-label">Reason for Purchase <span class="pr-req">*</span></label>
+                <textarea id="prReason" class="pr-form-textarea" rows="2" placeholder="State reason for purchase or fabrication requirement..." required></textarea>
+              </div>
+
+              <div class="pr-form-field span-full">
+                <label class="pr-form-label">Remarks</label>
+                <textarea id="prRemarks" class="pr-form-textarea" rows="2" placeholder="e.g. Delivery destination, test certificates, special handling notes"></textarea>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- PR Document Footer Actions -->
+        <div class="pr-doc-footer">
+          <button type="button" class="pr-doc-btn pr-btn-secondary" data-modal-close>
+            <span>Back / Edit</span>
+          </button>
+          <button type="submit" class="pr-doc-btn pr-btn-primary" id="btnSubmitPr">
+            <span>Submit Purchase Request</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       MODAL 3: VIEW ENGINEERING SPECS
+       ========================================================================= -->
+  <div class="modal-backdrop" id="modalSpecsView">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <div class="modal-icon" style="background: rgba(14, 165, 233, 0.15); color: var(--primary-400);">📐</div>
+          <div>
+            <h3>Technical Specification Details</h3>
+            <div class="modal-subtitle">Full Engineering &amp; Manufacturer Mill Parameters</div>
+          </div>
+        </div>
+        <button class="modal-close-btn" data-modal-close>&times;</button>
+      </div>
+      <div class="modal-body" id="specsViewBody">
+        <!-- Rendered by JavaScript -->
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-modal-close>Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       MODAL 4: FORMAL PR PRINTABLE REQUISITION VOUCHER (WHITE DOCUMENT)
+       ========================================================================= -->
+  <div class="modal-backdrop" id="modalPrVoucher">
+    <div class="modal-box pr-white-document-modal" style="max-width: 920px;">
+      
+      <!-- PR Voucher Header -->
+      <div class="pr-doc-header">
+        <div class="pr-doc-header-grid">
+          <div class="pr-doc-header-left">
+            <img src="assets/flow-force-logo.png" alt="Flow Force" class="flow-force-pr-logo">
+          </div>
+          
+          <div class="pr-doc-header-center">
+            <h2 class="pr-doc-main-title">PURCHASE REQUEST</h2>
+          </div>
+
+          <div class="pr-doc-header-right">
+            <div class="pr-header-meta-box">
+              <div class="pr-header-meta-line">
+                <span class="meta-label">PR No:</span>
+                <span class="meta-val pr-code" id="prVoucherDisplayNumber">PR-2026-XXXX</span>
+              </div>
+              <div class="pr-header-meta-line">
+                <span class="meta-label">Date:</span>
+                <span class="meta-val" id="prVoucherDisplayDate">DD/MM/YYYY</span>
+              </div>
+            </div>
+            <button type="button" class="pr-doc-close-btn" data-modal-close title="Close">&times;</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="pr-doc-body" id="prVoucherContainer">
+        <!-- Rendered by JavaScript: Clean White Document -->
+      </div>
+
+      <div class="pr-doc-footer">
+        <button type="button" class="pr-doc-btn pr-btn-secondary" data-modal-close>Close</button>
+        <button type="button" class="pr-doc-btn pr-btn-primary" id="btnPrintVoucher">
+          <span>🖨️ Print Purchase Request</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- App Footer -->
+  <footer class="app-footer">
+    <div>Enterprise SKU & Purchase Request Automation • Proof of Concept for Raw Materials • PT Persada Nusantara Steel Standard Specs</div>
+  </footer>
+
+  <!-- Core Application Script -->
+  <script src="app.js"></script>
+</body>
+</html>
