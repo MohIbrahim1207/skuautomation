@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+
+# Environment secrets
+.env
+.env.*
+!.env.example
+
+# Runtime-generated files & uploads
+storage/
+
+# Development test & debug scripts
+scratch/
+
+# Excel test & input files
+*.xlsx
+*.xls
+
+# Local vendor reference materials
+FW_ Purchasing - Add New Master Item on Google Sheet/
+
+# Logs & OS artifacts
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db

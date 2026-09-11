@@ -1,0 +1,2108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Enterprise SKU & Purchase Request Automation Portal</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+
+  <!-- =========================================================================
+       LOGIN VIEW (AUTHENTICATION)
+       ========================================================================= -->
+  <div id="view-login" class="login-view-wrapper" style="display: none;">
+    <div class="login-card-box">
+      <!-- Flow Force Logo Placeholder Only (No external images) -->
+      <div class="login-brand-placeholder">
+        <div class="login-logo-badge">
+          <span class="login-logo-mark">⚡</span>
+          <span class="login-logo-text">FLOW FORCE</span>
+        </div>
+        <div class="login-brand-tagline">Bulk Material Handling &amp; Processing Equipment Specialists</div>
+        <div class="login-portal-tag">Enterprise SKU &amp; PR Automation Portal</div>
+      </div>
+
+      <div class="login-card-body">
+        <h3 class="login-form-title">Account Login</h3>
+        <p class="login-form-subtitle">Enter your corporate credentials to access the system</p>
+
+        <div class="login-error-alert" id="loginErrorAlert" style="display: none;">
+          <span class="error-icon">⚠️</span>
+          <span class="error-text" id="loginErrorMsg">Invalid username/email or password.</span>
+        </div>
+
+        <form id="formLogin" autocomplete="off">
+          <div class="form-group" style="margin-bottom: 1.25rem;">
+            <label class="form-label" for="loginUsername">Username or Corporate Email <span class="req">*</span></label>
+            <input type="text" id="loginUsername" class="form-input" placeholder="e.g. admin or employee" required autofocus>
+          </div>
+
+          <div class="form-group" style="margin-bottom: 1.5rem;">
+            <label class="form-label" for="loginPassword">Password <span class="req">*</span></label>
+            <input type="password" id="loginPassword" class="form-input" placeholder="Enter your password" required>
+          </div>
+
+          <button type="submit" class="btn btn-primary btn-login-submit" id="btnLoginSubmit">
+            <span>Sign In to Flow Force</span>
+          </button>
+        </form>
+
+        <div class="login-poc-disclaimer">
+          <div class="poc-badge">POC AUTHENTICATION ACTIVE</div>
+          <p>
+            Role-Based Access Control: <strong>ADMIN</strong> &amp; <strong>EMPLOYEE</strong> accounts active.<br>
+            Demo credentials require personal password change upon initial login.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Database Connection Status Banner -->
+  <div id="dbUnavailableBanner" class="db-unavailable-banner" style="display: none;">
+    <span class="db-banner-icon">⚠️</span>
+    <span class="db-banner-text">Database connection unavailable. Please contact the administrator.</span>
+  </div>
+
+  <!-- =========================================================================
+       APP HEADER
+       ========================================================================= -->
+  <header class="app-header" id="mainAppHeader">
+    <!-- Top Header Bar: Logo/Brand on Left, Actions & Profile on Right -->
+    <div class="header-top-bar">
+      <div class="header-brand">
+        <img src="assets/flow-force-logo.png" alt="Flow Force — Bulk Material Handling and Processing Equipment Specialists" class="flow-force-logo" id="flowForceHeaderLogo">
+      </div>
+
+      <div class="header-top-actions">
+        <!-- PR Cart Quick Action -->
+        <button class="btn btn-cart" id="btnHeaderCart" title="Open PR Cart">
+          <span class="cart-icon">🛒</span>
+          <span class="cart-text">PR Cart</span>
+          <span class="cart-badge" id="headerCartBadge">0</span>
+        </button>
+
+        <!-- New SKU for Engineering/Admin -->
+        <button class="btn btn-primary btn-sm" id="btnOpenNewSku" style="display: none;">
+          <span>+ New SKU</span>
+        </button>
+
+        <!-- User Profile Widget -->
+        <div class="header-user-widget" id="headerUserWidget">
+          <span class="user-avatar" id="headerUserAvatar" style="display: none;">A</span>
+          <div class="header-user-stack">
+            <div class="user-name-line">
+              <span class="user-name" id="headerUserName">System Administrator</span>
+            </div>
+            <div class="user-meta-line">
+              <span class="role-pill role-admin" id="headerUserRole">ADMIN</span>
+              <button type="button" class="btn btn-logout" id="btnLogout" title="Sign out of Flow Force">Logout</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Second Navigation Bar: Primary App Views -->
+    <nav class="header-nav-bar" id="headerNavBar">
+      <div class="header-nav-inner">
+        <button class="nav-tab-btn active" data-view-target="dashboard">
+          <span>📊 Dashboard</span>
+        </button>
+        <button class="nav-tab-btn" data-view-target="catalog" id="navBtnCatalog">
+          <span id="navCatalogLabel">📦 Master Catalog</span>
+          <span class="nav-badge" id="navCatalogBadge">50</span>
+        </button>
+        <button class="nav-tab-btn" data-view-target="prs">
+          <span>📋 PR Register</span>
+          <span class="nav-badge" id="navPrBadge">0</span>
+        </button>
+        <button class="nav-tab-btn" data-view-target="projects" id="navBtnProjects">
+          <span>📁 Project Library</span>
+        </button>
+        <button class="nav-tab-btn" data-view-target="users" id="navBtnUsers">
+          <span>👥 User Management</span>
+        </button>
+        <button class="nav-tab-btn" data-view-target="settings" id="navBtnSettings">
+          <span>⚙️ Settings</span>
+        </button>
+      </div>
+    </nav>
+  </header>
+
+  <!-- =========================================================================
+       MAIN CONTENT CONTAINER
+       ========================================================================= -->
+  <main class="app-main">
+
+    <!-- =======================================================================
+         VIEW 1: DASHBOARD
+         ======================================================================= -->
+    <section id="view-dashboard" class="view-section active">
+      <div class="dashboard-header">
+        <h2 class="dashboard-title">Material Procurement & SKU Management</h2>
+        <p class="dashboard-desc">
+          Automated SKU verification and Purchase Request generation system. Browse master items, verify technical specifications, and generate standardized purchase requests directly linked to approved company catalog items.
+        </p>
+      </div>
+
+      <!-- KPI Ribbon (Dynamic for Admin and Employee) -->
+      <div class="kpi-grid" id="dashboardKpiGrid">
+        <div class="kpi-card">
+          <div class="kpi-info">
+            <div class="kpi-label">Master Raw Materials</div>
+            <div class="kpi-val" id="kpiTotalSkus">50</div>
+          </div>
+          <div class="kpi-icon primary">📦</div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-info">
+            <div class="kpi-label" id="kpiLabelTotalPrs">Total PRs</div>
+            <div class="kpi-val" id="kpiTotalPrs" style="color: var(--accent-indigo);">0</div>
+          </div>
+          <div class="kpi-icon indigo">📋</div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-info">
+            <div class="kpi-label" id="kpiLabelPendingPrs">Pending Approval</div>
+            <div class="kpi-val" id="kpiPendingPrs" style="color: var(--accent-amber);">0</div>
+          </div>
+          <div class="kpi-icon amber">⏳</div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-info">
+            <div class="kpi-label" id="kpiLabelApprovedPrs">Approved</div>
+            <div class="kpi-val" id="kpiApprovedPrs" style="color: var(--accent-emerald);">0</div>
+          </div>
+          <div class="kpi-icon emerald">✓</div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-info">
+            <div class="kpi-label" id="kpiLabelRejectedPrs">Rejected</div>
+            <div class="kpi-val" id="kpiRejectedPrs" style="color: var(--accent-rose);">0</div>
+          </div>
+          <div class="kpi-icon rose">✗</div>
+        </div>
+      </div>
+
+      <!-- Category Section -->
+      <div class="section-head">
+        <div>
+          <h2>Material Categories</h2>
+          <div class="section-tagline">Fixed-size modular category grid with expandable architecture for enterprise materials</div>
+        </div>
+        <div>
+          <span style="font-size: 0.8rem; color: var(--text-dim);">4 Active Categories • 3 Upcoming Modules</span>
+        </div>
+      </div>
+
+      <!-- Category Grid: Fixed/Equal Sized Architecture -->
+      <div class="category-grid">
+        
+        <!-- [ RAW MATERIALS ] - Active Category -->
+        <div class="category-card active-category" id="cardRawMaterials" onclick="UI.openCategory('Raw Materials')">
+          <div class="category-card-top">
+            <div class="category-icon-box">🏗️</div>
+            <span class="category-status-pill">● Active</span>
+          </div>
+          <div class="category-card-body">
+            <h3 class="category-card-title">RAW MATERIALS</h3>
+            <p class="category-card-desc">
+              Plates, Sheets, Structural Beams, Channels, Angle Profiles, Round & Deformed Rebars, Pipes, and Tubes.
+            </p>
+            <div class="category-card-meta">
+              <span>Items: <strong id="catCountRawMaterials">50 Items</strong></span>
+              <span>•</span>
+              <span>SKU: <strong>FF4186–FF4235</strong></span>
+            </div>
+          </div>
+          <div class="category-card-footer">
+            <span class="action-cue">Explore Catalog & Create PR →</span>
+          </div>
+        </div>
+
+        <!-- [ FASTENERS ] - Active Category -->
+        <div class="category-card active-category" id="cardFasteners" onclick="UI.openCategory('Fasteners')">
+          <div class="category-card-top">
+            <div class="category-icon-box">🔩</div>
+            <span class="category-status-pill">● Active</span>
+          </div>
+          <div class="category-card-body">
+            <h3 class="category-card-title">FASTENERS</h3>
+            <p class="category-card-desc">
+              Hex bolts full thread, spring lock washers, flat washers, nuts, studs (DIN 933, DIN 125, DIN 127).
+            </p>
+            <div class="category-card-meta">
+              <span>Items: <strong id="catCountFasteners">0 Items</strong></span>
+            </div>
+          </div>
+          <div class="category-card-footer">
+            <span class="action-cue">Explore Catalog & Create PR →</span>
+          </div>
+        </div>
+
+        <!-- [ PIPING & FITTINGS ] - Active Category -->
+        <div class="category-card active-category" id="cardPiping" onclick="UI.openCategory('Piping & Fittings')">
+          <div class="category-card-top">
+            <div class="category-icon-box">🚰</div>
+            <span class="category-status-pill">● Active</span>
+          </div>
+          <div class="category-card-body">
+            <h3 class="category-card-title">PIPING & FITTINGS</h3>
+            <p class="category-card-desc">
+              Process pipes, flanges, elbows, tees, reducers, industrial valves, and gaskets.
+            </p>
+            <div class="category-card-meta">
+              <span>Items: <strong id="catCountPiping">0 Items</strong></span>
+            </div>
+          </div>
+          <div class="category-card-footer">
+            <span class="action-cue">Explore Catalog & Create PR →</span>
+          </div>
+        </div>
+
+        <!-- [ ELECTRICAL ] - Active Category -->
+        <div class="category-card active-category" id="cardElectrical" onclick="UI.openCategory('Electrical')">
+          <div class="category-card-top">
+            <div class="category-icon-box">⚡</div>
+            <span class="category-status-pill">● Active</span>
+          </div>
+          <div class="category-card-body">
+            <h3 class="category-card-title">ELECTRICAL</h3>
+            <p class="category-card-desc">
+              Cables, conduits, cable trays, junction boxes, switchgears, and control components.
+            </p>
+            <div class="category-card-meta">
+              <span>Items: <strong id="catCountElectrical">0 Items</strong></span>
+            </div>
+          </div>
+          <div class="category-card-footer">
+            <span class="action-cue">Explore Catalog & Create PR →</span>
+          </div>
+        </div>
+
+        <!-- Future Category 1: Ducting -->
+        <div class="category-card future-card" title="Upcoming Phase: Spiral ducts, flexible ducts, HVAC dampers">
+          <div class="category-card-top">
+            <div class="category-icon-box">💨</div>
+            <span class="category-status-pill disabled">Upcoming Phase</span>
+          </div>
+          <div class="category-card-body">
+            <h3 class="category-card-title">DUCTING</h3>
+            <p class="category-card-desc">
+              Spiral ducts, flexible ducts, HVAC dampers, diffusers, and duct insulation materials.
+            </p>
+            <div class="category-card-meta">
+              <span>Status: <strong>Architecture Expandable</strong></span>
+            </div>
+          </div>
+          <div class="category-card-footer">
+            <span style="font-size: 0.8rem; color: var(--text-dim);">Upcoming Module</span>
+          </div>
+        </div>
+
+        <!-- Future Category 2: Flat Bar -->
+        <div class="category-card future-card" title="Upcoming Phase: Flat Bar & Profiles">
+          <div class="category-card-top">
+            <div class="category-icon-box">📏</div>
+            <span class="category-status-pill disabled">Upcoming Phase</span>
+          </div>
+          <div class="category-card-body">
+            <h3 class="category-card-title">FLAT BAR</h3>
+            <p class="category-card-desc">
+              Hot-rolled and cold-drawn mild steel and stainless steel flat bars for fabrication.
+            </p>
+            <div class="category-card-meta">
+              <span>Status: <strong>Architecture Expandable</strong></span>
+            </div>
+          </div>
+          <div class="category-card-footer">
+            <span style="font-size: 0.8rem; color: var(--text-dim);">Upcoming Module</span>
+          </div>
+        </div>
+
+        <!-- Future Category 3: Cut/Paint Materials -->
+        <div class="category-card future-card" title="Upcoming Phase: Cut/Paint Materials & Consumables">
+          <div class="category-card-top">
+            <div class="category-icon-box">🎨</div>
+            <span class="category-status-pill disabled">Upcoming Phase</span>
+          </div>
+          <div class="category-card-body">
+            <h3 class="category-card-title">CUT/PAINT MATERIALS</h3>
+            <p class="category-card-desc">
+              Primer paints, industrial coatings, thinners, abrasives, and cutting consumables.
+            </p>
+            <div class="category-card-meta">
+              <span>Status: <strong>Architecture Expandable</strong></span>
+            </div>
+          </div>
+          <div class="category-card-footer">
+            <span style="font-size: 0.8rem; color: var(--text-dim);">Upcoming Module</span>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- =======================================================================
+         VIEW 2: RAW MATERIALS MASTER CATALOG (50 ROWS TABLE)
+         ======================================================================= -->
+    <section id="view-catalog" class="view-section">
+      <div class="section-head">
+        <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
+          <button class="btn btn-secondary btn-sm" id="btnBackToCategories" onclick="UI.switchView('dashboard')" style="display: inline-flex; align-items: center; gap: 0.4rem; padding: 6px 14px; font-weight: 600;">
+            <span>← Back to Categories</span>
+          </button>
+          <div>
+            <h2 id="catalogPageTitle">Raw Materials Master Catalog</h2>
+            <div class="section-tagline" id="catalogPageSubtitle">Single source of truth for raw material procurement specifications</div>
+          </div>
+        </div>
+        <div style="display: flex; gap: 0.75rem; align-items: center;">
+          <button class="btn btn-secondary" id="btnOpenExcelImport" onclick="UI.openExcelImportModal()">
+            <span>📁 + Import Excel</span>
+          </button>
+          <button class="btn btn-primary" id="btnOpenNewSku" onclick="UI.openNewSkuModal()">
+            <span>+ Create New SKU</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Toolbar: Search & Subcategory Filters -->
+      <div class="catalog-toolbar">
+        <div class="toolbar-row-top">
+          <div class="search-box-wrapper">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="catalogSearchInput" class="search-input" placeholder="Search by SKU (e.g. FF4186), Product Name, Material, Size, or Spec...">
+          </div>
+          <div class="toolbar-actions">
+            <button class="btn btn-secondary btn-sm" onclick="UI.switchView('prs')">
+              <span>📋 View PR Register</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Dynamic Filter Chips -->
+        <div class="filter-chips-container" id="filterChipsContainer">
+          <!-- Populated by JavaScript -->
+        </div>
+      </div>
+
+      <!-- Master Items Data Table -->
+      <div class="table-card">
+        <div class="table-stats-bar">
+          <span id="catalogRowCount">Loading Master Items...</span>
+          <span style="font-size: 0.78rem; color: var(--text-dim);" id="catalogSourceSpec">Single Source of Truth • PT Persada Nusantara Steel Specifications</span>
+        </div>
+
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th style="width: 50px;">#</th>
+                <th style="width: 110px;">SKU</th>
+                <th>Product Name</th>
+                <th style="min-width: 250px;">Item Description</th>
+                <th>Subcategory</th>
+                <th>Material / Grade</th>
+                <th>Size / Dimensions</th>
+                <th>Unit</th>
+                <th>Weight</th>
+                <th style="width: 175px; min-width: 155px;">CURRENT UNIT PRICE (IDR)</th>
+                <th style="width: 170px;">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="masterCatalogTbody">
+              <!-- Rendered by JavaScript: Exactly 50 rows -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- =======================================================================
+         VIEW 3: PURCHASE REQUESTS REGISTER
+         ======================================================================= -->
+    <section id="view-prs" class="view-section">
+      <div class="section-head" style="margin-bottom: 1.25rem;">
+        <div>
+          <h2>Purchase Requisitions</h2>
+          <div class="section-tagline">Manage and track submitted purchase requests.</div>
+        </div>
+        <div>
+          <button class="btn btn-primary" onclick="UI.switchView('catalog')">
+            <span>+ New PR</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- PR Register KPI Cards (Equal Width) -->
+      <div class="pr-kpi-grid" id="prRegisterKpiGrid">
+        <div class="pr-kpi-card">
+          <div class="pr-kpi-label">Total PRs</div>
+          <div class="pr-kpi-val" id="prKpiTotal">0</div>
+        </div>
+        <div class="pr-kpi-card pr-kpi-pending">
+          <div class="pr-kpi-label">Pending Approval</div>
+          <div class="pr-kpi-val" id="prKpiPending">0</div>
+        </div>
+        <div class="pr-kpi-card pr-kpi-approved">
+          <div class="pr-kpi-label">Approved</div>
+          <div class="pr-kpi-val" id="prKpiApproved">0</div>
+        </div>
+        <div class="pr-kpi-card pr-kpi-rejected">
+          <div class="pr-kpi-label">Rejected</div>
+          <div class="pr-kpi-val" id="prKpiRejected">0</div>
+        </div>
+      </div>
+
+      <div class="table-card pr-register-card">
+        <div class="table-stats-bar">
+          <span id="prRegisterCount">Total 0 Purchase Requisitions</span>
+        </div>
+
+        <div class="table-responsive pr-table-responsive">
+          <table class="data-table pr-compact-table">
+            <thead>
+              <tr>
+                <th style="width: 140px;">PR NUMBER</th>
+                <th>REQUESTER</th>
+                <th style="width: 120px;">PROJECT</th>
+                <th style="width: 125px;">REQUEST DATE</th>
+                <th style="width: 125px;">REQUIRED DATE</th>
+                <th style="width: 150px; text-align: right;">TOTAL</th>
+                <th style="width: 160px; text-align: center;">STATUS</th>
+                <th style="width: 170px; text-align: right;">ACTION</th>
+              </tr>
+            </thead>
+            <tbody id="prRegisterTbody">
+              <!-- Rendered by JavaScript -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- =======================================================================
+         VIEW 4: SETTINGS & SYSTEM CONFIGURATION
+         ======================================================================= -->
+    <section id="view-settings" class="view-section">
+      <div class="section-head">
+        <div>
+          <h2>System Configuration</h2>
+          <div class="section-tagline">SKU Numbering rules and backend storage driver settings</div>
+        </div>
+      </div>
+
+      <div class="settings-card">
+        <h3>1. Company SKU Generation Engine</h3>
+        <p class="settings-desc">
+          Configure default SKU prefix and sequence numbers. Current company standard uses FF-series sequential numbering (e.g. FF4186–FF4235).
+        </p>
+
+        <form id="formSettings">
+          <div class="form-grid">
+            <div class="form-group">
+              <label class="form-label">SKU Prefix <span class="req">*</span></label>
+              <input type="text" id="cfgSkuPrefix" class="form-input" value="FF" required>
+              <span class="form-hint">Company prefix (e.g., "FF" for standard raw materials)</span>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Next Sequence Number <span class="req">*</span></label>
+              <input type="number" id="cfgNextNum" class="form-input" value="4236" required>
+              <span class="form-hint">Next suggested number for newly created master items</span>
+            </div>
+
+            <div class="form-group span-2">
+              <label class="form-label">Storage Adapter (Seamless Google Sheets Migration)</label>
+              <select id="cfgDriver" class="form-select">
+                <option value="localStorage">Local Storage (Active Proof-of-Concept Mode)</option>
+                <option value="googleAppsScript">Google Sheets + Google Apps Script Web App Endpoint</option>
+              </select>
+              <span class="form-hint">The application is architected to switch to Google Sheets + Google Apps Script Web App without altering UI components.</span>
+            </div>
+
+            <div class="form-group span-2">
+              <label class="form-label">Google Apps Script Web App URL (Optional / Future Deployment)</label>
+              <input type="url" id="cfgApiUrl" class="form-input" placeholder="https://script.google.com/macros/s/.../exec">
+            </div>
+          </div>
+
+          <div style="margin-top: 1.5rem; display: flex; gap: 1rem;">
+            <button type="submit" class="btn btn-primary">Save Settings</button>
+            <button type="button" class="btn btn-danger" id="btnResetCatalog">Reset to Default 50 Items</button>
+          </div>
+        </form>
+      </div>
+    </section>
+ 
+    <!-- =======================================================================
+         VIEW 5: USER MANAGEMENT (ADMIN ONLY)
+         ======================================================================= -->
+    <section id="view-users" class="view-section">
+      <div class="section-head">
+        <div>
+          <h2>User &amp; Role Management</h2>
+          <div class="section-tagline">Manage corporate accounts, roles, access permissions, and authentication credentials</div>
+        </div>
+        <div>
+          <button class="btn btn-primary btn-sm" id="btnOpenAddUser">
+            <span>+ Add Employee</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- User Stats Ribbon (Section 14: Total Users, Admins, Employees, Active Users) -->
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <div class="kpi-info">
+            <div class="kpi-label">Total Users</div>
+            <div class="kpi-val" id="kpiTotalUsers">2</div>
+          </div>
+          <div class="kpi-icon primary">👥</div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-info">
+            <div class="kpi-label">Admins</div>
+            <div class="kpi-val" id="kpiAdminCount" style="color: var(--accent-indigo);">1</div>
+          </div>
+          <div class="kpi-icon indigo">👑</div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-info">
+            <div class="kpi-label">Employees</div>
+            <div class="kpi-val" id="kpiEmployeeCount" style="color: var(--primary-500);">1</div>
+          </div>
+          <div class="kpi-icon amber">👤</div>
+        </div>
+
+        <div class="kpi-card">
+          <div class="kpi-info">
+            <div class="kpi-label">Active Users</div>
+            <div class="kpi-val" id="kpiActiveUsers" style="color: var(--accent-emerald);">2</div>
+          </div>
+          <div class="kpi-icon emerald">🛡️</div>
+        </div>
+      </div>
+
+      <!-- Users Table Container -->
+      <div class="table-container" id="users">
+        <div class="table-header-bar">
+          <div class="table-title-group">
+            <h3>Flow Force System Accounts</h3>
+            <span class="table-subtitle" id="usersTableCount">Total 2 Accounts Registered</span>
+          </div>
+        </div>
+
+        <div class="table-scroll">
+          <table class="data-table" id="usersTable">
+            <thead>
+              <tr>
+                <th style="width: 50px;">#</th>
+                <th style="width: 110px;">USER ID</th>
+                <th>FULL NAME</th>
+                <th>USERNAME / EMAIL</th>
+                <th style="width: 130px;">ROLE</th>
+                <th style="width: 110px;">STATUS</th>
+                <th style="width: 130px;">CREATED</th>
+                <th style="width: 210px; text-align: right;">ACTIONS</th>
+              </tr>
+            </thead>
+            <tbody id="usersTableTbody">
+              <!-- Rendered dynamically by JavaScript -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- =======================================================================
+         VIEW 6: PROJECT / JOB DOCUMENT LIBRARY
+         ======================================================================= -->
+    <section id="view-projects" class="view-section">
+      <div class="section-head">
+        <div>
+          <h2>Project Library</h2>
+          <div class="section-tagline">Centralized requisition repository organized by Project / PID and Job Location</div>
+        </div>
+        <div>
+          <button class="btn btn-primary" id="btnOpenNewProject">
+            <span>+ New Project / PID</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Search Project Input (Section 13) -->
+      <div class="project-search-bar" style="margin-bottom: 1.25rem;">
+        <input type="text" id="projectSearchInput" class="form-input" placeholder="🔍 Search Project / PID or Job Location..." style="max-width: 420px;">
+      </div>
+
+      <!-- Breadcrumbs Hierarchy -->
+      <div class="library-breadcrumb-bar" id="libraryBreadcrumbBar">
+        <span class="breadcrumb-item linkable" id="bcProjectsHome">📁 FLOW FORCE</span>
+        <span class="breadcrumb-sep">›</span>
+        <span class="breadcrumb-item linkable" id="bcProjectsRoot">Projects</span>
+        <span class="breadcrumb-sep" id="bcDetailSep1" style="display: none;">›</span>
+        <span class="breadcrumb-item active" id="bcDetailProject" style="display: none;">PID</span>
+        <span class="breadcrumb-sep" id="bcDetailSep2" style="display: none;">›</span>
+        <span class="breadcrumb-item" id="bcDetailLocation" style="display: none;">Job Location</span>
+      </div>
+
+      <!-- Top-Level Project Library List -->
+      <div id="projectListContainer">
+        <div class="table-card">
+          <div class="table-stats-bar">
+            <span id="projectListCount">Loading projects...</span>
+            <span style="font-size: 0.78rem; color: var(--text-dim);">Job Location acts as the document library folder for Purchase Requests</span>
+          </div>
+
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th style="width: 50px;">#</th>
+                  <th style="width: 150px;">Project / PID</th>
+                  <th>Project Name</th>
+                  <th>Job Location</th>
+                  <th style="width: 160px;">Purchase Requests</th>
+                  <th style="width: 120px;">Status</th>
+                  <th style="width: 140px; text-align: right;">Action</th>
+                </tr>
+              </thead>
+              <tbody id="projectsTableTbody">
+                <!-- Populated dynamically by JavaScript -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- Drill-Down Folder View: Project / PID > Job Location > Purchase Requests -->
+      <div id="projectDetailContainer" style="display: none;">
+        <div class="project-detail-header-card">
+          <div class="project-detail-left">
+            <div class="project-code-tag" id="projDetailCode">PID-XXXX</div>
+            <div class="project-title-box">
+              <h3 id="projDetailName">-</h3>
+              <div class="project-meta-line">
+                <span>📍 Job Location: <strong id="projDetailLocation">-</strong></span>
+                <span>•</span>
+                <span>Status: <span class="status-pill-active" id="projDetailStatus">Active</span></span>
+              </div>
+            </div>
+          </div>
+          <div class="project-detail-right">
+            <button type="button" class="btn btn-secondary btn-sm" id="btnBackToProjects">
+              <span>← Back to Projects</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="table-card" style="margin-top: 1.25rem;">
+          <div class="table-stats-bar">
+            <span id="projPrCount">0 Purchase Requests</span>
+            <span style="font-size: 0.78rem; color: var(--text-dim);">📁 Storage: storage/projects/[PROJECT_CODE]/purchase-requests/</span>
+          </div>
+
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th style="width: 50px;">#</th>
+                  <th style="width: 140px;">PR Number</th>
+                  <th>Created By</th>
+                  <th>Username</th>
+                  <th style="width: 120px;">Request Date</th>
+                  <th style="width: 140px;">Status</th>
+                  <th style="width: 320px; text-align: right;">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="projectPrTableTbody">
+                <!-- Rendered dynamically: View PR, Download Excel, Download PDF -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- =========================================================================
+       MODAL 1: NEW SKU — SIMPLE DRAG & DROP WORKFLOW
+       ========================================================================= -->
+  <div class="modal-backdrop" id="modalNewSku">
+    <div class="modal-box" style="max-width: 680px;">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <div class="modal-icon" style="background: rgba(14, 165, 233, 0.15); color: var(--primary-400);">🛡️</div>
+          <div>
+            <h3>+ New SKU (Engineering)</h3>
+            <div class="modal-subtitle" id="newSkuStepLabel">Step 1 of 3 — Upload Reference File</div>
+          </div>
+        </div>
+        <button class="modal-close-btn" data-modal-close>&times;</button>
+      </div>
+
+      <div class="modal-body" style="padding: 1.5rem 1.75rem;">
+
+        <!-- ===== STEP 1: UPLOAD REFERENCE FILE ===== -->
+        <div class="sku-step" id="skuStep1">
+          <div class="sku-step-heading">1. Upload Reference File</div>
+
+          <div class="sku-dropzone" id="skuDropzone">
+            <div class="dropzone-icon">📄</div>
+            <div class="dropzone-title">Drag & Drop Reference File</div>
+            <div class="dropzone-subtitle">or <span class="dropzone-browse" id="skuBrowseBtn">Browse Files</span></div>
+            <div class="dropzone-hint">Excel / PDF / Image</div>
+            <input type="file" id="skuFileInput" accept=".xlsx,.xls,.csv,.pdf,.png,.jpg,.jpeg,.bmp,.tiff" hidden>
+          </div>
+
+          <div class="sku-file-info" id="skuFileInfo" style="display:none;">
+            <span class="sku-file-name" id="skuFileName"></span>
+            <button type="button" class="sku-file-remove" id="skuFileRemove" title="Remove">&times;</button>
+          </div>
+
+          <div style="margin-top: 1rem; text-align: right;">
+            <button type="button" class="btn btn-secondary btn-sm" id="btnSkuSkipUpload">Skip — Enter Manually</button>
+            <button type="button" class="btn btn-primary btn-sm" id="btnSkuExtract" disabled>Extract Details →</button>
+          </div>
+        </div>
+
+        <!-- ===== STEP 2: MATERIAL DETAILS (editable) ===== -->
+        <div class="sku-step" id="skuStep2" style="display:none;">
+          <div class="sku-step-heading">2. Material Details</div>
+
+          <!-- Compact drag-and-drop for Step 2 -->
+          <div class="sku-dropzone-compact" id="skuDropzone2">
+            <div class="dropzone-compact-inner">
+              <span class="dropzone-compact-icon">📄</span>
+              <span class="dropzone-compact-text">Drag & Drop Reference File</span>
+              <span class="dropzone-compact-sep">or</span>
+              <span class="dropzone-browse" id="skuBrowseBtn2">Browse Files</span>
+            </div>
+            <div class="dropzone-compact-hint">Use uploaded file to fill material details</div>
+            <input type="file" id="skuFileInput2" accept=".xlsx,.xls,.csv,.pdf,.png,.jpg,.jpeg,.bmp,.tiff" hidden>
+          </div>
+
+          <!-- Current file indicator -->
+          <div class="sku-file-info" id="skuFileInfo2" style="display:none;">
+            <span class="sku-file-name" id="skuFileName2"></span>
+            <button type="button" class="sku-file-remove" id="skuFileRemove2" title="Remove">&times;</button>
+          </div>
+
+          <!-- Replace file confirmation -->
+          <div class="sku-replace-confirm" id="skuReplaceConfirm" style="display:none;">
+            <span>Replace reference file?</span>
+            <div style="display:flex; gap:0.5rem;">
+              <button type="button" class="btn btn-secondary btn-sm" id="btnReplaceCancel">Cancel</button>
+              <button type="button" class="btn btn-primary btn-sm" id="btnReplaceConfirm">Replace</button>
+            </div>
+          </div>
+
+          <!-- Extraction Progress State -->
+          <div class="sku-extract-progress" id="skuExtractProgress" style="display:none;">
+            <div class="sku-progress-spinner"></div>
+            <div class="sku-progress-content">
+              <div class="sku-progress-text" id="skuProgressText">Reading file...</div>
+              <div class="sku-progress-subtext" id="skuProgressSubtext">Please wait while the file is processed</div>
+            </div>
+          </div>
+
+          <!-- Extraction Error Banner -->
+          <div class="sku-extract-error" id="skuExtractError" style="display:none;">
+            ⚠️ Unable to extract details from this file. Please enter the information manually.
+          </div>
+
+          <!-- Extraction Notice Banner -->
+          <div class="sku-extract-notice" id="skuExtractNotice" style="display:none;">
+            ⚠️ Extracted from reference file — Please verify
+          </div>
+
+          <!-- Expandable Raw Extracted Text Drawer -->
+          <div class="sku-raw-text-wrapper" id="skuRawTextWrapper" style="display:none;">
+            <details class="sku-raw-text-details" id="skuRawTextDetails">
+              <summary class="sku-raw-text-summary">
+                <span style="display:flex; align-items:center; gap:0.5rem;">
+                  <span class="summary-arrow">▶</span>
+                  <strong>View Extracted Information</strong>
+                </span>
+                <span class="sku-raw-text-badge" id="skuRawTextBadge">0 chars</span>
+              </summary>
+              <div class="sku-raw-text-box">
+                <div class="sku-raw-text-actions">
+                  <span class="sku-raw-text-meta" id="skuRawTextMeta">Method: OCR / Document Text</span>
+                  <button type="button" class="btn btn-secondary btn-sm" id="btnCopyExtractedText" style="padding: 2px 8px; font-size: 0.72rem;">Copy Text</button>
+                </div>
+                <pre class="sku-raw-text-content" id="skuRawTextContent"></pre>
+              </div>
+            </details>
+          </div>
+
+          <!-- Duplicate alert -->
+          <div class="duplicate-alert-banner" id="skuDuplicateAlert"></div>
+
+          <div class="sku-simple-form">
+            <div class="sku-field">
+              <label class="sku-label">SKU</label>
+              <input type="text" id="newSkuCode" class="sku-input sku-readonly-field" readonly>
+              <span class="sku-hint">Auto-generated (FF-series)</span>
+            </div>
+
+            <div class="sku-field">
+              <label class="sku-label">Material Category <span class="req">*</span></label>
+              <select id="newSkuCategory" class="sku-input" required>
+                <option value="Raw Materials">Raw Materials</option>
+                <option value="Fasteners">Fasteners</option>
+                <option value="Piping & Fittings">Piping & Fittings</option>
+                <option value="Electrical">Electrical</option>
+              </select>
+              <span class="sku-hint">Target procurement category for this Master SKU</span>
+            </div>
+
+            <div class="sku-field">
+              <label class="sku-label">Product Name <span class="req">*</span></label>
+              <input type="text" id="newSkuName" class="sku-input" placeholder="e.g. Marine Plate 25mm x 5' x 20'" required>
+            </div>
+
+            <div class="sku-field">
+              <label class="sku-label">Item Description <span class="req">*</span></label>
+              <textarea id="newSkuDescription" class="sku-input sku-textarea" rows="4" style="min-height: 120px;" placeholder="Detailed multi-line specification (e.g.&#10;Marine Grade Steel Plate&#10;ASTM A131 Grade A&#10;Thickness: 12mm&#10;Width: 5ft, Length: 20ft&#10;Surface: Mill Finish&#10;Required for fabrication work)" required></textarea>
+              <span class="sku-hint">Detailed multiline description &amp; engineering specifications</span>
+            </div>
+
+            <div class="sku-field">
+              <label class="sku-label">Material / Grade <span class="req">*</span></label>
+              <input type="text" id="newSkuMaterial" class="sku-input" placeholder="e.g. Marine Steel Grade A" required>
+            </div>
+
+            <div class="sku-field">
+              <label class="sku-label">Size / Dimensions <span class="req">*</span></label>
+              <input type="text" id="newSkuSize" class="sku-input" placeholder="e.g. 25mm x 5ft x 20ft" required>
+            </div>
+
+            <div class="sku-field">
+              <label class="sku-label">Specification <span class="req">*</span></label>
+              <input type="text" id="newSkuSpec" class="sku-input" placeholder="e.g. ASTM A131 / JIS G3101 / DIN 125" required>
+            </div>
+
+            <div class="sku-field-row">
+              <div class="sku-field">
+                <label class="sku-label">Standard Unit / UOM <span class="req">*</span></label>
+                <select id="newSkuUnit" class="sku-input">
+                  <option value="Sheet">Sheet</option>
+                  <option value="Length">Length</option>
+                  <option value="PCS">PCS</option>
+                  <option value="KG">KG</option>
+                  <option value="Gram">Gram</option>
+                  <option value="MTR">MTR</option>
+                  <option value="Set">Set</option>
+                </select>
+              </div>
+              <div class="sku-field">
+                <label class="sku-label">Theoretical Weight <span class="req">*</span></label>
+                <input type="number" step="0.001" id="newSkuWeight" class="sku-input" placeholder="e.g. 1820.0 (kg) or 0.12 (g)" required>
+              </div>
+            </div>
+
+            <div class="sku-field-row">
+              <div class="sku-field">
+                <label class="sku-label">Manufacturer / Mill Brand</label>
+                <input type="text" id="newSkuBrand" class="sku-input" placeholder="e.g. FZ-Lock / PT Persada Nusantara Steel">
+              </div>
+              <div class="sku-field">
+                <label class="sku-label">Finish / Coating</label>
+                <input type="text" id="newSkuFinish" class="sku-input" placeholder="e.g. Zinc Plated / Black Oxide / Plain">
+              </div>
+            </div>
+
+            <div class="sku-field-row">
+              <div class="sku-field">
+                <label class="sku-label">Current Unit Price (IDR)<span class="req" id="newSkuPriceReqMark" style="display:none;"> *</span></label>
+                <input type="number" step="any" min="0" id="newSkuPrice" class="sku-input" placeholder="e.g. 15000000">
+                <span class="sku-hint">Optional base procurement price in IDR (Rp)</span>
+              </div>
+              <div class="sku-field">
+                <label class="sku-label">Material Format</label>
+                <div style="display: flex; align-items: center; min-height: 42px;">
+                  <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.85rem; font-weight: 600; color: var(--text-main);">
+                    <input type="checkbox" id="newSkuIsCutSize" style="accent-color: var(--primary-500); width: 18px; height: 18px; cursor: pointer;">
+                    <span>Project-Specific Cut Size</span>
+                  </label>
+                </div>
+                <span class="sku-hint">Check if vendor cut-size for specific project requirement</span>
+              </div>
+            </div>
+
+            <div class="sku-field">
+              <label class="sku-label">Remarks</label>
+              <input type="text" id="newSkuRemarks" class="sku-input" placeholder="Optional engineering notes">
+            </div>
+          </div>
+
+          <div style="margin-top: 1.25rem; display: flex; justify-content: space-between;">
+            <button type="button" class="btn btn-secondary btn-sm" id="btnSkuBackTo1">← Back</button>
+            <button type="button" class="btn btn-primary btn-sm" id="btnSkuToReview">Review & Confirm →</button>
+          </div>
+        </div>
+
+        <!-- ===== STEP 3: REVIEW & CONFIRM ===== -->
+        <div class="sku-step" id="skuStep3" style="display:none;">
+          <div class="sku-step-heading">3. Review & Confirm</div>
+
+          <div class="sku-review-card" id="skuReviewCard">
+            <!-- Populated by JS -->
+          </div>
+
+          <div style="margin-top: 1.25rem; display: flex; justify-content: space-between; gap: 0.75rem;">
+            <button type="button" class="btn btn-secondary btn-sm" id="btnSkuBackTo2">← Edit</button>
+            <div style="display:flex; gap:0.5rem;">
+              <button type="button" class="btn btn-secondary btn-sm" data-modal-close>Cancel</button>
+              <button type="button" class="btn btn-primary" id="btnSkuConfirmCreate">Confirm & Create SKU</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ===== SUCCESS ===== -->
+        <div class="sku-step" id="skuStepSuccess" style="display:none;">
+          <div style="text-align:center; padding: 2rem 1rem;">
+            <div style="font-size:2.5rem; margin-bottom:0.75rem;">✓</div>
+            <div style="font-size:1.2rem; font-weight:700; color:#10b981; margin-bottom:0.25rem;">New Master Item Created</div>
+            <div style="font-family:var(--font-mono); font-size:1.1rem; font-weight:800; color:var(--primary-400); margin-bottom:1.5rem;" id="skuSuccessSku"></div>
+
+            <div style="display:flex; gap:0.75rem; justify-content:center;">
+              <button type="button" class="btn btn-primary" id="btnSkuCreatePr">Create PR</button>
+              <button type="button" class="btn btn-secondary" id="btnSkuBackToCatalog">Back to Raw Materials</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       MODAL 2: CREATE PURCHASE REQUEST (WHITE DOCUMENT-STYLE INTERFACE)
+       ========================================================================= -->
+  <div class="modal-backdrop" id="modalCreatePr">
+    <div class="modal-box pr-white-document-modal">
+      
+      <!-- PR Document Header -->
+      <div class="pr-doc-header">
+        <div class="pr-doc-header-grid">
+          <div class="pr-doc-header-left">
+            <div class="flow-force-logo-placeholder">[ FLOW FORCE LOGO ]</div>
+          </div>
+          
+          <div class="pr-doc-header-center">
+            <h2 class="pr-doc-main-title">PURCHASE REQUEST</h2>
+          </div>
+
+          <div class="pr-doc-header-right">
+            <div class="pr-header-meta-box">
+              <div class="pr-header-meta-line">
+                <span class="meta-label">PR No:</span>
+                <span class="meta-val pr-code" id="prDisplayNumber">PR-2026-XXXX</span>
+              </div>
+              <div class="pr-header-meta-line">
+                <span class="meta-label">Date:</span>
+                <span class="meta-val" id="prDisplayDate">DD/MM/YYYY</span>
+              </div>
+            </div>
+            <button type="button" class="pr-doc-close-btn" data-modal-close title="Close / Cancel">&times;</button>
+          </div>
+        </div>
+      </div>
+
+      <form id="formCreatePr" class="pr-white-form">
+        <div class="pr-doc-body">
+          
+          <!-- SECTION 1: MASTER ITEM SPECIFICATIONS (LOCKED & READ-ONLY) -->
+          <div class="pr-doc-section">
+            <div class="pr-doc-section-title">
+              <span>ITEM DETAILS (MASTER DATA)</span>
+              <span class="pr-source-truth-tag">🔒 Read-Only (Auto-Populated from Master SKU)</span>
+            </div>
+
+            <div class="pr-item-details-card">
+              <table class="pr-spec-table">
+                <tbody>
+                  <tr>
+                    <th style="width: 18%;">SKU</th>
+                    <td style="width: 32%;"><span class="pr-sku-pill" id="prLockedSku">-</span></td>
+                    <th style="width: 18%;">Category</th>
+                    <td style="width: 32%;" id="prLockedCategory">Raw Materials</td>
+                  </tr>
+                  <tr>
+                    <th>Product Name</th>
+                    <td colspan="3" class="pr-product-name-highlight" id="prLockedName">-</td>
+                  </tr>
+                  <tr>
+                    <th style="vertical-align: top;">Item Description</th>
+                    <td colspan="3" style="white-space: pre-wrap; font-size: 0.84rem; line-height: 1.45; color: #334155;" id="prLockedDescription">-</td>
+                  </tr>
+                  <tr>
+                    <th>Subcategory</th>
+                    <td id="prLockedSubcat">-</td>
+                    <th>Material / Grade</th>
+                    <td class="pr-bold-cell" id="prLockedMaterial">-</td>
+                  </tr>
+                  <tr>
+                    <th>Size / Dimensions</th>
+                    <td class="pr-mono-cell" id="prLockedSize">-</td>
+                    <th>Specification</th>
+                    <td id="prLockedSpec">PT Persada Nusantara Steel Standard</td>
+                  </tr>
+                  <tr>
+                    <th>Brand</th>
+                    <td id="prLockedBrand">PT Persada Nusantara Steel</td>
+                    <th>Unit</th>
+                    <td id="prLockedUnit">Sheet</td>
+                  </tr>
+                  <tr>
+                    <th>Weight</th>
+                    <td id="prLockedWeight">-</td>
+                    <th>Current Unit Price (IDR)</th>
+                    <td id="prLockedUnitPrice" style="font-weight:700; color:#0f172a;"><span style="color:#64748b; font-weight:400;">Not Available</span></td>
+                  </tr>
+                  <tr>
+                    <th>Material Format</th>
+                    <td id="prLockedFormat">Standard Raw Material</td>
+                    <th>Master Record</th>
+                    <td><span style="color:#059669; font-weight:700;">● Verified in Catalog</span></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- SECTION 2: PURCHASE REQUISITION DETAILS (USER INPUTS) -->
+          <div class="pr-doc-section">
+            <div class="pr-doc-section-title">
+              <span>PURCHASE REQUISITION DETAILS</span>
+              <span style="font-size:0.75rem; color:#64748b; font-weight:600;">Enter required quantities &amp; project information</span>
+            </div>
+            
+            <div class="pr-doc-grid-summary">
+              <!-- Quantity -->
+              <div class="pr-form-field">
+                <label class="pr-form-label">Quantity <span class="pr-req">*</span></label>
+                <div class="pr-qty-input-wrapper">
+                  <input type="number" step="1" min="1" id="prQuantity" class="pr-form-input pr-qty-input" placeholder="Qty" required>
+                  <span class="pr-qty-unit-label" id="prQtyUnitBadge">Sheet</span>
+                </div>
+                <div class="pr-calc-total-wt" id="prCalculatedTotalWeight">Total Est: -</div>
+                <div class="pr-calc-total-wt" id="prCalculatedTotalCost" style="color:#0284c7; font-weight:700;">Est. Cost: -</div>
+              </div>
+
+              <!-- Project / PID -->
+              <div class="pr-form-field">
+                <label class="pr-form-label">Project / PID <span class="pr-req">*</span></label>
+                <input type="text" id="prProjectId" class="pr-form-input" placeholder="e.g. PRJ-2026-FPSO-01" required>
+                <div class="pr-quick-presets">
+                  <button type="button" class="pr-preset-pill btn-pid-preset" data-pid="PRJ-FPSO-2026-01">+ FPSO-01</button>
+                  <button type="button" class="pr-preset-pill btn-pid-preset" data-pid="PRJ-HULL-REFIT-04">+ HULL-04</button>
+                  <button type="button" class="pr-preset-pill btn-pid-preset" data-pid="PRJ-WH-STOCK">+ WH-STOCK</button>
+                </div>
+              </div>
+
+              <!-- Department -->
+              <div class="pr-form-field">
+                <label class="pr-form-label">Department <span class="pr-req">*</span></label>
+                <select id="prDepartment" class="pr-form-select" required>
+                  <option value="Engineering &amp; Design">Engineering &amp; Design</option>
+                  <option value="Warehouse &amp; Inventory">Warehouse &amp; Inventory</option>
+                  <option value="Fabrication &amp; Production">Fabrication &amp; Production</option>
+                  <option value="Maintenance &amp; QA">Maintenance &amp; QA</option>
+                </select>
+              </div>
+
+              <!-- Requested By -->
+              <div class="pr-form-field">
+                <label class="pr-form-label">Requested By <span class="pr-req">*</span></label>
+                <input type="text" id="prRequester" class="pr-form-input" placeholder="Requester Name / Staff ID" value="Engineering Team" required>
+              </div>
+
+              <!-- Required Date -->
+              <div class="pr-form-field">
+                <label class="pr-form-label">Required Date <span class="pr-req">*</span></label>
+                <input type="date" id="prRequiredDate" class="pr-form-input" required>
+              </div>
+
+              <!-- Urgency -->
+              <div class="pr-form-field">
+                <label class="pr-form-label">Urgency <span class="pr-req">*</span></label>
+                <select id="prUrgency" class="pr-form-select" required>
+                  <option value="Standard (1-2 Weeks)">Standard (1-2 Weeks)</option>
+                  <option value="Urgent (48-72h)">Urgent (48-72h)</option>
+                  <option value="Critical Breakdown">Emergency / Critical Breakdown</option>
+                </select>
+              </div>
+
+              <!-- Item Description (Multiline Editable Textarea) -->
+              <div class="pr-form-field span-full">
+                <label class="pr-form-label">Item Description <span class="pr-req">*</span></label>
+                <textarea id="prItemDescription" class="pr-form-textarea" rows="4" style="min-height: 120px;" placeholder="Detailed multi-line specification for this Purchase Request..." required></textarea>
+                <span style="font-size:0.75rem; color:#64748b;">Pre-populated from Master Item; fully editable specifically for this Purchase Request.</span>
+              </div>
+
+              <!-- Reason for Purchase -->
+              <div class="pr-form-field span-full">
+                <label class="pr-form-label">Reason for Purchase <span class="pr-req">*</span></label>
+                <textarea id="prReason" class="pr-form-textarea" rows="2" placeholder="State reason for purchase or fabrication requirement..." required></textarea>
+              </div>
+
+              <!-- Remarks -->
+              <div class="pr-form-field span-full">
+                <label class="pr-form-label">Remarks</label>
+                <textarea id="prRemarks" class="pr-form-textarea" rows="2" placeholder="e.g. Delivery destination, test certificates, special handling notes"></textarea>
+              </div>
+            </div>
+          </div>
+
+          <!-- SECTION 3: PURCHASE REQUEST SUMMARY (LIVE PREVIEW BEFORE SUBMIT) -->
+          <div class="pr-doc-section pr-summary-section-wrap">
+            <div class="pr-doc-section-title pr-summary-title">
+              <div style="display:flex; align-items:center; gap:8px;">
+                <span>PURCHASE REQUEST SUMMARY</span>
+                <span class="pr-live-tag">⚡ Live Preview</span>
+              </div>
+              <span style="font-size:0.75rem; color:#475569; font-weight:600;">Updates live as you fill the form</span>
+            </div>
+
+            <div class="pr-summary-document-card">
+              <!-- Summary Meta Bar -->
+              <div class="pr-summary-meta-bar">
+                <div class="pr-summary-meta-item">
+                  <span class="pr-summary-meta-lbl">PR Number:</span>
+                  <span class="pr-summary-meta-val pr-code" id="sumPrNumber">PR-2026-XXXX</span>
+                  <span class="pr-summary-meta-sub">(Auto-generated)</span>
+                </div>
+                <div class="pr-summary-meta-item">
+                  <span class="pr-summary-meta-lbl">Request Date:</span>
+                  <span class="pr-summary-meta-val" id="sumPrDate">DD/MM/YYYY</span>
+                  <span class="pr-summary-meta-sub">(Auto-generated)</span>
+                </div>
+              </div>
+
+              <!-- 1. PROJECT / REQUEST INFORMATION -->
+              <div class="pr-summary-block">
+                <div class="pr-summary-block-heading">PROJECT / REQUEST INFORMATION</div>
+                <div class="pr-summary-grid">
+                  <div class="pr-summary-cell">
+                    <span class="pr-sum-label">Project / PID:</span>
+                    <span class="pr-sum-value" id="sumProjectId">-</span>
+                  </div>
+                  <div class="pr-summary-cell">
+                    <span class="pr-sum-label">Department:</span>
+                    <span class="pr-sum-value" id="sumDepartment">-</span>
+                  </div>
+                  <div class="pr-summary-cell">
+                    <span class="pr-sum-label">Requested By:</span>
+                    <span class="pr-sum-value" id="sumRequestedBy">-</span>
+                  </div>
+                  <div class="pr-summary-cell">
+                    <span class="pr-sum-label">Required Date:</span>
+                    <span class="pr-sum-value" id="sumRequiredDate">-</span>
+                  </div>
+                  <div class="pr-summary-cell span-full">
+                    <span class="pr-sum-label">Urgency:</span>
+                    <span class="pr-sum-value" id="sumUrgency">-</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 2. ITEM DETAILS -->
+              <div class="pr-summary-block">
+                <div class="pr-summary-block-heading">ITEM DETAILS</div>
+                <div class="pr-summary-grid">
+                  <div class="pr-summary-cell">
+                    <span class="pr-sum-label">SKU:</span>
+                    <span class="pr-sum-value pr-code pr-sum-highlight" id="sumSku">-</span>
+                  </div>
+                  <div class="pr-summary-cell span-full">
+                    <span class="pr-sum-label">Product Name:</span>
+                    <span class="pr-sum-value pr-sum-title" id="sumProductName">-</span>
+                  </div>
+                  <div class="pr-summary-cell">
+                    <span class="pr-sum-label">Category:</span>
+                    <span class="pr-sum-value" id="sumCategory">Raw Materials</span>
+                  </div>
+                  <div class="pr-summary-cell">
+                    <span class="pr-sum-label">Subcategory:</span>
+                    <span class="pr-sum-value" id="sumSubcategory">-</span>
+                  </div>
+                  <div class="pr-summary-cell">
+                    <span class="pr-sum-label">Material / Grade:</span>
+                    <span class="pr-sum-value pr-bold" id="sumMaterial">-</span>
+                  </div>
+                  <div class="pr-summary-cell">
+                    <span class="pr-sum-label">Size / Dimensions:</span>
+                    <span class="pr-sum-value pr-mono" id="sumSize">-</span>
+                  </div>
+                  <div class="pr-summary-cell">
+                    <span class="pr-sum-label">Specification:</span>
+                    <span class="pr-sum-value" id="sumSpecification">-</span>
+                  </div>
+                  <div class="pr-summary-cell">
+                    <span class="pr-sum-label">Unit:</span>
+                    <span class="pr-sum-value" id="sumUnit">-</span>
+                  </div>
+                  <div class="pr-summary-cell">
+                    <span class="pr-sum-label">Quantity:</span>
+                    <span class="pr-sum-value pr-qty-highlight" id="sumQuantity">-</span>
+                  </div>
+                  <div class="pr-summary-cell">
+                    <span class="pr-sum-label">Weight:</span>
+                    <span class="pr-sum-value" id="sumWeight">-</span>
+                  </div>
+                  <div class="pr-summary-cell span-full">
+                    <span class="pr-sum-label">Brand:</span>
+                    <span class="pr-sum-value" id="sumBrand">-</span>
+                  </div>
+                  <div class="pr-summary-cell">
+                    <span class="pr-sum-label">Current Unit Price (IDR):</span>
+                    <span class="pr-sum-value" id="sumUnitPrice" style="font-weight:700;">Not Available</span>
+                  </div>
+                  <div class="pr-summary-cell">
+                    <span class="pr-sum-label">Est. Total Cost (IDR):</span>
+                    <span class="pr-sum-value pr-sum-highlight" id="sumTotalCost" style="color:#059669; font-weight:800;">-</span>
+                  </div>
+                  <div class="pr-summary-cell span-full">
+                    <span class="pr-sum-label">Material Format:</span>
+                    <span class="pr-sum-value" id="sumMaterialFormat">Standard Raw Material</span>
+                  </div>
+                  <div class="pr-summary-cell span-full" style="flex-direction:column; align-items:flex-start; gap:4px; margin-top:6px;">
+                    <span class="pr-sum-label">Item Description:</span>
+                    <div class="pr-sum-text-val" id="sumItemDescription" style="width:100%; min-height:60px; white-space:pre-wrap; font-family:var(--font-sans); line-height:1.5;">-</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 3. REASON / REQUIREMENT -->
+              <div class="pr-summary-block">
+                <div class="pr-summary-block-heading">REASON / REQUIREMENT</div>
+                <div class="pr-summary-text-block">
+                  <div class="pr-summary-text-item">
+                    <div class="pr-sum-label">Reason for Purchase:</div>
+                    <div class="pr-sum-text-val" id="sumReason">-</div>
+                  </div>
+                  <div class="pr-summary-text-item">
+                    <div class="pr-sum-label">Remarks:</div>
+                    <div class="pr-sum-text-val" id="sumRemarks">-</div>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+        </div>
+
+        <!-- PR Document Footer Actions -->
+        <div class="pr-doc-footer">
+          <button type="button" class="pr-doc-btn pr-btn-secondary" data-modal-close>
+            <span>Back / Edit</span>
+          </button>
+          <button type="submit" class="pr-doc-btn pr-btn-primary" id="btnSubmitPr">
+            <span>Submit Purchase Request</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       MODAL 3: VIEW ENGINEERING SPECS
+       ========================================================================= -->
+  <div class="modal-backdrop" id="modalSpecsView">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <div class="modal-icon" style="background: rgba(14, 165, 233, 0.15); color: var(--primary-400);">📐</div>
+          <div>
+            <h3>Technical Specification Details</h3>
+            <div class="modal-subtitle">Full Engineering &amp; Manufacturer Mill Parameters</div>
+          </div>
+        </div>
+        <button class="modal-close-btn" data-modal-close>&times;</button>
+      </div>
+      <div class="modal-body" id="specsViewBody">
+        <!-- Rendered by JavaScript -->
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-modal-close>Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       MODAL 4: FORMAL PR PRINTABLE REQUISITION VOUCHER (WHITE DOCUMENT)
+       ========================================================================= -->
+  <div class="modal-backdrop" id="modalPrVoucher">
+    <div class="modal-box pr-white-document-modal" style="max-width: 920px;">
+      
+      <!-- PR Voucher Header -->
+      <div class="pr-doc-header">
+        <div class="pr-doc-header-grid">
+          <div class="pr-doc-header-left">
+            <div class="flow-force-logo-placeholder">[ FLOW FORCE LOGO ]</div>
+          </div>
+          
+          <div class="pr-doc-header-center">
+            <h2 class="pr-doc-main-title">PURCHASE REQUEST</h2>
+          </div>
+
+          <div class="pr-doc-header-right">
+            <div class="pr-header-meta-box">
+              <div class="pr-header-meta-line">
+                <span class="meta-label">PR No:</span>
+                <span class="meta-val pr-code" id="prVoucherDisplayNumber">PR-2026-XXXX</span>
+              </div>
+              <div class="pr-header-meta-line">
+                <span class="meta-label">Date:</span>
+                <span class="meta-val" id="prVoucherDisplayDate">DD/MM/YYYY</span>
+              </div>
+            </div>
+            <button type="button" class="pr-doc-close-btn" data-modal-close title="Close">&times;</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="pr-doc-body" id="prVoucherContainer">
+        <!-- Rendered by JavaScript: Clean White Document -->
+      </div>
+
+      <div class="pr-doc-footer">
+        <button type="button" class="pr-doc-btn pr-btn-secondary" data-modal-close>Close</button>
+        <button type="button" class="pr-doc-btn pr-btn-primary" id="btnPrintVoucher">
+          <span>🖨️ Print Purchase Request</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       MODAL 5: FIRST-TIME LOGIN PASSWORD CHANGE
+       ========================================================================= -->
+  <div class="modal-backdrop" id="modalChangePassword" style="z-index: 1050;">
+    <div class="modal-box" style="max-width: 500px;">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <div class="modal-icon" style="background: rgba(2, 132, 199, 0.15); color: var(--primary-500);">🔑</div>
+          <div>
+            <h3>Set Your Personal Password</h3>
+            <div class="modal-subtitle">First-Time Login Security Requirement</div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-body" style="padding: 1.5rem 1.75rem;">
+        <p style="font-size: 0.88rem; color: var(--text-muted); margin-bottom: 1.25rem;">
+          Welcome to Flow Force! As part of our account security policy, you must set a private, personal password before proceeding to use the system.
+        </p>
+
+        <div class="login-error-alert" id="changePasswordErrorAlert" style="display: none; margin-bottom: 1rem;">
+          <span class="error-icon">⚠️</span>
+          <span class="error-text" id="changePasswordErrorMsg"></span>
+        </div>
+
+        <form id="formChangePassword">
+          <div class="form-group" style="margin-bottom: 1rem;">
+            <label class="form-label" for="cpAccountDisplay">Account</label>
+            <input type="text" id="cpAccountDisplay" class="form-input" readonly disabled style="background: var(--bg-card-hover); color: var(--text-muted);">
+          </div>
+
+          <div class="form-group" style="margin-bottom: 1rem;">
+            <label class="form-label" for="cpNewPassword">New Password <span class="req">*</span></label>
+            <input type="password" id="cpNewPassword" class="form-input" placeholder="Enter new password (min. 4 characters)" required minlength="4">
+          </div>
+
+          <div class="form-group" style="margin-bottom: 1.5rem;">
+            <label class="form-label" for="cpConfirmPassword">Confirm New Password <span class="req">*</span></label>
+            <input type="password" id="cpConfirmPassword" class="form-input" placeholder="Re-enter new password" required minlength="4">
+          </div>
+
+          <div style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+            <button type="submit" class="btn btn-primary" id="btnSubmitChangePassword">
+              <span>Save Password &amp; Continue</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       MODAL 6: ADD / EDIT USER (ADMIN ONLY)
+       ========================================================================= -->
+  <div class="modal-backdrop" id="modalUserForm">
+    <div class="modal-box" style="max-width: 550px;">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <div class="modal-icon" style="background: rgba(79, 70, 229, 0.15); color: var(--accent-indigo);">👤</div>
+          <div>
+            <h3 id="modalUserFormTitle">+ Add Employee</h3>
+            <div class="modal-subtitle" id="modalUserFormSubtitle">Configure account details for standard procurement employee</div>
+          </div>
+        </div>
+        <button class="modal-close-btn" data-modal-close>&times;</button>
+      </div>
+      <div class="modal-body" style="padding: 1.5rem 1.75rem;">
+        <div class="login-error-alert" id="userFormErrorAlert" style="display: none; margin-bottom: 1rem;">
+          <span class="error-icon">⚠️</span>
+          <span class="error-text" id="userFormErrorMsg"></span>
+        </div>
+
+        <form id="formUserManagement" autocomplete="off">
+          <input type="hidden" id="ufUserId" value="">
+
+          <div class="form-group" style="margin-bottom: 1rem;">
+            <label class="form-label" for="ufFullName">Full Name <span class="req">*</span></label>
+            <input type="text" id="ufFullName" class="form-input" placeholder="e.g. Employee" required>
+          </div>
+
+          <div class="form-group" style="margin-bottom: 1rem;">
+            <label class="form-label" for="ufUsername">Username <span class="req">*</span></label>
+            <input type="text" id="ufUsername" class="form-input" placeholder="e.g. employee" required autocomplete="off">
+          </div>
+
+          <div class="form-group" style="margin-bottom: 1rem;">
+            <label class="form-label" for="ufEmail">Corporate Email (Optional)</label>
+            <input type="email" id="ufEmail" class="form-input" placeholder="e.g. employee@flowforce.local">
+          </div>
+
+          <div class="form-group" style="margin-bottom: 1rem;">
+            <label class="form-label" for="ufRoleDisplay">Role</label>
+            <input type="text" id="ufRoleDisplay" class="form-input" value="EMPLOYEE" readonly style="background: #f1f5f9; cursor: not-allowed; font-weight: 600; color: var(--primary-600);">
+            <input type="hidden" id="ufRole" value="EMPLOYEE">
+            <span class="form-hint">Role is automatically set to EMPLOYEE (Administrative accounts cannot be created here)</span>
+          </div>
+
+          <div class="form-group" style="margin-bottom: 1rem;">
+            <label class="form-label" for="ufStatus">Status <span class="req">*</span></label>
+            <select id="ufStatus" class="form-select">
+              <option value="Active" selected>Active</option>
+              <option value="Disabled">Disabled</option>
+            </select>
+          </div>
+
+          <div class="form-group" id="ufPasswordGroup" style="margin-bottom: 1.25rem;">
+            <label class="form-label" for="ufInitialPassword">Password <span class="req">*</span></label>
+            <input type="password" id="ufInitialPassword" class="form-input" placeholder="Enter employee password" autocomplete="new-password">
+            <span class="form-hint">User will be required to change this password upon first login</span>
+          </div>
+
+          <div style="display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 1.5rem;">
+            <button type="button" class="btn btn-secondary" data-modal-close>Cancel</button>
+            <button type="submit" class="btn btn-primary" id="btnSaveUserSubmit">Save Employee</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       MODAL 7: RESET USER PASSWORD (ADMIN ONLY)
+       ========================================================================= -->
+  <div class="modal-backdrop" id="modalResetPassword">
+    <div class="modal-box" style="max-width: 480px;">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <div class="modal-icon" style="background: rgba(245, 158, 11, 0.15); color: var(--accent-amber);">🔐</div>
+          <div>
+            <h3>Reset User Password</h3>
+            <div class="modal-subtitle" id="resetPasswordSubtitle">Issue a temporary password</div>
+          </div>
+        </div>
+        <button class="modal-close-btn" data-modal-close>&times;</button>
+      </div>
+      <div class="modal-body" style="padding: 1.5rem 1.75rem;">
+        <input type="hidden" id="rpUserId" value="">
+        <p style="font-size: 0.88rem; color: var(--text-muted); margin-bottom: 1.25rem;">
+          Resetting the password will require the user to change their password when they next sign in.
+        </p>
+
+        <div class="form-group" style="margin-bottom: 1.5rem;">
+          <label class="form-label" for="rpNewTempPass">New Temporary Password</label>
+          <input type="text" id="rpNewTempPass" class="form-input" value="FlowForce2026!" required>
+          <span class="form-hint">User must change this temporary password upon next sign-in</span>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+          <button type="button" class="btn btn-secondary" data-modal-close>Cancel</button>
+          <button type="button" class="btn btn-primary" id="btnConfirmResetPassword">Apply Reset</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       MODAL 8: ACCESS DENIED DIALOG
+       ========================================================================= -->
+  <div class="modal-backdrop" id="modalAccessDenied" style="z-index: 1100;">
+    <div class="modal-box" style="max-width: 460px; text-align: center;">
+      <div style="padding: 2.25rem 1.5rem 1.75rem;">
+        <div style="font-size: 3rem; margin-bottom: 0.75rem;">🚫</div>
+        <h3 style="color: var(--accent-rose); font-size: 1.3rem; margin-bottom: 0.5rem;">Access Denied</h3>
+        <p id="accessDeniedMessageText" style="font-size: 0.95rem; color: var(--text-main); font-weight: 500; margin-bottom: 1.5rem;">
+          Access Denied — Administrator permission required.
+        </p>
+        <button type="button" class="btn btn-primary" data-modal-close style="min-width: 130px;">
+          <span>Understood</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       MODAL 9: PR CART (MULTI-MATERIAL REQUISITION WORKFLOW)
+       ========================================================================= -->
+  <div class="modal-backdrop" id="modalPrCart" style="z-index: 1060;">
+    <div class="modal-box pr-cart-modal-box" style="max-width: 980px;">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <div class="modal-icon" style="background: rgba(2, 132, 199, 0.15); color: var(--primary-500);">🛒</div>
+          <div>
+            <h3>Purchase Request Cart</h3>
+            <div class="modal-subtitle" id="cartSubtitle">Review selected materials, specify quantities, and select project</div>
+          </div>
+        </div>
+        <button class="modal-close-btn" data-modal-close>&times;</button>
+      </div>
+
+      <div class="modal-body" style="padding: 1.25rem 1.5rem;">
+        
+        <!-- Cart Empty State -->
+        <div id="cartEmptyState" style="text-align: center; padding: 3rem 1rem; display: none;">
+          <div style="font-size: 3rem; margin-bottom: 0.75rem;">🛒</div>
+          <h4 style="color: var(--text-main); margin-bottom: 0.5rem; font-size: 1.1rem;">Your PR Cart is Empty</h4>
+          <p style="font-size: 0.88rem; color: var(--text-muted); margin-bottom: 1.5rem;">
+            Browse the Raw Materials Master Catalog and add materials to compile a Purchase Request.
+          </p>
+          <button type="button" class="btn btn-primary" onclick="UI.switchView('catalog'); UI.closeModal('modalPrCart');">
+            <span>Browse Raw Materials</span>
+          </button>
+        </div>
+
+        <!-- Cart Active Content -->
+        <div id="cartActiveContent">
+          
+          <!-- Materials in Cart Table -->
+          <div class="cart-items-section">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+              <h4 style="font-size: 0.95rem; font-weight: 700; color: var(--text-main);">Selected Materials (<span id="cartItemCountDisplay">0</span>)</h4>
+              <button type="button" class="btn btn-secondary btn-sm" id="btnClearCart" style="color: var(--accent-rose);">
+                <span>🗑️ Clear Cart</span>
+              </button>
+            </div>
+
+            <div class="table-responsive" style="max-height: 280px; overflow-y: auto; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); margin-bottom: 1.25rem;">
+              <table class="data-table cart-table" style="font-size: 0.82rem;">
+                <thead>
+                  <tr>
+                    <th style="width: 40px;">#</th>
+                    <th style="width: 100px;">SKU</th>
+                    <th>Product Name &amp; Description</th>
+                    <th>Material / Grade</th>
+                    <th>Dimensions</th>
+                    <th>Unit</th>
+                    <th style="width: 120px;">Unit Price (IDR)</th>
+                    <th style="width: 130px; text-align: center;">Quantity</th>
+                    <th style="width: 140px; text-align: right;">Estimated Total</th>
+                    <th style="width: 50px; text-align: center;">Action</th>
+                  </tr>
+                </thead>
+                <tbody id="cartTableTbody">
+                  <!-- Populated dynamically by Cart Controller -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Purchase Requisition Details Form -->
+          <form id="formCheckoutPr" class="cart-checkout-form">
+            
+            <div class="cart-form-section-title">
+              <span>PROJECT / JOB LOCATION &amp; REQUISITION DETAILS</span>
+            </div>
+
+            <div class="form-grid" style="grid-template-columns: 1fr 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+              
+              <!-- Project Selection -->
+              <div class="form-group">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                  <label class="form-label" for="cartProjectSelect">Project / PID <span class="req">*</span></label>
+                  <button type="button" class="link-btn" id="btnCartAddNewProject" style="font-size: 0.74rem; color: var(--primary-600); background: none; border: none; cursor: pointer; text-decoration: underline;">+ New Project</button>
+                </div>
+                <select id="cartProjectSelect" class="form-select" required>
+                  <option value="">-- Select Project / PID --</option>
+                </select>
+                <span class="form-hint">Job Location acts as document library folder</span>
+              </div>
+
+              <!-- Project Name (Auto-populated from Project) -->
+              <div class="form-group">
+                <label class="form-label" for="cartProjectName">Project Name</label>
+                <input type="text" id="cartProjectName" class="form-input" placeholder="Auto-populated" readonly style="background: var(--bg-card-hover); color: var(--text-muted);">
+              </div>
+
+              <!-- Job Location (Auto-populated from Project) -->
+              <div class="form-group">
+                <label class="form-label" for="cartJobLocation">Job Location</label>
+                <input type="text" id="cartJobLocation" class="form-input" placeholder="Auto-populated" readonly style="background: var(--bg-card-hover); color: var(--text-muted);">
+              </div>
+
+              <!-- Department -->
+              <div class="form-group">
+                <label class="form-label" for="cartDepartment">Department <span class="req">*</span></label>
+                <select id="cartDepartment" class="form-select" required>
+                  <option value="Engineering &amp; Design" selected>Engineering &amp; Design</option>
+                  <option value="Warehouse &amp; Inventory">Warehouse &amp; Inventory</option>
+                  <option value="Fabrication &amp; Production">Fabrication &amp; Production</option>
+                  <option value="Maintenance &amp; QA">Maintenance &amp; QA</option>
+                </select>
+              </div>
+
+              <!-- Required Date -->
+              <div class="form-group">
+                <label class="form-label" for="cartRequiredDate">Required Date <span class="req">*</span></label>
+                <input type="date" id="cartRequiredDate" class="form-input" required>
+              </div>
+
+              <!-- Urgency -->
+              <div class="form-group">
+                <label class="form-label" for="cartUrgency">Urgency <span class="req">*</span></label>
+                <select id="cartUrgency" class="form-select" required>
+                  <option value="Standard (1-2 Weeks)" selected>Standard (1-2 Weeks)</option>
+                  <option value="Urgent (48-72h)">Urgent (48-72h)</option>
+                  <option value="Critical Breakdown">Emergency / Critical Breakdown</option>
+                </select>
+              </div>
+
+              <!-- Purchase Type (Standard vs Cut-Size) -->
+              <div class="form-group span-2">
+                <label class="form-label">Purchase Type</label>
+                <div style="display: flex; gap: 1.5rem; align-items: center; min-height: 38px;">
+                  <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 0.85rem;">
+                    <input type="radio" name="cartPurchaseType" id="cartTypeStandard" value="STANDARD STOCK ITEM" checked>
+                    <span>STANDARD STOCK ITEM</span>
+                  </label>
+                  <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 0.85rem;">
+                    <input type="radio" name="cartPurchaseType" id="cartTypeCutSize" value="PROJECT-SPECIFIC CUT SIZE">
+                    <span>PROJECT-SPECIFIC CUT SIZE</span>
+                  </label>
+                </div>
+              </div>
+
+              <!-- Required Cut Size (Visible when Cut Size is selected) -->
+              <div class="form-group" id="cartCutSizeGroup" style="display: none;">
+                <label class="form-label" for="cartRequiredCutSize">Required Cut Size <span class="req">*</span></label>
+                <input type="text" id="cartRequiredCutSize" class="form-input" placeholder="e.g. 1200 mm x 2500 mm">
+                <span class="form-hint">Belongs to this PR only (no new Master SKU created)</span>
+              </div>
+
+              <!-- Reason for Purchase -->
+              <div class="form-group span-3">
+                <label class="form-label" for="cartReason">Reason for Purchase <span class="req">*</span></label>
+                <textarea id="cartReason" class="form-textarea" rows="2" placeholder="State reason for purchase or fabrication requirement..." required></textarea>
+              </div>
+
+              <!-- Remarks -->
+              <div class="form-group span-3">
+                <label class="form-label" for="cartRemarks">Remarks</label>
+                <textarea id="cartRemarks" class="form-textarea" rows="2" placeholder="Delivery destination, test certificates, special handling notes..."></textarea>
+              </div>
+
+            </div>
+
+            <!-- Cart Summary & Actions Bar -->
+            <div class="cart-summary-bar">
+              <div class="cart-summary-details">
+                <div class="cart-summary-stat">
+                  <span class="stat-lbl">Total Items:</span>
+                  <span class="stat-val" id="cartTotalItemsCount">0</span>
+                </div>
+                <div class="cart-summary-stat">
+                  <span class="stat-lbl">Estimated Grand Total:</span>
+                  <span class="stat-val pr-grand-cost" id="cartGrandTotalCost">IDR 0</span>
+                </div>
+              </div>
+
+              <div class="cart-summary-btns">
+                <button type="button" class="btn btn-secondary" data-modal-close>
+                  <span>Continue Shopping</span>
+                </button>
+                <button type="submit" class="btn btn-primary" id="btnSubmitCartPr">
+                  <span>Create Purchase Request →</span>
+                </button>
+              </div>
+            </div>
+
+          </form>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       MODAL 10: NEW PROJECT / PID CREATION
+       ========================================================================= -->
+  <div class="modal-backdrop" id="modalNewProject" style="z-index: 1070;">
+    <div class="modal-box" style="max-width: 520px;">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <div class="modal-icon" style="background: rgba(14, 165, 233, 0.15); color: var(--primary-500);">📁</div>
+          <div>
+            <h3>+ New Project / PID</h3>
+            <div class="modal-subtitle">Define project code and job location document repository</div>
+          </div>
+        </div>
+        <button class="modal-close-btn" data-modal-close>&times;</button>
+      </div>
+
+      <div class="modal-body" style="padding: 1.5rem 1.75rem;">
+        <div class="login-error-alert" id="newProjectErrorAlert" style="display: none; margin-bottom: 1rem;">
+          <span class="error-icon">⚠️</span>
+          <span class="error-text" id="newProjectErrorMsg"></span>
+        </div>
+
+        <form id="formNewProject" autocomplete="off">
+          <div class="form-group" style="margin-bottom: 1rem;">
+            <label class="form-label" for="npProjectCode">Project / PID Code <span class="req">*</span></label>
+            <input type="text" id="npProjectCode" class="form-input" placeholder="e.g. PID-1892" required>
+            <span class="form-hint">Unique Project Identifier (e.g., PID-1892)</span>
+          </div>
+
+          <div class="form-group" style="margin-bottom: 1rem;">
+            <label class="form-label" for="npProjectName">Project Name <span class="req">*</span></label>
+            <input type="text" id="npProjectName" class="form-input" placeholder="e.g. FPSO Refit Phase 2" required>
+          </div>
+
+          <div class="form-group" style="margin-bottom: 1rem;">
+            <label class="form-label" for="npJobLocation">Job Location <span class="req">*</span></label>
+            <input type="text" id="npJobLocation" class="form-input" placeholder="e.g. Jakarta" required>
+            <span class="form-hint">Acts as the document library folder for Purchase Requests</span>
+          </div>
+
+          <div class="form-group" style="margin-bottom: 1.5rem;">
+            <label class="form-label" for="npDescription">Description (Optional)</label>
+            <textarea id="npDescription" class="form-textarea" rows="2" placeholder="Brief project scope or client information..."></textarea>
+          </div>
+
+          <div style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+            <button type="button" class="btn btn-secondary" data-modal-close>Cancel</button>
+            <button type="submit" class="btn btn-primary" id="btnSaveNewProject">Save Project</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       MODAL 11: ADMIN REJECTION REASON DIALOG
+       ========================================================================= -->
+  <div class="modal-backdrop" id="modalPrRejectReason" style="z-index: 1080;">
+    <div class="modal-box" style="max-width: 520px;">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <div class="modal-icon" style="background: rgba(244, 63, 94, 0.15); color: var(--accent-rose);">✗</div>
+          <div>
+            <h3>Reject Purchase Request</h3>
+            <div class="modal-subtitle" id="rejectModalSubtitle">PR-2026-XXXX</div>
+          </div>
+        </div>
+        <button class="modal-close-btn" data-modal-close>&times;</button>
+      </div>
+
+      <div class="modal-body" style="padding: 1.5rem 1.75rem;">
+        <input type="hidden" id="rejectTargetPrId" value="">
+
+        <div class="login-error-alert" id="rejectErrorAlert" style="display: none; margin-bottom: 1rem;">
+          <span class="error-icon">⚠️</span>
+          <span class="error-text" id="rejectErrorMsg"></span>
+        </div>
+
+        <form id="formRejectPr">
+          <div class="form-group" style="margin-bottom: 1.25rem;">
+            <label class="form-label" for="rejectReasonText">Rejection Reason <span class="req">*</span></label>
+            <textarea id="rejectReasonText" class="form-textarea" rows="4" placeholder="State specific reason for requisition rejection (required)..." required></textarea>
+            <span class="form-hint">Reason will be permanently recorded in the approval history and visible to the requester.</span>
+          </div>
+
+          <div style="display: flex; justify-content: flex-end; gap: 0.75rem;">
+            <button type="button" class="btn btn-secondary" data-modal-close>Cancel</button>
+            <button type="submit" class="btn btn-danger" id="btnConfirmReject">Confirm Rejection</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       MODAL 12: VIEW PURCHASE REQUEST DETAILS (WHITE ENTERPRISE DOCUMENT)
+       ========================================================================= -->
+  <div class="modal-backdrop" id="modalViewPrDetails" style="z-index: 1055;">
+    <div class="modal-box pr-white-document-modal" style="max-width: 980px;">
+      
+      <!-- PR Document Header -->
+      <div class="pr-doc-header">
+        <div class="pr-doc-header-grid">
+          <div class="pr-doc-header-left">
+            <div class="flow-force-logo-placeholder">[ FLOW FORCE LOGO ]</div>
+          </div>
+          
+          <div class="pr-doc-header-center">
+            <h2 class="pr-doc-main-title">PURCHASE REQUEST</h2>
+          </div>
+
+          <div class="pr-doc-header-right">
+            <div class="pr-header-meta-box">
+              <div class="pr-header-meta-line">
+                <span class="meta-label">PR No:</span>
+                <span class="meta-val pr-code" id="viewPrNumber">PR-2026-XXXX</span>
+              </div>
+              <div class="pr-header-meta-line">
+                <span class="meta-label">Status:</span>
+                <span class="meta-val" id="viewPrStatusBadge">PENDING APPROVAL</span>
+              </div>
+            </div>
+            <button type="button" class="pr-doc-close-btn" data-modal-close title="Close">&times;</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="pr-doc-body" id="viewPrBodyContent">
+        <!-- Rendered dynamically by JavaScript: Project info, Items Table, Approval & History -->
+      </div>
+
+      <div class="pr-doc-footer" id="viewPrFooterActions" style="display: flex; justify-content: space-between; align-items: center; padding: 1rem 1.5rem; background: #f8fafc; border-top: 1px solid #cbd5e1;">
+        <!-- Rendered dynamically: Download Excel, Download PDF, Admin Approve / Reject -->
+      </div>
+
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       MODAL 13: EXCEL IMPORT MODULE FOR MASTER ITEMS / NEW SKUS
+       ========================================================================= -->
+  <div class="modal-backdrop" id="modalExcelImport" style="z-index: 1060;">
+    <div class="modal-box" style="max-width: 1020px; width: 96%;">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <div class="modal-icon" style="background: rgba(16, 185, 129, 0.15); color: #10b981;">📁</div>
+          <div>
+            <h3>Import Master Items (Excel)</h3>
+            <div class="modal-subtitle" id="importStepSubtitle">Step 1 of 3 — Select Excel</div>
+          </div>
+        </div>
+        <button class="modal-close-btn" data-modal-close>&times;</button>
+      </div>
+
+      <div class="modal-body" style="padding: 1.25rem 1.75rem;">
+
+        <!-- Wizard Progress Bar (3 Steps) -->
+        <div class="import-progress-bar">
+          <div class="import-step-node active" id="nodeImportStep1">
+            <span class="step-num">1</span>
+            <span class="step-text">Select Excel</span>
+          </div>
+          <div class="import-step-line" id="lineImportStep1"></div>
+          <div class="import-step-node" id="nodeImportStep2">
+            <span class="step-num">2</span>
+            <span class="step-text">Preview Records</span>
+          </div>
+          <div class="import-step-line" id="lineImportStep2"></div>
+          <div class="import-step-node" id="nodeImportStep3">
+            <span class="step-num">3</span>
+            <span class="step-text">Confirm Import</span>
+          </div>
+        </div>
+
+        <!-- ================= STEP 1: SELECT EXCEL ================= -->
+        <div class="import-step-content" id="importViewStep1">
+          <div class="import-dropzone" id="importDropzone">
+            <div class="import-drop-icon">📊</div>
+            <div class="import-drop-title">Drag &amp; Drop Excel Workbook Here</div>
+            <div class="import-drop-subtitle">or <span class="import-browse-link" id="importBrowseLink">Browse Files</span> from your computer</div>
+            <div class="import-drop-hint">Supported formats: .xlsx, .xls • Flow Force SKU &amp; Fasteners/Piping Templates</div>
+            <input type="file" id="importFileInput" accept=".xlsx,.xls" hidden>
+          </div>
+
+          <div class="import-file-card" id="importFileInfoCard" style="display:none;">
+            <div class="import-file-meta">
+              <span class="file-icon">📑</span>
+              <div>
+                <div class="file-name" id="importFileNameText">filename.xlsx</div>
+                <div class="file-details" id="importFileMetaText">0 KB • 0 sheets detected</div>
+              </div>
+            </div>
+            <button type="button" class="btn btn-secondary btn-sm" id="btnImportChangeFile">Change File</button>
+          </div>
+
+          <div id="importSheetSelectSection" style="display:none; margin-top: 1.25rem;">
+            <h4 style="margin: 0 0 0.35rem; font-size: 0.95rem; color: var(--text-main);">Worksheet to Import</h4>
+            <p style="margin: 0 0 0.75rem; font-size: 0.8rem; color: var(--text-muted);">
+              Select the worksheet containing records to import <em>("Instructions" sheets are automatically ignored)</em>:
+            </p>
+            <div class="import-sheets-grid" id="importSheetsGrid">
+              <!-- Rendered dynamically -->
+            </div>
+          </div>
+
+          <div style="margin-top: 1.5rem; display: flex; justify-content: flex-end; gap: 0.75rem;">
+            <button type="button" class="btn btn-secondary" data-modal-close>Cancel</button>
+            <button type="button" class="btn btn-primary" id="btnImportGoStep2" disabled>
+              <span>Next: Preview Records →</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- ================= STEP 2: PREVIEW RECORDS ================= -->
+        <div class="import-step-content" id="importViewStep2" style="display:none;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; padding: 0.75rem 1rem; background: var(--bg-surface-secondary); border-radius: var(--radius-sm); border: 1px solid var(--border-color); flex-wrap: wrap; gap: 0.5rem;">
+            <div style="font-size: 0.92rem; color: var(--text-main); font-weight: 600;" id="previewHeaderSummary">
+              Found <strong id="previewRowCountDisplay" style="color: var(--primary-500);">0</strong> records
+            </div>
+            <div id="previewSheetBreakdownDisplay" style="display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center;">
+              <!-- Sheet breakdown badges rendered dynamically -->
+            </div>
+          </div>
+
+          <!-- Simple Preview Table -->
+          <div class="import-table-container">
+            <table class="import-table">
+              <thead>
+                <tr>
+                  <th style="width: 45px;">#</th>
+                  <th style="width: 130px;">Source Sheet</th>
+                  <th style="width: 80px;">Excel Row</th>
+                  <th style="width: 140px;">Category</th>
+                  <th>Product Name</th>
+                  <th>Item Description</th>
+                  <th style="width: 80px;">Unit</th>
+                  <th style="width: 170px;">Current Unit Price</th>
+                </tr>
+              </thead>
+              <tbody id="importPreviewTbody">
+                <!-- Rendered dynamically -->
+              </tbody>
+            </table>
+          </div>
+
+          <div style="margin-top: 1.25rem; display: flex; justify-content: space-between; align-items: center;">
+            <button type="button" class="btn btn-secondary" id="btnImportBackToStep1">
+              <span>← Back</span>
+            </button>
+            <button type="button" class="btn btn-primary" id="btnImportGoStep3">
+              <span>Next: Confirm Import →</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- ================= STEP 3: CONFIRM IMPORT ================= -->
+        <div class="import-step-content" id="importViewStep3" style="display:none;">
+          <div class="import-confirm-card">
+            <div class="confirm-badge">Ready for Database Commit</div>
+            <h3 style="margin: 0.5rem 0; color: var(--text-main); font-size: 1.3rem;">
+              You are about to import <span id="confirmRowCount" style="color: var(--primary-500); font-weight: 800;">0</span> Master Items
+            </h3>
+            <p style="margin: 0 0 1.25rem; color: var(--text-muted); font-size: 0.88rem;">
+              The records will be transactionally written into the PostgreSQL <code style="color:var(--text-main); font-family:var(--font-mono);">master_items</code> database table.
+            </p>
+
+            <div class="confirm-grid">
+              <div class="confirm-item">
+                <span class="confirm-lbl">Source Workbook:</span>
+                <span class="confirm-val" id="confirmFileName">—</span>
+              </div>
+              <div class="confirm-item">
+                <span class="confirm-lbl">Worksheet:</span>
+                <span class="confirm-val" id="confirmSheetName">—</span>
+              </div>
+              <div class="confirm-item">
+                <span class="confirm-lbl">Allocated SKU Range:</span>
+                <span class="confirm-val sku-range-badge" id="confirmSkuRange">FF4236 – FF42XX</span>
+              </div>
+              <div class="confirm-item">
+                <span class="confirm-lbl">Imported By:</span>
+                <span class="confirm-val" id="confirmImportUser">—</span>
+              </div>
+              <div class="confirm-item">
+                <span class="confirm-lbl">Concurrency Lock:</span>
+                <span class="confirm-val" style="color:#10b981; font-weight:700;">PostgreSQL Advisory Lock (Active)</span>
+              </div>
+              <div class="confirm-item">
+                <span class="confirm-lbl">Integrity Rule:</span>
+                <span class="confirm-val">Atomic Batch — Full rollback on database error</span>
+              </div>
+            </div>
+          </div>
+
+          <div style="margin-top: 1.5rem; display: flex; justify-content: space-between; align-items: center;">
+            <button type="button" class="btn btn-secondary" id="btnImportBackToStep2">
+              <span>← Back to Preview</span>
+            </button>
+            <button type="button" class="btn btn-primary" id="btnImportConfirmSubmit" style="background: #10b981; border-color: #059669;">
+              <span>Confirm &amp; Import Into Database 🚀</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- ================= SUCCESS SCREEN ================= -->
+        <div class="import-step-content" id="importViewSuccess" style="display:none;">
+          <div class="import-success-card">
+            <div class="success-icon-big">🎉</div>
+            <h3 style="margin: 0.5rem 0; color: #10b981; font-size: 1.4rem;">IMPORT COMPLETE</h3>
+            <p style="margin: 0 0 1.25rem; color: var(--text-main); font-size: 1.05rem; font-weight: 600;">
+              <span id="successImportCount">0</span> materials imported successfully into Master Items.
+            </p>
+
+            <div class="success-sku-box">
+              <div style="font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em;">Generated SKU Sequence</div>
+              <div class="success-sku-text" id="successSkuRange">FF4236 – FF42XX</div>
+            </div>
+
+            <div class="success-meta-details" id="successMetaDetails">
+              <!-- Audit info -->
+            </div>
+
+            <div style="margin-top: 1.75rem; display: flex; justify-content: center; gap: 1rem;">
+              <button type="button" class="btn btn-secondary" data-modal-close>Close</button>
+              <button type="button" class="btn btn-primary" id="btnViewImportedCatalog">
+                <span>View In Master Catalog →</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- App Footer -->
+  <footer class="app-footer" id="mainAppFooter">
+    <div>Enterprise SKU &amp; Purchase Request Automation • Proof of Concept for Raw Materials • PT Persada Nusantara Steel Standard Specs</div>
+  </footer>
+
+  <!-- Client-side Document Extractors & OCR: SheetJS (Excel), PDF.js (PDFs), Tesseract.js (Images & Scanned Docs) -->
+  <script src="assets/libs/xlsx.full.min.js"></script>
+  <script src="assets/libs/pdf.min.js"></script>
+  <script src="assets/libs/tesseract.min.js"></script>
+  <!-- Authentication & Access Control Module -->
+  <script src="auth.js"></script>
+  <!-- Core Application Script with Cache Buster -->
+  <script src="app.js?v=20260911_v3"></script>
+</body>
+</html>

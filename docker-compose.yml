@@ -1,0 +1,68 @@
+services:
+  # =========================================================================
+  # Flow Force Web Application Service
+  # =========================================================================
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: flowforce_app
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=${NODE_ENV:-production}
+      - PORT=3000
+      - POSTGRES_DB=${POSTGRES_DB:-flow_force}
+      - POSTGRES_USER=${POSTGRES_USER:-flowforce_user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-flowforce_secure_password}
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-flowforce_user}:${POSTGRES_PASSWORD:-flowforce_secure_password}@postgres:5432/${POSTGRES_DB:-flow_force}
+      - JWT_SECRET=${JWT_SECRET:-flowforce_jwt_secret_change_in_production}
+      - STORAGE_DIR=${STORAGE_DIR:-./storage}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - app_storage:/app/storage
+    networks:
+      - flowforce_network
+
+  # =========================================================================
+  # PostgreSQL 18 Database Service (Isolated, Internal Access Only)
+  # =========================================================================
+  postgres:
+    image: postgres:18
+    container_name: flowforce_postgres
+    restart: unless-stopped
+    # PostgreSQL is NOT exposed to the host machine / publicly
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-flow_force}
+      POSTGRES_USER: ${POSTGRES_USER:-flowforce_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-flowforce_secure_password}
+    volumes:
+      # Named persistent volume guarantees data survives container recreation
+      - pg_data:/var/lib/postgresql
+      # Initial schema applied on first cluster init only (CREATE TABLE IF NOT EXISTS)
+      - ./server/db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-flowforce_user} -d ${POSTGRES_DB:-flow_force}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    networks:
+      - flowforce_network
+
+# =========================================================================
+# Named Persistent Volumes & Network
+# =========================================================================
+volumes:
+  pg_data:
+    name: flowforce_pg_data
+  app_storage:
+    name: flowforce_app_storage
+
+networks:
+  flowforce_network:
+    name: flowforce_network
+    driver: bridge
