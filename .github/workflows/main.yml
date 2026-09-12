@@ -1,55 +1,106 @@
-name: SKU Automation CI
+name: Deploy SKU Automation
 
 on:
   push:
     branches:
       - main
 
-  pull_request:
-    branches:
-      - main
+  workflow_dispatch:
+
+concurrency:
+  group: production-deployment
+  cancel-in-progress: false
 
 jobs:
-  test:
+  deploy:
+    name: Deploy to Production
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - name: Deploy to VPS
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-
-      - name: Install dependencies
         run: |
-          if [ -f package-lock.json ]; then
-            npm ci
-          elif [ -f server/package-lock.json ]; then
-            npm ci --prefix server
-          else
-            echo "No package-lock.json found"
-            exit 1
-          fi
+          set -e
 
-      - name: Run tests
-        run: |
-          if [ -f package.json ]; then
-            npm test --if-present
-          fi
+          echo "========================================"
+          echo "Starting Flow Force deployment"
+          echo "========================================"
 
-          if [ -f server/package.json ]; then
-            npm test --prefix server --if-present
-          fi
+          # Prepare SSH
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
 
-      - name: Check application
-        run: |
-          if [ -f package.json ]; then
-            npm run build --if-present
-          fi
+          printf '%s\n' "$SERVER_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
 
-          if [ -f server/package.json ]; then
-            npm run build --prefix server --if-present
-          fi
+          # Add VPS host key
+          ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts
+
+          echo "Connecting to VPS..."
+
+          ssh -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=yes \
+            "$SERVER_USER@$SERVER_HOST" << 'EOF'
+
+            set -e
+
+            echo "========================================"
+            echo "Connected to VPS"
+            echo "========================================"
+
+            cd /opt/skuautomation
+
+            echo "Current directory:"
+            pwd
+
+            echo "========================================"
+            echo "Updating application code"
+            echo "========================================"
+
+            git fetch origin main
+            git checkout main
+            git pull --ff-only origin main
+
+            echo "========================================"
+            echo "Building Docker containers"
+            echo "========================================"
+
+            docker compose up -d --build
+
+            echo "========================================"
+            echo "Checking Docker containers"
+            echo "========================================"
+
+            docker compose ps
+
+            echo "========================================"
+            echo "Waiting for application startup"
+            echo "========================================"
+
+            sleep 5
+
+            echo "========================================"
+            echo "Checking application health"
+            echo "========================================"
+
+            curl --fail --silent --show-error \
+              http://localhost:3000/health
+
+            echo ""
+            echo "========================================"
+            echo "Deployment successful!"
+            echo "========================================"
+
+          EOF
+
+          echo "Cleaning SSH key..."
+
+          rm -f ~/.ssh/deploy_key
+
+          echo "========================================"
+          echo "Flow Force deployment completed"
+          echo "========================================"
