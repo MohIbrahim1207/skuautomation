@@ -1,0 +1,106 @@
+name: Deploy SKU Automation
+
+on:
+  push:
+    branches:
+      - main
+
+  workflow_dispatch:
+
+concurrency:
+  group: production-deployment
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to server
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+
+        run: |
+          set -e
+
+          echo "========================================"
+          echo "Starting Flow Force deployment"
+          echo "========================================"
+
+          echo "Preparing SSH..."
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+
+          printf '%s\n' "$SERVER_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+
+          echo "Adding server to known_hosts..."
+          ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts
+
+          echo "Connecting to production server..."
+
+          ssh -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=yes \
+            "$SERVER_USER@$SERVER_HOST" << 'EOF'
+
+            set -e
+
+            echo "========================================"
+            echo "Connected to production server"
+            echo "========================================"
+
+            cd /opt/skuautomation
+
+            echo "Current directory:"
+            pwd
+
+            echo "========================================"
+            echo "Pulling latest code from GitHub"
+            echo "========================================"
+
+            git fetch origin main
+            git checkout main
+            git pull --ff-only origin main
+
+            echo "========================================"
+            echo "Rebuilding Flow Force Docker containers"
+            echo "========================================"
+
+            docker compose up -d --build
+
+            echo "========================================"
+            echo "Checking Docker containers"
+            echo "========================================"
+
+            docker compose ps
+
+            echo "========================================"
+            echo "Waiting for application"
+            echo "========================================"
+
+            sleep 5
+
+            echo "========================================"
+            echo "Checking application health"
+            echo "========================================"
+
+            curl --fail --silent --show-error \
+              http://localhost:3000/health
+
+            echo ""
+            echo "========================================"
+            echo "Deployment successful!"
+            echo "========================================"
+
+          EOF
+
+          echo "Cleaning SSH key..."
+
+          rm -f ~/.ssh/deploy_key
+
+          echo "========================================"
+          echo "Flow Force deployment completed"
+          echo "========================================"
