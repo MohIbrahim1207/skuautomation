@@ -413,6 +413,9 @@
                 <th>Size / Dimensions</th>
                 <th>Unit</th>
                 <th>Weight</th>
+                <th style="width: 135px; min-width: 120px;">Status</th>
+                <th style="width: 135px; min-width: 120px;">Supply Type</th>
+                <th style="min-width: 175px;">Remarks</th>
                 <th style="width: 175px; min-width: 155px;">CURRENT UNIT PRICE (IDR)</th>
                 <th style="width: 170px;">Actions</th>
               </tr>
@@ -931,20 +934,28 @@
                 <span class="sku-hint">Optional base procurement price in IDR (Rp)</span>
               </div>
               <div class="sku-field">
-                <label class="sku-label">Material Format</label>
-                <div style="display: flex; align-items: center; min-height: 42px;">
-                  <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 0.85rem; font-weight: 600; color: var(--text-main);">
-                    <input type="checkbox" id="newSkuIsCutSize" style="accent-color: var(--primary-500); width: 18px; height: 18px; cursor: pointer;">
-                    <span>Project-Specific Cut Size</span>
-                  </label>
-                </div>
-                <span class="sku-hint">Check if vendor cut-size for specific project requirement</span>
+                <label class="sku-label">Supply Type</label>
+                <select id="newSkuSupplyType" class="sku-input">
+                  <option value="Full Size" selected>Full Size</option>
+                  <option value="Cut Size">Cut Size</option>
+                </select>
+                <span class="sku-hint">How Procurement should supply this material</span>
               </div>
             </div>
 
-            <div class="sku-field">
-              <label class="sku-label">Remarks</label>
-              <input type="text" id="newSkuRemarks" class="sku-input" placeholder="Optional engineering notes">
+            <div class="sku-field-row">
+              <div class="sku-field">
+                <label class="sku-label">Status</label>
+                <select id="newSkuStatus" class="sku-input">
+                  <option value="Available" selected>Available</option>
+                  <option value="Out of Stock">Out of Stock</option>
+                </select>
+                <span class="sku-hint">Inventory / procurement availability</span>
+              </div>
+              <div class="sku-field">
+                <label class="sku-label">Remarks</label>
+                <input type="text" id="newSkuRemarks" class="sku-input" placeholder="Optional engineering notes">
+              </div>
             </div>
           </div>
 
@@ -1608,16 +1619,18 @@
               <table class="data-table cart-table" style="font-size: 0.82rem;">
                 <thead>
                   <tr>
-                    <th style="width: 40px;">#</th>
-                    <th style="width: 100px;">SKU</th>
+                    <th style="width: 35px;">#</th>
+                    <th style="width: 90px;">SKU</th>
                     <th>Product Name &amp; Description</th>
                     <th>Material / Grade</th>
-                    <th>Dimensions</th>
+                    <th>Original Dimensions</th>
                     <th>Unit</th>
+                    <th style="width: 95px; text-align: center;">Status</th>
+                    <th style="min-width: 220px;">Supply Type</th>
                     <th style="width: 120px;">Unit Price (IDR)</th>
-                    <th style="width: 130px; text-align: center;">Quantity</th>
-                    <th style="width: 140px; text-align: right;">Estimated Total</th>
-                    <th style="width: 50px; text-align: center;">Action</th>
+                    <th style="width: 120px; text-align: center;">Quantity</th>
+                    <th style="width: 135px; text-align: right;">Estimated Total</th>
+                    <th style="width: 45px; text-align: center;">Action</th>
                   </tr>
                 </thead>
                 <tbody id="cartTableTbody">
@@ -1685,28 +1698,6 @@
                   <option value="Urgent (48-72h)">Urgent (48-72h)</option>
                   <option value="Critical Breakdown">Emergency / Critical Breakdown</option>
                 </select>
-              </div>
-
-              <!-- Purchase Type (Standard vs Cut-Size) -->
-              <div class="form-group span-2">
-                <label class="form-label">Purchase Type</label>
-                <div style="display: flex; gap: 1.5rem; align-items: center; min-height: 38px;">
-                  <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 0.85rem;">
-                    <input type="radio" name="cartPurchaseType" id="cartTypeStandard" value="STANDARD STOCK ITEM" checked>
-                    <span>STANDARD STOCK ITEM</span>
-                  </label>
-                  <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 0.85rem;">
-                    <input type="radio" name="cartPurchaseType" id="cartTypeCutSize" value="PROJECT-SPECIFIC CUT SIZE">
-                    <span>PROJECT-SPECIFIC CUT SIZE</span>
-                  </label>
-                </div>
-              </div>
-
-              <!-- Required Cut Size (Visible when Cut Size is selected) -->
-              <div class="form-group" id="cartCutSizeGroup" style="display: none;">
-                <label class="form-label" for="cartRequiredCutSize">Required Cut Size <span class="req">*</span></label>
-                <input type="text" id="cartRequiredCutSize" class="form-input" placeholder="e.g. 1200 mm x 2500 mm">
-                <span class="form-hint">Belongs to this PR only (no new Master SKU created)</span>
               </div>
 
               <!-- Reason for Purchase -->

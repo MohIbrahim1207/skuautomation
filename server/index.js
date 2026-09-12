@@ -72,13 +72,39 @@ app.get('*', (req, res, next) => {
   res.sendFile(path.join(__dirname, '../index.html'));
 });
 
+// Auto-run idempotent migrations on startup to guarantee all columns exist
+const runStartupMigrations = async () => {
+  try {
+    await query(`
+      ALTER TABLE master_items ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'Available';
+      ALTER TABLE master_items ADD COLUMN IF NOT EXISTS supply_type VARCHAR(50) DEFAULT 'Full Size';
+      ALTER TABLE master_items ADD COLUMN IF NOT EXISTS remarks TEXT DEFAULT '';
+      UPDATE master_items SET status = 'Available' WHERE status IS NULL OR status NOT IN ('Available', 'Out of Stock');
+      UPDATE master_items SET supply_type = 'Full Size' WHERE supply_type IS NULL OR supply_type NOT IN ('Full Size', 'Cut Size');
+      UPDATE master_items SET remarks = '' WHERE remarks IS NULL;
+
+      ALTER TABLE pr_items ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'Available';
+      ALTER TABLE pr_items ADD COLUMN IF NOT EXISTS supply_type VARCHAR(50) DEFAULT 'Full Size';
+      ALTER TABLE pr_items ADD COLUMN IF NOT EXISTS cut_length VARCHAR(100) DEFAULT '';
+      ALTER TABLE pr_items ADD COLUMN IF NOT EXISTS cut_width VARCHAR(100) DEFAULT '';
+      UPDATE pr_items SET status = 'Available' WHERE status IS NULL OR status NOT IN ('Available', 'Out of Stock');
+      UPDATE pr_items SET supply_type = 'Full Size' WHERE supply_type IS NULL OR supply_type NOT IN ('Full Size', 'Cut Size');
+    `);
+    console.log('✅ [DB] Verified schema (Status: Available/Out of Stock, Supply Type: Full Size/Cut Size, Remarks)');
+  } catch (err) {
+    console.warn('[DB Migration Warning] Startup migration check:', err.message);
+  }
+};
+
 // Start Server
 if (require.main === module) {
-  app.listen(PORT, '0.0.0.0', () => {
+  app.listen(PORT, '0.0.0.0', async () => {
     console.log(`\n⚡ Flow Force Enterprise Server running on http://0.0.0.0:${PORT}`);
     console.log(`📁 File Storage directory: ${absStorageDir}`);
     console.log(`🛡️ Role-Based Access Control active: ADMIN & EMPLOYEE accounts.\n`);
+    await runStartupMigrations();
   });
 }
 
 module.exports = app;
+

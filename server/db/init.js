@@ -84,8 +84,8 @@ async function initDatabase() {
           await client.query(
             `INSERT INTO master_items (
               sku, product_name, item_description, category, sub_category, 
-              material, size, specification, unit, weight_kg, brand, unit_price, source_sheet
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+              material, size, specification, unit, weight_kg, status, supply_type, remarks, brand, unit_price, source_sheet
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
             [
               item.sku,
               item.productName,
@@ -97,6 +97,9 @@ async function initDatabase() {
               item.specification || null,
               item.unit || 'Sheet',
               item.weightKg || null,
+              (item.status === 'Out of Stock' ? 'Out of Stock' : 'Available'),
+              (item.supplyType === 'Cut Size' ? 'Cut Size' : 'Full Size'),
+              item.remarks || '',
               item.brand || 'PT Persada Nusantara Steel',
               item.unitPrice || null,
               item.sourceSheet || 'Catalog'

@@ -57,7 +57,12 @@
       try {
         const response = await fetch('raw_materials_master.json');
         if (response.ok) {
-          const items = await response.json();
+          const rawItems = await response.json();
+          const items = (rawItems || []).map(it => ({
+            ...it,
+            status: it.status || 'Available',
+            remarks: (it.remarks !== undefined && it.remarks !== null) ? it.remarks : ''
+          }));
           localStorage.setItem(STORAGE_KEYS.MASTER_ITEMS, JSON.stringify(items));
           localStorage.setItem(STORAGE_KEYS.INITIALIZED, 'true');
           return items;
@@ -126,7 +131,12 @@
         }
 
         const data = await resp.json();
-        const items = Array.isArray(data) ? data : (data.items || []);
+        const rawItems = Array.isArray(data) ? data : (data.items || []);
+        const items = rawItems.map(it => ({
+          ...it,
+          status: it.status || 'Available',
+          remarks: (it.remarks !== undefined && it.remarks !== null) ? it.remarks : ''
+        }));
         console.log('[10. Catalog UI DataService]', { totalFetched: items.length });
         localStorage.setItem(STORAGE_KEYS.MASTER_ITEMS, JSON.stringify(items));
         let maxSeq = 4235;
@@ -277,6 +287,143 @@
       return null;
     },
 
+    async updateMasterItemStatus(sku, status) {
+      if (!sku) return null;
+      if (window.PermissionService && !window.PermissionService.can('CAN_EDIT_ITEM_DESCRIPTION') && !window.PermissionService.can('CAN_EDIT_MASTER_ITEM')) {
+        window.PermissionService.notifyAccessDenied('Access Denied — Administrator permission required.');
+        throw new Error('Access Denied — Administrator permission required.');
+      }
+
+      const validStatuses = ['Available', 'Out of Stock'];
+      const cleanStatus = validStatuses.find(s => s.toLowerCase() === String(status).trim().toLowerCase()) || 'Available';
+
+      const token = window.AuthService ? window.AuthService.getToken() : '';
+      if (token) {
+        try {
+          const resp = await fetch(`/api/master-items/${encodeURIComponent(sku)}`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ status: cleanStatus })
+          });
+          if (resp.ok) {
+            const updated = await resp.json();
+            const items = await this.getMasterItems();
+            const found = items.find(i => i.sku.toUpperCase() === sku.toUpperCase());
+            if (found) {
+              found.status = cleanStatus;
+              localStorage.setItem(STORAGE_KEYS.MASTER_ITEMS, JSON.stringify(items));
+            }
+            return updated;
+          }
+        } catch (e) {
+          console.warn('[DataService] Backend update status failed:', e);
+        }
+      }
+
+      const items = await this.getMasterItems();
+      const item = items.find(i => i.sku.toUpperCase() === sku.toUpperCase());
+      if (item) {
+        item.status = cleanStatus;
+        localStorage.setItem(STORAGE_KEYS.MASTER_ITEMS, JSON.stringify(items));
+        return item;
+      }
+      return null;
+    },
+
+    async updateMasterItemSupplyType(sku, supplyType) {
+      if (!sku) return null;
+      if (window.PermissionService && !window.PermissionService.can('CAN_EDIT_ITEM_DESCRIPTION') && !window.PermissionService.can('CAN_EDIT_MASTER_ITEM')) {
+        window.PermissionService.notifyAccessDenied('Access Denied — Administrator permission required.');
+        throw new Error('Access Denied — Administrator permission required.');
+      }
+
+      const validSupplyTypes = ['Full Size', 'Cut Size'];
+      const cleanSupplyType = validSupplyTypes.find(s => s.toLowerCase() === String(supplyType).trim().toLowerCase()) || 'Full Size';
+
+      const token = window.AuthService ? window.AuthService.getToken() : '';
+      if (token) {
+        try {
+          const resp = await fetch(`/api/master-items/${encodeURIComponent(sku)}`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ supplyType: cleanSupplyType })
+          });
+          if (resp.ok) {
+            const updated = await resp.json();
+            const items = await this.getMasterItems();
+            const found = items.find(i => i.sku.toUpperCase() === sku.toUpperCase());
+            if (found) {
+              found.supplyType = cleanSupplyType;
+              localStorage.setItem(STORAGE_KEYS.MASTER_ITEMS, JSON.stringify(items));
+            }
+            return updated;
+          }
+        } catch (e) {
+          console.warn('[DataService] Backend update supply type failed:', e);
+        }
+      }
+
+      const items = await this.getMasterItems();
+      const item = items.find(i => i.sku.toUpperCase() === sku.toUpperCase());
+      if (item) {
+        item.supplyType = cleanSupplyType;
+        localStorage.setItem(STORAGE_KEYS.MASTER_ITEMS, JSON.stringify(items));
+        return item;
+      }
+      return null;
+    },
+
+    async updateMasterItemRemarks(sku, remarks) {
+      if (!sku) return null;
+      if (window.PermissionService && !window.PermissionService.can('CAN_EDIT_ITEM_DESCRIPTION') && !window.PermissionService.can('CAN_EDIT_MASTER_ITEM')) {
+        window.PermissionService.notifyAccessDenied('Access Denied — Administrator permission required.');
+        throw new Error('Access Denied — Administrator permission required.');
+      }
+
+      const cleanRemarks = remarks !== undefined && remarks !== null ? String(remarks).trim() : '';
+
+      const token = window.AuthService ? window.AuthService.getToken() : '';
+      if (token) {
+        try {
+          const resp = await fetch(`/api/master-items/${encodeURIComponent(sku)}`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ remarks: cleanRemarks })
+          });
+          if (resp.ok) {
+            const updated = await resp.json();
+            const items = await this.getMasterItems();
+            const found = items.find(i => i.sku.toUpperCase() === sku.toUpperCase());
+            if (found) {
+              found.remarks = cleanRemarks;
+              localStorage.setItem(STORAGE_KEYS.MASTER_ITEMS, JSON.stringify(items));
+            }
+            return updated;
+          }
+        } catch (e) {
+          console.warn('[DataService] Backend update remarks failed:', e);
+        }
+      }
+
+      const items = await this.getMasterItems();
+      const item = items.find(i => i.sku.toUpperCase() === sku.toUpperCase());
+      if (item) {
+        item.remarks = cleanRemarks;
+        localStorage.setItem(STORAGE_KEYS.MASTER_ITEMS, JSON.stringify(items));
+        return item;
+      }
+      return null;
+    },
+
     async deleteMasterItem(sku) {
       if (!sku) return false;
       if (window.PermissionService && !window.PermissionService.can('CAN_DELETE_MASTER_ITEM')) {
@@ -347,6 +494,8 @@
         throw new Error(`Duplicate SKU Error: ${newItem.sku} already exists in Master Items.`);
       }
 
+      newItem.status = newItem.status || 'Available';
+      newItem.remarks = (newItem.remarks !== undefined && newItem.remarks !== null) ? newItem.remarks : '';
       newItem.createdAt = new Date().toISOString();
       items.unshift(newItem);
       localStorage.setItem(STORAGE_KEYS.MASTER_ITEMS, JSON.stringify(items));
@@ -557,19 +706,25 @@
         existing.quantity = (parseFloat(existing.quantity) || 1) + 1;
       } else {
         const desc = masterItem.itemDescription || DataService.getItemDescription(masterItem);
+        const origDim = masterItem.size || masterItem.sizeDimensions || '';
         this.items.push({
           masterItemId: masterItem.id || null,
           sku: masterItem.sku,
           productName: masterItem.productName,
           itemDescription: desc,
           materialGrade: masterItem.material || masterItem.materialGrade || '',
-          sizeDimensions: masterItem.size || masterItem.sizeDimensions || '',
+          sizeDimensions: origDim,
+          originalDimensions: origDim,
           specification: masterItem.specification || masterItem.sourceSheet || 'PT Persada Nusantara Steel Standard',
           unit: masterItem.unit || 'Sheet',
           quantity: 1,
           weightKg: masterItem.weightKg || null,
           unitPrice: (masterItem.unitPrice !== undefined && masterItem.unitPrice !== null && masterItem.unitPrice !== '') ? parseFloat(masterItem.unitPrice) : null,
-          purchaseType: 'STANDARD STOCK ITEM',
+          status: (masterItem.status === 'Out of Stock') ? 'Out of Stock' : 'Available',
+          supplyType: (masterItem.supplyType === 'Cut Size') ? 'Cut Size' : 'Full Size',
+          cutLength: '',
+          cutWidth: '',
+          purchaseType: (masterItem.supplyType === 'Cut Size') ? 'PROJECT-SPECIFIC CUT SIZE' : 'STANDARD STOCK ITEM',
           requiredCutSize: ''
         });
       }
@@ -2948,6 +3103,9 @@
           item.material,
           item.size,
           item.unit,
+          item.weightKg ? String(item.weightKg) : '',
+          item.status || '',
+          item.remarks || '',
           item.brand,
           item.sourceSheet || '',
           JSON.stringify(item.specificAttributes || {})
@@ -2968,7 +3126,7 @@
       if (filtered.length === 0) {
         tbody.innerHTML = `
           <tr>
-            <td colspan="11" style="text-align:center; padding: 3rem 1rem; color: var(--text-muted);">
+            <td colspan="13" style="text-align:center; padding: 3rem 1rem; color: var(--text-muted);">
               <div style="font-size: 2rem; margin-bottom: 0.5rem;">🔍</div>
               <strong>No ${escapeHtml(currentCat)} records found matching "${escapeHtml(this.searchQuery)}"</strong>
               <p style="font-size:0.85rem; margin-top:0.25rem;">Try adjusting your search or contact Engineering for new material verification.</p>
@@ -2981,6 +3139,11 @@
 
       tbody.innerHTML = filtered.map((item, idx) => {
         const itemDesc = this.getItemDescription(item);
+        const itemStatus = (item.status === 'Out of Stock') ? 'Out of Stock' : 'Available';
+        const statusClass = itemStatus.toLowerCase().replace(/[\s_]+/g, '-');
+        const itemSupplyType = (item.supplyType === 'Cut Size') ? 'Cut Size' : 'Full Size';
+        const supplyClass = itemSupplyType.toLowerCase().replace(/[\s_]+/g, '-');
+        const itemRemarks = (item.remarks !== undefined && item.remarks !== null) ? item.remarks : '';
 
         return `
           <tr data-sku="${escapeHtml(item.sku)}">
@@ -2991,7 +3154,6 @@
             <td>
               <div style="font-weight: 600; color: var(--text-main); display: flex; align-items: center; flex-wrap: wrap;">
                 <span>${escapeHtml(item.productName || '—')}</span>
-                ${item.isCutSize ? '<span class="badge-cut-size" title="Project-Specific Cut Size Raw Material">✂️ Cut Size</span>' : ''}
               </div>
               <div style="font-size: 0.75rem; color: var(--text-muted);">${escapeHtml(item.sourceSheet ? 'Source: ' + item.sourceSheet : '')}</div>
             </td>
@@ -3025,6 +3187,58 @@
             </td>
             <td>
               <span class="weight-val">${item.weightKg ? item.weightKg + ' kg' : '-'}</span>
+            </td>
+            <td>
+              ${canEdit ? `
+                <div class="catalog-status-cell-wrapper">
+                  <select class="catalog-status-select status-val-${statusClass}" 
+                          data-sku="${escapeHtml(item.sku)}"
+                          title="Change status for ${escapeHtml(item.sku)}">
+                    <option value="Available"${itemStatus === 'Available' ? ' selected' : ''}>Available</option>
+                    <option value="Out of Stock"${itemStatus === 'Out of Stock' ? ' selected' : ''}>Out of Stock</option>
+                  </select>
+                  <div class="catalog-status-feedback" id="statusFeedback_${escapeHtml(item.sku)}"></div>
+                </div>
+              ` : `
+                <span class="status-badge ${statusClass}">
+                  ● ${escapeHtml(itemStatus)}
+                </span>
+              `}
+            </td>
+            <td>
+              ${canEdit ? `
+                <div class="catalog-supply-cell-wrapper">
+                  <select class="catalog-supply-select supply-val-${supplyClass}" 
+                          data-sku="${escapeHtml(item.sku)}"
+                          title="Change supply type for ${escapeHtml(item.sku)}">
+                    <option value="Full Size"${itemSupplyType === 'Full Size' ? ' selected' : ''}>Full Size</option>
+                    <option value="Cut Size"${itemSupplyType === 'Cut Size' ? ' selected' : ''}>Cut Size</option>
+                  </select>
+                  <div class="catalog-supply-feedback" id="supplyFeedback_${escapeHtml(item.sku)}"></div>
+                </div>
+              ` : `
+                <span class="supply-badge ${supplyClass}">
+                  ${escapeHtml(itemSupplyType)}
+                </span>
+              `}
+            </td>
+            <td>
+              ${canEdit ? `
+                <div class="catalog-remarks-cell-wrapper">
+                  <textarea 
+                    class="catalog-remarks-textarea" 
+                    data-sku="${escapeHtml(item.sku)}" 
+                    placeholder="Add remarks..." 
+                    rows="2"
+                    title="Directly edit Remarks for ${escapeHtml(item.sku)}"
+                  >${escapeHtml(itemRemarks)}</textarea>
+                  <div class="catalog-remarks-status" id="remarksStatus_${escapeHtml(item.sku)}"></div>
+                </div>
+              ` : `
+                <div class="catalog-remarks-readonly" title="${escapeHtml(itemRemarks || '—')}">
+                  ${escapeHtml(itemRemarks || '—')}
+                </div>
+              `}
             </td>
             <td>
               <div class="catalog-price-wrapper">
@@ -3094,6 +3308,107 @@
           textarea.addEventListener('blur', () => {
             clearTimeout(debounceTimers[sku]);
             saveVal();
+          });
+        });
+
+        // Bind interactive Status selects
+        tbody.querySelectorAll('.catalog-status-select').forEach(selectEl => {
+          const sku = selectEl.getAttribute('data-sku');
+          const feedbackEl = document.getElementById(`statusFeedback_${sku}`);
+
+          selectEl.addEventListener('change', async () => {
+            const newStatus = selectEl.value;
+            const statusClass = newStatus.toLowerCase().replace(/[\s_]+/g, '-');
+            selectEl.className = `catalog-status-select status-val-${statusClass}`;
+
+            try {
+              await DataService.updateMasterItemStatus(sku, newStatus);
+              selectEl.classList.add('saved-flash');
+              setTimeout(() => selectEl.classList.remove('saved-flash'), 800);
+              if (feedbackEl) {
+                feedbackEl.innerHTML = '<span style="color:#10b981; font-weight:600;">✓ Saved</span>';
+                setTimeout(() => {
+                  if (feedbackEl && feedbackEl.textContent.includes('Saved')) feedbackEl.innerHTML = '';
+                }, 2000);
+              }
+            } catch (err) {
+              console.error('[Catalog UI] Error updating status:', err);
+              if (feedbackEl) {
+                feedbackEl.innerHTML = '<span style="color:#e11d48; font-weight:600;">Error</span>';
+              }
+            }
+          });
+        });
+
+        // Bind interactive Supply Type selects
+        tbody.querySelectorAll('.catalog-supply-select').forEach(selectEl => {
+          const sku = selectEl.getAttribute('data-sku');
+          const feedbackEl = document.getElementById(`supplyFeedback_${sku}`);
+
+          selectEl.addEventListener('change', async () => {
+            const newSupply = selectEl.value;
+            const supplyClass = newSupply.toLowerCase().replace(/[\s_]+/g, '-');
+            selectEl.className = `catalog-supply-select supply-val-${supplyClass}`;
+
+            try {
+              await DataService.updateMasterItemSupplyType(sku, newSupply);
+              selectEl.classList.add('saved-flash');
+              setTimeout(() => selectEl.classList.remove('saved-flash'), 800);
+              if (feedbackEl) {
+                feedbackEl.innerHTML = '<span style="color:#10b981; font-weight:600;">✓ Saved</span>';
+                setTimeout(() => {
+                  if (feedbackEl && feedbackEl.textContent.includes('Saved')) feedbackEl.innerHTML = '';
+                }, 2000);
+              }
+            } catch (err) {
+              console.error('[Catalog UI] Error updating supply type:', err);
+              if (feedbackEl) {
+                feedbackEl.innerHTML = '<span style="color:#e11d48; font-weight:600;">Error</span>';
+              }
+            }
+          });
+        });
+
+        // Bind direct editing on Remarks textareas
+        const remarksDebounceTimers = {};
+        tbody.querySelectorAll('.catalog-remarks-textarea').forEach(textarea => {
+          const sku = textarea.getAttribute('data-sku');
+          const statusEl = document.getElementById(`remarksStatus_${sku}`);
+
+          const saveRemarks = async () => {
+            const val = textarea.value;
+            try {
+              await DataService.updateMasterItemRemarks(sku, val);
+              textarea.classList.add('saved-flash');
+              setTimeout(() => textarea.classList.remove('saved-flash'), 800);
+              if (statusEl) {
+                statusEl.innerHTML = '<span style="color:#10b981; font-weight:600;">✓ Saved</span>';
+                setTimeout(() => {
+                  if (statusEl && statusEl.textContent.includes('Saved')) statusEl.innerHTML = '';
+                }, 2500);
+              }
+            } catch (err) {
+              console.error('[Catalog UI] Error saving remarks:', err);
+              if (statusEl) {
+                statusEl.innerHTML = '<span style="color:#e11d48; font-weight:600;">Save Failed</span>';
+              }
+            }
+          };
+
+          textarea.addEventListener('input', () => {
+            if (statusEl) statusEl.innerHTML = '<span style="color:#0284c7;">Editing...</span>';
+            clearTimeout(remarksDebounceTimers[sku]);
+            remarksDebounceTimers[sku] = setTimeout(saveRemarks, 600);
+          });
+
+          textarea.addEventListener('change', () => {
+            clearTimeout(remarksDebounceTimers[sku]);
+            saveRemarks();
+          });
+
+          textarea.addEventListener('blur', () => {
+            clearTimeout(remarksDebounceTimers[sku]);
+            saveRemarks();
           });
         });
 
@@ -3191,7 +3506,9 @@
           if (canEdit) {
             const descEl = tbody.querySelector(`.catalog-desc-textarea[data-sku="${sku}"]`);
             const priceEl = tbody.querySelector(`.catalog-price-input[data-sku="${sku}"]`);
+            const remarksEl = tbody.querySelector(`.catalog-remarks-textarea[data-sku="${sku}"]`);
             if (descEl) await DataService.updateMasterItemDescription(sku, descEl.value);
+            if (remarksEl) await DataService.updateMasterItemRemarks(sku, remarksEl.value);
             if (priceEl && priceEl.value.trim() && parseFloat(priceEl.value.trim()) > 0) {
               try { await DataService.updateMasterItemPrice(sku, priceEl.value.trim()); } catch (e) {}
             }
@@ -3213,7 +3530,9 @@
           if (canEdit) {
             const descEl = tbody.querySelector(`.catalog-desc-textarea[data-sku="${sku}"]`);
             const priceEl = tbody.querySelector(`.catalog-price-input[data-sku="${sku}"]`);
+            const remarksEl = tbody.querySelector(`.catalog-remarks-textarea[data-sku="${sku}"]`);
             if (descEl) await DataService.updateMasterItemDescription(sku, descEl.value);
+            if (remarksEl) await DataService.updateMasterItemRemarks(sku, remarksEl.value);
             if (priceEl && priceEl.value.trim() && parseFloat(priceEl.value.trim()) > 0) {
               try { await DataService.updateMasterItemPrice(sku, priceEl.value.trim()); } catch (e) {}
             }
@@ -3271,6 +3590,8 @@
         const el = document.getElementById(id);
         if (el) el.value = '';
       });
+      const statusSel = document.getElementById('newSkuStatus');
+      if (statusSel) statusSel.value = 'Available';
       const cutSizeCheck = document.getElementById('newSkuIsCutSize');
       if (cutSizeCheck) cutSizeCheck.checked = false;
       const unitSel = document.getElementById('newSkuUnit');
@@ -4132,6 +4453,8 @@
         { label: 'Current Unit Price (IDR)', id: 'newSkuPrice', isPrice: true },
         { label: 'Manufacturer / Brand', id: 'newSkuBrand' },
         { label: 'Finish / Coating', id: 'newSkuFinish' },
+        { label: 'Status', id: 'newSkuStatus' },
+        { label: 'Supply Type', id: 'newSkuSupplyType' },
         { label: 'Remarks', id: 'newSkuRemarks' },
       ];
 
@@ -4169,6 +4492,10 @@
       const weightKg = parseFloat(document.getElementById('newSkuWeight')?.value) || 0;
       const brand = document.getElementById('newSkuBrand')?.value?.trim() || '';
       const finish = document.getElementById('newSkuFinish')?.value?.trim() || '';
+      const statusRaw = document.getElementById('newSkuStatus')?.value?.trim() || 'Available';
+      const status = (statusRaw === 'Out of Stock') ? 'Out of Stock' : 'Available';
+      const supplyTypeRaw = document.getElementById('newSkuSupplyType')?.value?.trim() || 'Full Size';
+      const supplyType = (supplyTypeRaw === 'Cut Size') ? 'Cut Size' : 'Full Size';
       const remarks = document.getElementById('newSkuRemarks')?.value?.trim() || '';
       const rawPrice = document.getElementById('newSkuPrice')?.value?.trim();
       let unitPrice = null;
@@ -4203,6 +4530,9 @@
         size,
         unit,
         weightKg,
+        status,
+        supplyType,
+        remarks,
         unitPrice,
         brand: brand || '',
         sourceFile: this._skuUploadedFile ? this._skuUploadedFile.name : 'Manual Engineering Entry',
@@ -5285,6 +5615,9 @@
               <div class="spec-item"><span class="spec-item-label">Dimensions / Size</span><span class="spec-item-val" style="font-family:var(--font-mono);">${escapeHtml(item.size || '-')}</span></div>
               <div class="spec-item"><span class="spec-item-label">Standard Unit</span><span class="spec-item-val">${escapeHtml(item.unit || 'PCS')}</span></div>
               <div class="spec-item"><span class="spec-item-label">Unit Weight</span><span class="spec-item-val">${item.weightKg ? item.weightKg + ' kg' : '-'}</span></div>
+              <div class="spec-item"><span class="spec-item-label">Status</span><span class="spec-item-val"><span class="status-badge ${(item.status === 'Out of Stock') ? 'out-of-stock' : 'available'}">● ${escapeHtml(item.status || 'Available')}</span></span></div>
+              <div class="spec-item"><span class="spec-item-label">Supply Type</span><span class="spec-item-val"><span class="supply-badge ${(item.supplyType === 'Cut Size') ? 'cut-size' : 'full-size'}">${escapeHtml(item.supplyType || 'Full Size')}</span></span></div>
+              <div class="spec-item"><span class="spec-item-label">Remarks</span><span class="spec-item-val">${escapeHtml(item.remarks || '—')}</span></div>
               <div class="spec-item"><span class="spec-item-label">Current Unit Price (IDR)</span><span class="spec-item-val" style="font-weight:700; color:var(--primary-400);">${DataService.formatUnitPrice(item.unitPrice, item.unit)}</span></div>
               <div class="spec-item"><span class="spec-item-label">Manufacturer / Mill</span><span class="spec-item-val">${escapeHtml(item.brand || 'PT Persada Nusantara Steel')}</span></div>
               <div class="spec-item"><span class="spec-item-label">Reference Source</span><span class="spec-item-val">${escapeHtml(item.sourceSheet || item.sourceFile || 'Catalog')}</span></div>

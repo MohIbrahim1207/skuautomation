@@ -8,6 +8,28 @@ const { query, pool } = require('../db/pool');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const { REQUIRE_UNIT_PRICE } = require('../config/pricing');
 
+const VALID_STATUSES = ['Available', 'Out of Stock'];
+const VALID_SUPPLY_TYPES = ['Full Size', 'Cut Size'];
+
+function sanitizeStatus(status) {
+  if (!status || typeof status !== 'string') return 'Available';
+  const trimmed = status.trim();
+  const matched = VALID_STATUSES.find(s => s.toLowerCase() === trimmed.toLowerCase());
+  return matched || 'Available';
+}
+
+function sanitizeSupplyType(supplyType) {
+  if (!supplyType || typeof supplyType !== 'string') return 'Full Size';
+  const trimmed = supplyType.trim();
+  const matched = VALID_SUPPLY_TYPES.find(s => s.toLowerCase() === trimmed.toLowerCase());
+  return matched || 'Full Size';
+}
+
+function sanitizeRemarks(remarks) {
+  if (remarks === undefined || remarks === null) return '';
+  return String(remarks).trim();
+}
+
 router.use(authenticateToken);
 
 // GET /api/master-items - Browse Master Catalog
@@ -15,7 +37,7 @@ router.get('/', async (req, res) => {
   try {
     const result = await query(
       `SELECT id, sku, product_name, item_description, category, sub_category,
-              material, size, specification, unit, weight_kg, brand, unit_price, source_sheet, created_at
+              material, size, specification, unit, weight_kg, status, supply_type, remarks, brand, unit_price, source_sheet, created_at
        FROM master_items
        ORDER BY sku ASC`
     );
@@ -32,6 +54,9 @@ router.get('/', async (req, res) => {
       specification: r.specification,
       unit: r.unit,
       weightKg: r.weight_kg ? parseFloat(r.weight_kg) : null,
+      status: (r.status === 'Out of Stock') ? 'Out of Stock' : 'Available',
+      supplyType: (r.supply_type === 'Cut Size') ? 'Cut Size' : 'Full Size',
+      remarks: (r.remarks !== null && r.remarks !== undefined) ? r.remarks : '',
       brand: r.brand,
       unitPrice: r.unit_price ? parseFloat(r.unit_price) : null,
       sourceSheet: r.source_sheet,
@@ -73,6 +98,9 @@ router.get('/:sku', async (req, res) => {
       specification: r.specification,
       unit: r.unit,
       weightKg: r.weight_kg ? parseFloat(r.weight_kg) : null,
+      status: (r.status === 'Out of Stock') ? 'Out of Stock' : 'Available',
+      supplyType: (r.supply_type === 'Cut Size') ? 'Cut Size' : 'Full Size',
+      remarks: (r.remarks !== null && r.remarks !== undefined) ? r.remarks : '',
       brand: r.brand,
       unitPrice: r.unit_price ? parseFloat(r.unit_price) : null,
       sourceSheet: r.source_sheet,
@@ -88,7 +116,7 @@ router.get('/:sku', async (req, res) => {
 router.post('/', requireAdmin, async (req, res) => {
   const {
     sku, productName, itemDescription, category, subCategory,
-    material, size, specification, unit, weightKg, brand, unitPrice
+    material, size, specification, unit, weightKg, status, supplyType, remarks, brand, unitPrice
   } = req.body;
 
   if (!sku || !sku.trim()) return res.status(400).json({ error: 'SKU is required.' });
@@ -107,6 +135,9 @@ router.post('/', requireAdmin, async (req, res) => {
   }
 
   const cleanSku = sku.trim().toUpperCase();
+  const statusVal = sanitizeStatus(status);
+  const supplyTypeVal = sanitizeSupplyType(supplyType);
+  const remarksVal = sanitizeRemarks(remarks);
 
   try {
     const checkSku = await query('SELECT 1 FROM master_items WHERE UPPER(sku) = $1', [cleanSku]);
@@ -119,8 +150,8 @@ router.post('/', requireAdmin, async (req, res) => {
     const insertRes = await query(
       `INSERT INTO master_items (
         sku, product_name, item_description, category, sub_category,
-        material, size, specification, unit, weight_kg, brand, unit_price, source_sheet
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'Engineering Manual')
+        material, size, specification, unit, weight_kg, status, supply_type, remarks, brand, unit_price, source_sheet
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 'Engineering Manual')
       RETURNING *`,
       [
         cleanSku,
@@ -133,12 +164,20 @@ router.post('/', requireAdmin, async (req, res) => {
         specification || null,
         unit || 'Sheet',
         weightNum,
+        statusVal,
+        supplyTypeVal,
+        remarksVal,
         brand || 'PT Persada Nusantara Steel',
         priceNum
       ]
     );
 
-    res.status(201).json(insertRes.rows[0]);
+    const r = insertRes.rows[0];
+    res.status(201).json({
+      ...r,
+      status: (r.status === 'Out of Stock') ? 'Out of Stock' : 'Available',
+      supplyType: (r.supply_type === 'Cut Size') ? 'Cut Size' : 'Full Size'
+    });
   } catch (err) {
     console.error('[Master Items API] Create error:', err);
     res.status(500).json({ error: 'Database connection unavailable. Please contact the administrator.' });
@@ -148,7 +187,7 @@ router.post('/', requireAdmin, async (req, res) => {
 // PUT /api/master-items/:sku - Edit Master Item (Admin only)
 router.put('/:sku', requireAdmin, async (req, res) => {
   const { sku } = req.params;
-  const { itemDescription, unitPrice, productName, material, size, specification } = req.body;
+  const { itemDescription, unitPrice, productName, material, size, specification, status, supplyType, remarks } = req.body;
 
   // Price Requirement: Controlled by REQUIRE_UNIT_PRICE switch
   let priceVal = null;
@@ -170,6 +209,13 @@ router.put('/:sku', requireAdmin, async (req, res) => {
     }
   }
 
+  const updateStatus = status !== undefined;
+  const statusVal = updateStatus ? sanitizeStatus(status) : null;
+  const updateSupplyType = supplyType !== undefined;
+  const supplyTypeVal = updateSupplyType ? sanitizeSupplyType(supplyType) : null;
+  const updateRemarks = remarks !== undefined;
+  const remarksVal = updateRemarks ? sanitizeRemarks(remarks) : null;
+
   try {
     const existing = await query('SELECT * FROM master_items WHERE UPPER(sku) = UPPER($1)', [sku.trim()]);
     if (existing.rowCount === 0) {
@@ -184,6 +230,9 @@ router.put('/:sku', requireAdmin, async (req, res) => {
            material = COALESCE($4, material),
            size = COALESCE($5, size),
            specification = COALESCE($6, specification),
+           status = CASE WHEN $9::boolean THEN $10 ELSE status END,
+           supply_type = CASE WHEN $13::boolean THEN $14 ELSE supply_type END,
+           remarks = CASE WHEN $11::boolean THEN $12 ELSE remarks END,
            updated_at = CURRENT_TIMESTAMP
        WHERE UPPER(sku) = UPPER($7)`,
       [
@@ -194,12 +243,28 @@ router.put('/:sku', requireAdmin, async (req, res) => {
         size || null,
         specification || null,
         sku.trim(),
-        updatePrice
+        updatePrice,
+        updateStatus,
+        statusVal,
+        updateRemarks,
+        remarksVal,
+        updateSupplyType,
+        supplyTypeVal
       ]
     );
 
     const updated = await query('SELECT * FROM master_items WHERE UPPER(sku) = UPPER($1)', [sku.trim()]);
-    res.json({ success: true, message: 'Master Item updated successfully.', item: updated.rows[0] });
+    const r = updated.rows[0];
+    res.json({
+      success: true,
+      message: 'Master Item updated successfully.',
+      item: {
+        ...r,
+        status: (r.status === 'Out of Stock') ? 'Out of Stock' : 'Available',
+        supplyType: (r.supply_type === 'Cut Size') ? 'Cut Size' : 'Full Size',
+        remarks: (r.remarks !== null && r.remarks !== undefined) ? r.remarks : ''
+      }
+    });
   } catch (err) {
     console.error('[Master Items API] Update error:', err);
     res.status(500).json({ error: 'Database connection unavailable. Please contact the administrator.' });
@@ -311,14 +376,18 @@ router.post('/batch-import', async (req, res) => {
         }
       }
 
+      const itemStatus = sanitizeStatus(it.status);
+      const itemSupplyType = sanitizeSupplyType(it.supplyType);
+      const itemRemarks = sanitizeRemarks(it.remarks);
+
       const rowNumStr = it.excelRowNum ? ` R${it.excelRowNum}` : '';
       const auditSource = `Excel: ${fileName || 'File'} [${it.sourceSheet || sheetName || 'Sheet'}]${rowNumStr} by ${req.user.username || 'User'} (${req.user.id || 'ID'})`;
 
       const insertRes = await client.query(`
         INSERT INTO master_items (
           sku, product_name, item_description, category, sub_category,
-          material, size, specification, unit, weight_kg, brand, unit_price, source_sheet
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+          material, size, specification, unit, weight_kg, status, supply_type, remarks, brand, unit_price, source_sheet
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
         RETURNING *
       `, [
         sku,
@@ -331,6 +400,9 @@ router.post('/batch-import', async (req, res) => {
         specification,
         unit,
         weight,
+        itemStatus,
+        itemSupplyType,
+        itemRemarks,
         brand,
         price,
         auditSource

@@ -132,7 +132,7 @@ router.post('/', async (req, res) => {
     const seq = parseInt(countRes.rows[0].count, 10) + 1;
     const prNumber = `PR-${year}-${String(seq).padStart(4, '0')}`;
 
-    const isCutSize = purchaseType === 'PROJECT-SPECIFIC CUT SIZE';
+    const hasAnyCutSize = cartItems.some(i => i.supplyType === 'Cut Size' || i.purchaseType === 'PROJECT-SPECIFIC CUT SIZE');
 
     // Insert purchase_requests (Initial Status: PENDING_APPROVAL)
     const prInsertRes = await client.query(
@@ -151,27 +151,49 @@ router.post('/', async (req, res) => {
         urgency || 'Standard (1-2 Weeks)',
         reasonForPurchase || null,
         remarks || null,
-        isCutSize ? 'PROJECT-SPECIFIC CUT SIZE' : 'STANDARD STOCK ITEM',
-        isCutSize ? (requiredCutSize || '').trim() : null
+        hasAnyCutSize ? 'PROJECT-SPECIFIC CUT SIZE' : 'STANDARD STOCK ITEM',
+        requiredCutSize || null
       ]
     );
 
     const prId = prInsertRes.rows[0].id;
 
-    // Insert pr_items with HISTORICAL SNAPSHOT of Master Item data
+    // Insert pr_items with HISTORICAL SNAPSHOT of Master Item data, Status, and Supply Type
     for (const item of cartItems) {
       const qty = parseFloat(item.quantity) || 1;
       const hasPrice = item.unitPrice !== undefined && item.unitPrice !== null && item.unitPrice !== '' && !isNaN(Number(item.unitPrice)) && Number(item.unitPrice) >= 0;
       const price = hasPrice ? parseFloat(item.unitPrice) : null;
       const totalCost = hasPrice ? (qty * price) : null;
-      const itemCutSize = item.purchaseType === 'PROJECT-SPECIFIC CUT SIZE' ? item.requiredCutSize : (isCutSize ? requiredCutSize : null);
+
+      const itemStatus = (item.status === 'Out of Stock') ? 'Out of Stock' : 'Available';
+      const isItemCutSize = (item.supplyType === 'Cut Size' || item.purchaseType === 'PROJECT-SPECIFIC CUT SIZE');
+      const itemSupplyType = isItemCutSize ? 'Cut Size' : 'Full Size';
+
+      let cutLength = '';
+      let cutWidth = '';
+      let itemRequiredCutSize = null;
+
+      if (isItemCutSize) {
+        const cDim = item.cutDimensions || {};
+        cutLength = String(cDim.length || item.cutLength || '').trim();
+        cutWidth = String(cDim.width || item.cutWidth || '').trim();
+
+        if (!cutLength || !cutWidth) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({
+            error: `Required cut dimensions (Length and Width) are mandatory for Cut Size material: ${item.sku}.`
+          });
+        }
+        itemRequiredCutSize = `${cutLength} × ${cutWidth}`;
+      }
 
       await client.query(
         `INSERT INTO pr_items (
           purchase_request_id, master_item_id, sku, product_name, item_description,
           material_grade, size_dimensions, specification, unit, quantity, weight,
-          unit_price, estimated_total_cost, purchase_type, required_cut_size
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+          unit_price, estimated_total_cost, purchase_type, required_cut_size,
+          status, supply_type, cut_length, cut_width
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`,
         [
           prId,
           item.masterItemId || null,
@@ -179,15 +201,19 @@ router.post('/', async (req, res) => {
           item.productName || '',
           item.itemDescription || '', // Preserves multiline text
           item.material || item.materialGrade || null,
-          item.size || item.sizeDimensions || null,
+          item.size || item.sizeDimensions || item.originalDimensions || null,
           item.specification || null,
           item.unit || 'Sheet',
           qty,
           item.weight || item.weightKg || null,
           price,
           totalCost,
-          item.purchaseType || (isCutSize ? 'PROJECT-SPECIFIC CUT SIZE' : 'STANDARD STOCK ITEM'),
-          itemCutSize || null
+          isItemCutSize ? 'PROJECT-SPECIFIC CUT SIZE' : 'STANDARD STOCK ITEM',
+          itemRequiredCutSize,
+          itemStatus,
+          itemSupplyType,
+          cutLength,
+          cutWidth
         ]
       );
     }
@@ -297,22 +323,30 @@ router.get('/:id', async (req, res) => {
         rejectionReason: pr.rejection_reason,
         createdAt: pr.created_at
       },
-      items: itemsRes.rows.map(it => ({
-        id: it.id,
-        sku: it.sku,
-        productName: it.product_name,
-        itemDescription: it.item_description, // Multiline preserved
-        materialGrade: it.material_grade,
-        sizeDimensions: it.size_dimensions,
-        specification: it.specification,
-        unit: it.unit,
-        quantity: parseFloat(it.quantity),
-        weight: it.weight ? parseFloat(it.weight) : null,
-        unitPrice: it.unit_price ? parseFloat(it.unit_price) : null,
-        estimatedTotalCost: (it.estimated_total_cost !== null && it.estimated_total_cost !== undefined) ? parseFloat(it.estimated_total_cost) : null,
-        purchaseType: it.purchase_type,
-        requiredCutSize: it.required_cut_size
-      })),
+      items: itemsRes.rows.map(it => {
+        const isCut = (it.supply_type === 'Cut Size' || it.purchase_type === 'PROJECT-SPECIFIC CUT SIZE');
+        return {
+          id: it.id,
+          sku: it.sku,
+          productName: it.product_name,
+          itemDescription: it.item_description, // Multiline preserved
+          materialGrade: it.material_grade,
+          sizeDimensions: it.size_dimensions,
+          specification: it.specification,
+          unit: it.unit,
+          quantity: parseFloat(it.quantity),
+          weight: it.weight ? parseFloat(it.weight) : null,
+          unitPrice: it.unit_price ? parseFloat(it.unit_price) : null,
+          estimatedTotalCost: (it.estimated_total_cost !== null && it.estimated_total_cost !== undefined) ? parseFloat(it.estimated_total_cost) : null,
+          status: (it.status === 'Out of Stock') ? 'Out of Stock' : 'Available',
+          supplyType: isCut ? 'Cut Size' : 'Full Size',
+          cutLength: it.cut_length || '',
+          cutWidth: it.cut_width || '',
+          cutDimensions: isCut ? { length: it.cut_length || '', width: it.cut_width || '' } : null,
+          purchaseType: it.purchase_type,
+          requiredCutSize: it.required_cut_size
+        };
+      }),
       history: historyRes.rows.map(h => ({
         id: h.id,
         action: h.action,

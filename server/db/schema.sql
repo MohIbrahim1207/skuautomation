@@ -43,6 +43,9 @@ CREATE TABLE IF NOT EXISTS master_items (
   specification TEXT,
   unit VARCHAR(50) DEFAULT 'Sheet',
   weight_kg NUMERIC(12, 3),
+  status VARCHAR(50) DEFAULT 'Available',
+  supply_type VARCHAR(50) DEFAULT 'Full Size',
+  remarks TEXT DEFAULT '',
   brand VARCHAR(255),
   unit_price NUMERIC(15, 2), -- IDR Currency
   source_sheet VARCHAR(255),
@@ -91,6 +94,10 @@ CREATE TABLE IF NOT EXISTS pr_items (
   estimated_total_cost NUMERIC(15, 2), -- quantity * unit_price
   purchase_type VARCHAR(100) DEFAULT 'STANDARD STOCK ITEM',
   required_cut_size TEXT,
+  status VARCHAR(50) DEFAULT 'Available',
+  supply_type VARCHAR(50) DEFAULT 'Full Size',
+  cut_length VARCHAR(100) DEFAULT '',
+  cut_width VARCHAR(100) DEFAULT '',
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -128,3 +135,20 @@ CREATE INDEX IF NOT EXISTS idx_pr_items_pr ON pr_items(purchase_request_id);
 CREATE INDEX IF NOT EXISTS idx_pr_history_pr ON pr_approval_history(purchase_request_id);
 CREATE INDEX IF NOT EXISTS idx_documents_pr ON documents(purchase_request_id);
 CREATE INDEX IF NOT EXISTS idx_documents_project ON documents(project_id);
+
+-- 9. IDEMPOTENT MIGRATIONS FOR MASTER_ITEMS
+ALTER TABLE master_items ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'Available';
+ALTER TABLE master_items ADD COLUMN IF NOT EXISTS supply_type VARCHAR(50) DEFAULT 'Full Size';
+ALTER TABLE master_items ADD COLUMN IF NOT EXISTS remarks TEXT DEFAULT '';
+UPDATE master_items SET status = 'Available' WHERE status IS NULL OR status NOT IN ('Available', 'Out of Stock');
+UPDATE master_items SET supply_type = 'Full Size' WHERE supply_type IS NULL OR supply_type NOT IN ('Full Size', 'Cut Size');
+UPDATE master_items SET remarks = '' WHERE remarks IS NULL;
+
+-- 10. IDEMPOTENT MIGRATIONS FOR PR_ITEMS
+ALTER TABLE pr_items ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'Available';
+ALTER TABLE pr_items ADD COLUMN IF NOT EXISTS supply_type VARCHAR(50) DEFAULT 'Full Size';
+ALTER TABLE pr_items ADD COLUMN IF NOT EXISTS cut_length VARCHAR(100) DEFAULT '';
+ALTER TABLE pr_items ADD COLUMN IF NOT EXISTS cut_width VARCHAR(100) DEFAULT '';
+UPDATE pr_items SET status = 'Available' WHERE status IS NULL OR status NOT IN ('Available', 'Out of Stock');
+UPDATE pr_items SET supply_type = 'Full Size' WHERE supply_type IS NULL OR supply_type NOT IN ('Full Size', 'Cut Size');
+

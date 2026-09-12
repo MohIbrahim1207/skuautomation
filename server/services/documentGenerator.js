@@ -126,8 +126,8 @@ function generateExcelFile(pr, items, filePath) {
     ['Urgency:', pr.urgency || 'Standard', 'Purchase Type:', pr.purchase_type || 'STANDARD STOCK ITEM'],
     ...(pr.purchase_type === 'PROJECT-SPECIFIC CUT SIZE' ? [['Required Cut Size:', pr.required_cut_size || '-', '', '']] : []),
     [],
-    ['ITEM DETAILS', '', '', '', '', '', '', '', '', '', ''],
-    ['#', 'SKU', 'Product Name', 'Item Description', 'Material / Grade', 'Size / Dimensions', 'Specification', 'Unit', 'Quantity', 'Unit Price (IDR)', 'Estimated Total Cost (IDR)']
+    ['ITEM DETAILS', '', '', '', '', '', '', '', '', '', '', '', ''],
+    ['#', 'SKU', 'Product Name', 'Item Description', 'Material / Grade', 'Size / Dimensions', 'Status', 'Supply Type', 'Specification', 'Unit', 'Quantity', 'Unit Price (IDR)', 'Estimated Total Cost (IDR)']
   ];
 
   let allHaveCost = true;
@@ -140,6 +140,13 @@ function generateExcelFile(pr, items, filePath) {
     } else {
       allHaveCost = false;
     }
+
+    const isCut = (it.supply_type === 'Cut Size' || it.purchase_type === 'PROJECT-SPECIFIC CUT SIZE');
+    const supplyLabel = isCut
+      ? `CUT SIZE (Req: ${it.required_cut_size || `${it.cut_length || ''} × ${it.cut_width || ''}`.trim() || '-'})`
+      : 'FULL SIZE';
+    const statusLabel = (it.status === 'Out of Stock') ? 'OUT OF STOCK' : 'AVAILABLE';
+
     rows.push([
       idx + 1,
       it.sku,
@@ -147,6 +154,8 @@ function generateExcelFile(pr, items, filePath) {
       it.item_description, // Preserves multiline linebreaks in cell
       it.material_grade || '-',
       it.size_dimensions || '-',
+      statusLabel,
+      supplyLabel,
       it.specification || '-',
       it.unit || 'Sheet',
       parseFloat(it.quantity) || 1,
@@ -308,8 +317,14 @@ function generatePdfFile(pr, items, filePath) {
         doc.text(String(idx + 1), 36, y, { width: 20 });
         doc.font('Helvetica-Bold').text(it.sku, 58, y, { width: 55 }).font('Helvetica');
 
-        // Product name and multiline item description
-        const descText = `${it.product_name}\n${it.item_description || ''}`;
+        // Product name and multiline item description with Status & Supply Type
+        const isCut = (it.supply_type === 'Cut Size' || it.purchase_type === 'PROJECT-SPECIFIC CUT SIZE');
+        const cutDetails = it.required_cut_size || (it.cut_length ? `${it.cut_length} × ${it.cut_width || ''}`.trim() : '');
+        const supplyInfo = isCut 
+          ? `SUPPLY: CUT SIZE — Req: ${cutDetails || '-'} (Orig: ${it.size_dimensions || '-'})`
+          : 'SUPPLY: FULL SIZE';
+        const statusInfo = (it.status === 'Out of Stock') ? 'STATUS: OUT OF STOCK' : 'STATUS: AVAILABLE';
+        const descText = `${it.product_name}\n${it.item_description || ''}\n[ ${statusInfo} | ${supplyInfo} ]`;
         doc.text(descText, 115, y, { width: 225 });
         const descHeight = doc.heightOfString(descText, { width: 225 });
 
