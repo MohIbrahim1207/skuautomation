@@ -34,7 +34,7 @@ jobs:
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
 
-          printf '%s\n' "$SERVER_SSH_KEY" > ~/.ssh/deploy_key
+          printf '%s\n' "$SERVER_SSH_KEY" | tr -d '\r' > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
 
           # Add VPS host key
@@ -44,6 +44,7 @@ jobs:
 
           ssh -i ~/.ssh/deploy_key \
             -o StrictHostKeyChecking=yes \
+            -o IdentitiesOnly=yes \
             "$SERVER_USER@$SERVER_HOST" << 'EOF'
 
             set -e
