@@ -353,6 +353,7 @@ router.get('/:id', async (req, res) => {
           itemDescription: it.item_description, // Multiline preserved
           materialGrade: it.material_grade,
           sizeDimensions: it.size_dimensions,
+          originalDimensions: it.size_dimensions,
           specification: it.specification,
           unit: it.unit,
           quantity: parseFloat(it.quantity),

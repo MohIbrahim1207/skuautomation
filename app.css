@@ -2686,6 +2686,40 @@ html {
     background: #f1f5f9 !important;
   }
 
+  .data-table {
+    border-collapse: collapse !important;
+    width: 100% !important;
+  }
+
+  .data-table th,
+  .data-table td {
+    border: 1px solid #cbd5e1 !important;
+    color: #000000 !important;
+    padding: 6px 8px !important;
+    background: #ffffff !important;
+  }
+
+  .data-table th {
+    background: #f8fafc !important;
+    font-weight: 700 !important;
+  }
+
+  .supply-badge.cut-size {
+    background: #fff7ed !important;
+    color: #c2410c !important;
+    border: 1px solid #fed7aa !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .supply-badge.full-size {
+    background: #f0f9ff !important;
+    color: #0284c7 !important;
+    border: 1px solid #bae6fd !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
   @page {
     size: A4 portrait;
     margin: 1.5cm;

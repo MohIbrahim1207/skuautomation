@@ -5322,6 +5322,11 @@
           itemDescription: pr.itemDescription,
           materialGrade: pr.material,
           sizeDimensions: pr.size,
+          originalDimensions: pr.size,
+          supplyType: pr.supplyType || (pr.purchaseType === 'PROJECT-SPECIFIC CUT SIZE' ? 'Cut Size' : 'Full Size'),
+          requiredCutSize: pr.requiredCutSize,
+          cutLength: pr.cutLength,
+          cutWidth: pr.cutWidth,
           specification: pr.specification,
           unit: pr.unit,
           quantity: pr.quantity,
@@ -5350,12 +5355,6 @@
                 <div><strong style="color:#64748b; font-size:0.75rem; text-transform:uppercase;">Request Date:</strong> <div>${reqDateStr}</div></div>
                 <div><strong style="color:#64748b; font-size:0.75rem; text-transform:uppercase;">Required Date:</strong> <div style="font-weight:600;">${formatDateDisplay(pr.requiredDate)}</div></div>
                 <div><strong style="color:#64748b; font-size:0.75rem; text-transform:uppercase;">Urgency:</strong> <span style="font-weight:700; color:${(pr.urgency && pr.urgency.includes('Critical')) ? '#e11d48' : '#d97706'}">${escapeHtml(pr.urgency || 'Standard')}</span></div>
-                ${pr.purchaseType === 'PROJECT-SPECIFIC CUT SIZE' ? `
-                  <div style="grid-column: span 3; background:#fff7ed; padding:8px 12px; border:1px solid #fed7aa; border-radius:4px;">
-                    <strong style="color:#c2410c; font-size:0.8rem;">✂️ PURCHASE TYPE: PROJECT-SPECIFIC CUT SIZE</strong>
-                    <div style="font-weight:700; color:#9a3412; font-family:var(--font-mono); margin-top:2px;">Required Cut Size: ${escapeHtml(pr.requiredCutSize || '-')}</div>
-                  </div>
-                ` : ''}
               </div>
             </div>
 
@@ -5365,14 +5364,16 @@
                 <span>ITEM DETAILS (${items.length} Materials)</span>
               </div>
               <div class="table-responsive" style="margin-top:8px;">
-                <table class="data-table" style="font-size:0.85rem;">
+                <table class="data-table" style="font-size:0.85rem; width:100%;">
                   <thead>
                     <tr>
                       <th style="width:35px;">#</th>
                       <th style="width:95px;">SKU</th>
                       <th>Product Name &amp; Description</th>
                       <th>Material / Grade</th>
-                      <th>Size / Dimensions</th>
+                      <th>Original Dimensions</th>
+                      <th style="min-width:115px;">Supply Type</th>
+                      <th style="min-width:135px;">Required Cut Size</th>
                       <th>Unit</th>
                       <th style="text-align:right;">Quantity</th>
                       <th style="text-align:right;">Unit Price (IDR)</th>
@@ -5388,6 +5389,16 @@
                       const priceStr = formattedUnitPrice !== '—' ? `${formattedUnitPrice} / ${escapeHtml(it.unit || 'Unit')}` : '—';
                       const totStr = formatCurrency(tot);
 
+                      const isCut = (it.supplyType === 'Cut Size' || it.supply_type === 'Cut Size' || it.purchaseType === 'PROJECT-SPECIFIC CUT SIZE' || it.purchase_type === 'PROJECT-SPECIFIC CUT SIZE');
+                      const origDims = it.originalDimensions || it.sizeDimensions || it.size_dimensions || it.size || '—';
+                      let rawCut = it.requiredCutSize || it.required_cut_size || '';
+                      if (!rawCut && (it.cutLength || it.cut_length)) {
+                        const l = it.cutLength || it.cut_length;
+                        const w = it.cutWidth || it.cut_width;
+                        rawCut = w ? `${l} × ${w} mm` : `${l} mm`;
+                      }
+                      const cutDisplay = isCut ? (rawCut ? (/\b(mm|in|ft|m|cm)\b/i.test(rawCut) ? rawCut : `${rawCut} mm`) : '—') : '—';
+
                       return `
                         <tr>
                           <td style="color:var(--text-dim); font-family:var(--font-mono);">${idx + 1}</td>
@@ -5395,9 +5406,24 @@
                           <td>
                             <div style="font-weight:600; color:var(--text-main);">${escapeHtml(it.productName || '—')}</div>
                             <div style="font-size:0.78rem; color:var(--text-muted); white-space:pre-wrap; margin-top:3px; line-height:1.45;">${escapeHtml(it.itemDescription || '')}</div>
+                            <div style="font-size:0.75rem; color:#64748b; margin-top:3px;"><span style="font-weight:600;">Original:</span> <span style="font-family:var(--font-mono);">${escapeHtml(origDims)}</span></div>
                           </td>
                           <td>${escapeHtml(it.materialGrade || it.material || '-')}</td>
-                          <td style="font-family:var(--font-mono);">${escapeHtml(it.sizeDimensions || it.size || '-')}</td>
+                          <td style="font-family:var(--font-mono); font-weight:600; color:#334155;">${escapeHtml(origDims)}</td>
+                          <td>
+                            <span class="supply-badge ${isCut ? 'cut-size' : 'full-size'}" style="font-weight:700; font-size:0.75rem; letter-spacing:0.5px; padding:3px 8px; border-radius:4px; display:inline-block;">
+                              ${isCut ? '✂️ CUT SIZE' : 'FULL SIZE'}
+                            </span>
+                          </td>
+                          <td>
+                            ${isCut ? `
+                              <span style="font-family:var(--font-mono); font-weight:700; color:#c2410c; background:#fff7ed; padding:3px 8px; border-radius:4px; border:1px solid #fed7aa; display:inline-block; font-size:0.82rem;">
+                                ${escapeHtml(cutDisplay)}
+                              </span>
+                            ` : `
+                              <span style="color:var(--text-muted); font-size:0.88rem;">—</span>
+                            `}
+                          </td>
                           <td><span class="unit-badge">${escapeHtml(it.unit || 'Sheet')}</span></td>
                           <td style="text-align:right; font-weight:700; font-family:var(--font-mono);">${q}</td>
                           <td style="text-align:right; font-weight:600; font-family:var(--font-mono);">${priceStr}</td>
@@ -5408,7 +5434,7 @@
                   </tbody>
                   <tfoot>
                     <tr style="background:#f1f5f9; font-weight:700;">
-                      <td colspan="8" style="text-align:right; text-transform:uppercase; font-size:0.8rem; letter-spacing:0.5px;">Grand Estimated Cost:</td>
+                      <td colspan="10" style="text-align:right; text-transform:uppercase; font-size:0.8rem; letter-spacing:0.5px;">Grand Estimated Cost:</td>
                       <td style="text-align:right; font-size:0.95rem; color:#059669; font-family:var(--font-mono);">
                         ${formatCurrency(grandTotal)}
                       </td>
@@ -5689,6 +5715,27 @@
       if (elVoucherNum) elVoucherNum.textContent = pr.prNumber;
       if (elVoucherDate) elVoucherDate.textContent = reqDateFormatted;
 
+      const items = (pr.items && pr.items.length > 0) ? pr.items : [{
+        sku: pr.sku,
+        productName: pr.productName,
+        itemDescription: pr.itemDescription,
+        materialGrade: pr.material,
+        sizeDimensions: pr.size,
+        originalDimensions: pr.size,
+        supplyType: pr.supplyType || (pr.purchaseType === 'PROJECT-SPECIFIC CUT SIZE' ? 'Cut Size' : 'Full Size'),
+        requiredCutSize: pr.requiredCutSize,
+        cutLength: pr.cutLength,
+        cutWidth: pr.cutWidth,
+        specification: pr.specification,
+        unit: pr.unit,
+        quantity: pr.quantity,
+        weight: pr.weightKg || pr.totalWeightKg,
+        unitPrice: pr.unitPrice,
+        estimatedTotalCost: pr.totalCost || (pr.unitPrice * pr.quantity)
+      }];
+
+      const grandTotal = items.reduce((sum, it) => sum + (parseFloat(it.estimatedTotalCost || (it.unitPrice * it.quantity)) || 0), 0);
+
       container.innerHTML = `
         <!-- SECTION 1: PROJECT / REQUEST INFORMATION -->
         <div class="pr-doc-section">
@@ -5700,76 +5747,97 @@
           <div style="display:grid; grid-template-columns: repeat(2, 1fr); gap: 0.75rem 1.5rem; background:#f8fafc; padding: 14px 18px; border:1px solid #e2e8f0; border-radius:var(--radius-md); font-size:0.88rem;">
             <div><strong style="color:#64748b; font-size:0.75rem; text-transform:uppercase;">PR Number:</strong> <div style="font-weight:700; color:#0284c7; font-family:var(--font-mono);">${escapeHtml(pr.prNumber)}</div></div>
             <div><strong style="color:#64748b; font-size:0.75rem; text-transform:uppercase;">Request Date:</strong> <div style="font-weight:700; color:#0f172a;">${reqDateFormatted}</div></div>
-            <div><strong style="color:#64748b; font-size:0.75rem; text-transform:uppercase;">Project / PID:</strong> <div style="font-weight:700; color:#0f172a;">${escapeHtml(pr.projectId || '-')}</div></div>
+            <div><strong style="color:#64748b; font-size:0.75rem; text-transform:uppercase;">Project / PID:</strong> <div style="font-weight:700; color:#0f172a;">${escapeHtml(pr.projectId || pr.projectCode || '-')}</div></div>
             <div><strong style="color:#64748b; font-size:0.75rem; text-transform:uppercase;">Department:</strong> <div style="font-weight:700; color:#0f172a;">${escapeHtml(pr.department)}</div></div>
-            <div><strong style="color:#64748b; font-size:0.75rem; text-transform:uppercase;">Requested By:</strong> <div style="font-weight:700; color:#0f172a;">${escapeHtml(pr.requestedBy)}</div></div>
+            <div><strong style="color:#64748b; font-size:0.75rem; text-transform:uppercase;">Requested By:</strong> <div style="font-weight:700; color:#0f172a;">${escapeHtml(pr.requestedBy || pr.requesterName || '-')}</div></div>
             <div><strong style="color:#64748b; font-size:0.75rem; text-transform:uppercase;">Required Date:</strong> <div style="font-weight:700; color:#0f172a;">${escapeHtml(pr.requiredDate)}</div></div>
-            <div style="grid-column: span 2;"><strong style="color:#64748b; font-size:0.75rem; text-transform:uppercase;">Urgency:</strong> <span style="font-weight:700; color:${pr.urgency.includes('Critical') ? '#e11d48' : (pr.urgency.includes('Urgent') ? '#d97706' : '#0284c7')}">${escapeHtml(pr.urgency)}</span></div>
+            <div style="grid-column: span 2;"><strong style="color:#64748b; font-size:0.75rem; text-transform:uppercase;">Urgency:</strong> <span style="font-weight:700; color:${(pr.urgency && pr.urgency.includes('Critical')) ? '#e11d48' : ((pr.urgency && pr.urgency.includes('Urgent')) ? '#d97706' : '#0284c7')}">${escapeHtml(pr.urgency || 'Standard')}</span></div>
           </div>
         </div>
 
         <!-- SECTION 2: ITEM DETAILS -->
         <div class="pr-doc-section">
           <div class="pr-doc-section-title">
-            <span>ITEM DETAILS</span>
+            <span>ITEM DETAILS (${items.length} Materials)</span>
             <span class="pr-source-truth-tag">🔒 Master Item (Single Source of Truth)</span>
           </div>
 
-          <div class="pr-item-details-card">
-            <table class="pr-spec-table">
-              <tbody>
+          <div class="table-responsive" style="margin-top:8px;">
+            <table class="data-table" style="font-size:0.85rem; width:100%;">
+              <thead>
                 <tr>
-                  <th style="width: 18%;">SKU</th>
-                  <td style="width: 32%;"><span class="pr-sku-pill">${escapeHtml(pr.sku)}</span></td>
-                  <th style="width: 18%;">Category</th>
-                  <td style="width: 32%;">${escapeHtml(pr.category || 'Raw Materials')}</td>
-                </tr>
-                <tr>
-                  <th>Product Name</th>
-                  <td colspan="3" class="pr-product-name-highlight">${escapeHtml(pr.productName)}</td>
-                </tr>
-                <tr>
-                  <th style="vertical-align: top;">Item Description</th>
-                  <td colspan="3" style="white-space: pre-wrap; font-size: 0.84rem; line-height: 1.5; color: #334155; word-break: break-word; background: #fafafa;">${escapeHtml(pr.itemDescription || this.getItemDescription(pr))}</td>
-                </tr>
-                <tr>
-                  <th>Subcategory</th>
-                  <td>${escapeHtml(pr.subCategory || '-')}</td>
+                  <th style="width:35px;">#</th>
+                  <th style="width:95px;">SKU</th>
+                  <th>Product Name &amp; Description</th>
                   <th>Material / Grade</th>
-                  <td class="pr-bold-cell">${escapeHtml(pr.material)}</td>
-                </tr>
-                <tr>
-                  <th>Size / Dimensions</th>
-                  <td class="pr-mono-cell">${escapeHtml(pr.size)}</td>
-                  <th>Specification</th>
-                  <td>${escapeHtml(pr.specification || 'PT Persada Nusantara Steel Standard')}</td>
-                </tr>
-                <tr>
-                  <th>Manufacturer / Brand</th>
-                  <td>${escapeHtml(pr.brand || 'PT Persada Nusantara Steel')}</td>
+                  <th>Original Dimensions</th>
+                  <th style="min-width:115px;">Supply Type</th>
+                  <th style="min-width:135px;">Required Cut Size</th>
                   <th>Unit</th>
-                  <td>${escapeHtml(pr.unit)}</td>
+                  <th style="text-align:right;">Quantity</th>
+                  <th style="text-align:right;">Unit Price (IDR)</th>
+                  <th style="text-align:right;">Est. Total (IDR)</th>
                 </tr>
-                <tr style="background:#f0fdf4;">
-                  <th>Requisition Quantity</th>
-                  <td>
-                    <div style="font-size:1.15rem; font-weight:800; color:#0284c7; font-family:var(--font-mono);">
-                      ${pr.quantity} <span style="font-size:0.85rem; font-weight:700; color:#475569;">${escapeHtml(pr.unit)}</span>
-                    </div>
-                  </td>
-                  <th>Weight</th>
-                  <td>
-                    <div style="font-weight:700; color:#0f172a;">${pr.weightKg ? pr.weightKg + ' kg / ' + pr.unit : '-'}</div>
-                    ${pr.totalWeightKg ? `<div class="pr-calc-total-wt">Total Weight: ${parseFloat(pr.totalWeightKg).toLocaleString()} kg (${(parseFloat(pr.totalWeightKg)/1000).toFixed(3)} MT)</div>` : ''}
-                  </td>
-                </tr>
-                <tr style="background:#f8fafc;">
-                  <th>Unit Price (IDR)</th>
-                  <td style="font-weight:700; color:#0f172a;">${(pr.unitPrice !== undefined && pr.unitPrice !== null && pr.unitPrice !== '' && Number(pr.unitPrice) >= 0) ? `IDR ${Number(pr.unitPrice).toLocaleString('id-ID')} / ${escapeHtml(pr.unit || 'Unit')}` : '—'}</td>
-                  <th>Est. Total Cost (IDR)</th>
-                  <td style="font-weight:800; color:#059669; font-size:0.95rem;">${(pr.totalCost || (pr.unitPrice !== undefined && pr.unitPrice !== null && pr.unitPrice !== '' && Number(pr.unitPrice) >= 0 && pr.quantity)) ? `IDR ${Number(pr.totalCost || (Number(pr.unitPrice) * pr.quantity)).toLocaleString('id-ID')}` : '—'}</td>
-                </tr>
+              </thead>
+              <tbody>
+                ${items.map((it, idx) => {
+                  const p = (it.unitPrice !== undefined && it.unitPrice !== null && it.unitPrice !== '' && !isNaN(Number(it.unitPrice))) ? Number(it.unitPrice) : null;
+                  const q = parseFloat(it.quantity) || 1;
+                  const tot = (p !== null) ? (parseFloat(it.estimatedTotalCost) || (p * q)) : null;
+                  const formattedUnitPrice = (p !== null) ? `IDR ${p.toLocaleString('id-ID')} / ${escapeHtml(it.unit || 'Unit')}` : '—';
+                  const totStr = (tot !== null) ? `IDR ${tot.toLocaleString('id-ID')}` : '—';
+
+                  const isCut = (it.supplyType === 'Cut Size' || it.supply_type === 'Cut Size' || it.purchaseType === 'PROJECT-SPECIFIC CUT SIZE' || it.purchase_type === 'PROJECT-SPECIFIC CUT SIZE');
+                  const origDims = it.originalDimensions || it.sizeDimensions || it.size_dimensions || it.size || '—';
+                  let rawCut = it.requiredCutSize || it.required_cut_size || '';
+                  if (!rawCut && (it.cutLength || it.cut_length)) {
+                    const l = it.cutLength || it.cut_length;
+                    const w = it.cutWidth || it.cut_width;
+                    rawCut = w ? `${l} × ${w} mm` : `${l} mm`;
+                  }
+                  const cutDisplay = isCut ? (rawCut ? (/\b(mm|in|ft|m|cm)\b/i.test(rawCut) ? rawCut : `${rawCut} mm`) : '—') : '—';
+
+                  return `
+                    <tr>
+                      <td style="color:var(--text-dim); font-family:var(--font-mono);">${idx + 1}</td>
+                      <td><span class="sku-badge">${escapeHtml(it.sku)}</span></td>
+                      <td>
+                        <div style="font-weight:600; color:var(--text-main);">${escapeHtml(it.productName || '—')}</div>
+                        <div style="font-size:0.78rem; color:var(--text-muted); white-space:pre-wrap; margin-top:3px; line-height:1.45;">${escapeHtml(it.itemDescription || '')}</div>
+                        <div style="font-size:0.75rem; color:#64748b; margin-top:3px;"><span style="font-weight:600;">Original:</span> <span style="font-family:var(--font-mono);">${escapeHtml(origDims)}</span></div>
+                      </td>
+                      <td>${escapeHtml(it.materialGrade || it.material || '-')}</td>
+                      <td style="font-family:var(--font-mono); font-weight:600; color:#334155;">${escapeHtml(origDims)}</td>
+                      <td>
+                        <span class="supply-badge ${isCut ? 'cut-size' : 'full-size'}" style="font-weight:700; font-size:0.75rem; letter-spacing:0.5px; padding:3px 8px; border-radius:4px; display:inline-block;">
+                          ${isCut ? '✂️ CUT SIZE' : 'FULL SIZE'}
+                        </span>
+                      </td>
+                      <td>
+                        ${isCut ? `
+                          <span style="font-family:var(--font-mono); font-weight:700; color:#c2410c; background:#fff7ed; padding:3px 8px; border-radius:4px; border:1px solid #fed7aa; display:inline-block; font-size:0.82rem;">
+                            ${escapeHtml(cutDisplay)}
+                          </span>
+                        ` : `
+                          <span style="color:var(--text-muted); font-size:0.88rem;">—</span>
+                        `}
+                      </td>
+                      <td><span class="unit-badge">${escapeHtml(it.unit || 'Sheet')}</span></td>
+                      <td style="text-align:right; font-weight:700; font-family:var(--font-mono);">${q}</td>
+                      <td style="text-align:right; font-weight:600; font-family:var(--font-mono);">${formattedUnitPrice}</td>
+                      <td style="text-align:right; font-weight:700; color:#059669; font-family:var(--font-mono);">${totStr}</td>
+                    </tr>
+                  `;
+                }).join('')}
               </tbody>
+              <tfoot>
+                <tr style="background:#f1f5f9; font-weight:700;">
+                  <td colspan="10" style="text-align:right; text-transform:uppercase; font-size:0.8rem; letter-spacing:0.5px;">Grand Estimated Cost:</td>
+                  <td style="text-align:right; font-size:0.95rem; color:#059669; font-family:var(--font-mono);">
+                    ${grandTotal > 0 ? `IDR ${Number(grandTotal).toLocaleString('id-ID')}` : '—'}
+                  </td>
+                </tr>
+              </tfoot>
             </table>
           </div>
         </div>
