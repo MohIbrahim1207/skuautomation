@@ -178,13 +178,34 @@ router.post('/', async (req, res) => {
         cutLength = String(cDim.length || item.cutLength || '').trim();
         cutWidth = String(cDim.width || item.cutWidth || '').trim();
 
-        if (!cutLength || !cutWidth) {
+        const lenNum = Number(cutLength);
+        if (!cutLength || isNaN(lenNum) || lenNum <= 0) {
           await client.query('ROLLBACK');
           return res.status(400).json({
-            error: `Required cut dimensions (Length and Width) are mandatory for Cut Size material: ${item.sku}.`
+            error: `Required cut length must be a valid positive number for Cut Size material: ${item.sku}.`
           });
         }
-        itemRequiredCutSize = `${cutLength} × ${cutWidth}`;
+
+        const isPlateSheet = /plate|sheet|plat/i.test(`${item.productName || ''} ${item.itemDescription || ''} ${item.unit || ''}`);
+        if (isPlateSheet) {
+          const widNum = Number(cutWidth);
+          if (!cutWidth || isNaN(widNum) || widNum <= 0) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({
+              error: `Required cut dimensions (Length and Width) are mandatory for Cut Size plate/sheet material: ${item.sku}.`
+            });
+          }
+        } else if (cutWidth) {
+          const widNum = Number(cutWidth);
+          if (isNaN(widNum) || widNum <= 0) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({
+              error: `Cut width must be a valid positive number if specified for Cut Size material: ${item.sku}.`
+            });
+          }
+        }
+
+        itemRequiredCutSize = cutWidth ? `${cutLength} × ${cutWidth}` : `${cutLength}`;
       }
 
       await client.query(

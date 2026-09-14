@@ -4170,6 +4170,171 @@ html {
   margin-top: 2px;
 }
 
+/* =========================================================================
+   MASTER CATALOG SUPPLY TYPE & CUT DIMENSIONS UI
+   ========================================================================= */
+.catalog-supply-cell-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
 
+.catalog-supply-select {
+  padding: 4px 8px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  border-radius: var(--radius-sm, 4px);
+  border: 1px solid var(--border-color, #cbd5e1);
+  background-color: var(--bg-surface, #ffffff);
+  color: var(--text-main, #0f172a);
+  cursor: pointer;
+  outline: none;
+  transition: all 0.2s ease;
+  width: 100%;
+}
 
+.catalog-supply-select:focus {
+  border-color: var(--primary-500, #0284c7);
+  box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.2);
+}
 
+.catalog-supply-select.supply-val-full-size {
+  border-color: #38bdf8;
+  background-color: #f0f9ff;
+  color: #0369a1;
+}
+
+.catalog-supply-select.supply-val-cut-size {
+  border-color: #fb923c;
+  background-color: #fff7ed;
+  color: #c2410c;
+}
+
+.supply-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.supply-badge.full-size {
+  background: #e0f2fe;
+  color: #0369a1;
+  border: 1px solid #bae6fd;
+}
+
+.supply-badge.cut-size {
+  background: #ffedd5;
+  color: #c2410c;
+  border: 1px solid #fed7aa;
+}
+
+/* Catalog Cut Dimensions Box */
+.catalog-cut-panel {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 5px;
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-top: 4px;
+}
+
+.cut-orig-dim-display {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 0.72rem;
+  color: #64748b;
+  border-bottom: 1px dashed #cbd5e1;
+  padding-bottom: 4px;
+}
+
+.cut-dim-label {
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 0.68rem;
+  color: #64748b;
+}
+
+.cut-dim-orig-val {
+  font-family: var(--font-mono, monospace);
+  font-weight: 600;
+  color: #0f172a;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cut-inputs-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+}
+
+.cut-input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cut-dim-sublabel {
+  font-size: 0.67rem;
+  font-weight: 700;
+  color: #475569;
+}
+
+.cut-dim-sublabel .req {
+  color: #e11d48;
+}
+
+.input-cut-dim {
+  width: 100%;
+  padding: 3px 6px;
+  font-size: 0.75rem;
+  font-family: var(--font-mono, monospace);
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  background: #ffffff;
+  color: #0f172a;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.input-cut-dim:focus {
+  border-color: #f97316;
+  box-shadow: 0 0 0 2px rgba(249, 115, 22, 0.2);
+}
+
+.input-cut-dim.input-error {
+  border-color: #e11d48 !important;
+  background-color: #fff1f2 !important;
+}
+
+.cut-dim-error {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: #e11d48;
+  margin-top: 2px;
+  line-height: 1.2;
+}
+
+/* Cart Specific Supply & Cut Details */
+.cart-supply-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.cart-cut-spec-details {
+  font-size: 0.74rem;
+  line-height: 1.4;
+}

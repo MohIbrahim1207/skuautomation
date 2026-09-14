@@ -32,15 +32,33 @@ function sanitizeRemarks(remarks) {
 
 router.use(authenticateToken);
 
-// GET /api/master-items - Browse Master Catalog
+// GET /api/master-items - Browse Master Catalog (supports optional category and search filtering)
 router.get('/', async (req, res) => {
   try {
-    const result = await query(
-      `SELECT id, sku, product_name, item_description, category, sub_category,
+    const { category, search } = req.query;
+    let sql = `SELECT id, sku, product_name, item_description, category, sub_category,
               material, size, specification, unit, weight_kg, status, supply_type, remarks, brand, unit_price, source_sheet, created_at
-       FROM master_items
-       ORDER BY sku ASC`
-    );
+       FROM master_items`;
+    const params = [];
+    const whereClauses = [];
+
+    if (category) {
+      params.push(category.trim());
+      whereClauses.push(`LOWER(category) = LOWER($${params.length})`);
+    }
+
+    if (search) {
+      params.push(`%${search.trim().toLowerCase()}%`);
+      whereClauses.push(`(LOWER(sku) LIKE $${params.length} OR LOWER(product_name) LIKE $${params.length} OR LOWER(COALESCE(item_description, '')) LIKE $${params.length})`);
+    }
+
+    if (whereClauses.length > 0) {
+      sql += ` WHERE ` + whereClauses.join(' AND ');
+    }
+
+    sql += ` ORDER BY sku ASC`;
+
+    const result = await query(sql, params);
 
     const items = result.rows.map(r => ({
       id: r.id,
@@ -184,9 +202,23 @@ router.post('/', requireAdmin, async (req, res) => {
   }
 });
 
-// PUT /api/master-items/:sku - Edit Master Item (Admin only)
-router.put('/:sku', requireAdmin, async (req, res) => {
+// PUT /api/master-items/:sku - Edit Master Item (Admin, or Employee restricted to Status & Remarks only)
+router.put('/:sku', async (req, res) => {
   const { sku } = req.params;
+
+  // Field-level authorization: Non-admins may ONLY update Status and Remarks.
+  if (req.user && req.user.role !== 'ADMIN') {
+    const allowedFields = ['status', 'remarks'];
+    const bodyFields = Object.keys(req.body);
+    const forbiddenFields = bodyFields.filter(f => !allowedFields.includes(f) && req.body[f] !== undefined);
+
+    if (forbiddenFields.length > 0) {
+      return res.status(403).json({
+        error: `Access Denied — Employees are only permitted to edit Status and Remarks. Modifying protected field(s) [${forbiddenFields.join(', ')}] requires Administrator privileges.`
+      });
+    }
+  }
+
   const { itemDescription, unitPrice, productName, material, size, specification, status, supplyType, remarks } = req.body;
 
   // Price Requirement: Controlled by REQUIRE_UNIT_PRICE switch
@@ -440,6 +472,33 @@ router.post('/batch-import', async (req, res) => {
     res.status(500).json({ error: err.message || 'Batch import failed. Transaction rolled back.' });
   } finally {
     client.release();
+  }
+});
+
+// DELETE /api/master-items/:sku - Delete Master Item (Admin only)
+router.delete('/:sku', requireAdmin, async (req, res) => {
+  const { sku } = req.params;
+
+  try {
+    const existing = await query('SELECT * FROM master_items WHERE UPPER(sku) = UPPER($1)', [sku.trim()]);
+    if (existing.rowCount === 0) {
+      return res.status(404).json({ error: `Master SKU '${sku}' not found.` });
+    }
+
+    // Protect authoritative Raw Materials FF4186–FF4235
+    const skuMatch = sku.trim().toUpperCase().match(/^FF(\d+)$/);
+    if (skuMatch) {
+      const num = parseInt(skuMatch[1], 10);
+      if (num >= 4186 && num <= 4235) {
+        return res.status(403).json({ error: 'Cannot delete authoritative Raw Materials FF4186–FF4235.' });
+      }
+    }
+
+    await query('DELETE FROM master_items WHERE UPPER(sku) = UPPER($1)', [sku.trim()]);
+    res.json({ success: true, message: `Master Item '${sku}' deleted successfully.` });
+  } catch (err) {
+    console.error('[Master Items API] Delete error:', err);
+    res.status(500).json({ error: 'Database connection unavailable. Please contact the administrator.' });
   }
 });
 

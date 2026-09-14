@@ -289,7 +289,7 @@
 
     async updateMasterItemStatus(sku, status) {
       if (!sku) return null;
-      if (window.PermissionService && !window.PermissionService.can('CAN_EDIT_ITEM_DESCRIPTION') && !window.PermissionService.can('CAN_EDIT_MASTER_ITEM')) {
+      if (window.PermissionService && !window.PermissionService.can('CAN_EDIT_STATUS') && !window.PermissionService.can('CAN_EDIT_MASTER_ITEM')) {
         window.PermissionService.notifyAccessDenied('Access Denied — Administrator permission required.');
         throw new Error('Access Denied — Administrator permission required.');
       }
@@ -381,7 +381,7 @@
 
     async updateMasterItemRemarks(sku, remarks) {
       if (!sku) return null;
-      if (window.PermissionService && !window.PermissionService.can('CAN_EDIT_ITEM_DESCRIPTION') && !window.PermissionService.can('CAN_EDIT_MASTER_ITEM')) {
+      if (window.PermissionService && !window.PermissionService.can('CAN_EDIT_REMARKS') && !window.PermissionService.can('CAN_EDIT_MASTER_ITEM')) {
         window.PermissionService.notifyAccessDenied('Access Denied — Administrator permission required.');
         throw new Error('Access Denied — Administrator permission required.');
       }
@@ -429,6 +429,22 @@
       if (window.PermissionService && !window.PermissionService.can('CAN_DELETE_MASTER_ITEM')) {
         window.PermissionService.notifyAccessDenied('Access Denied — Administrator permission required.');
         throw new Error('Access Denied — Administrator permission required.');
+      }
+      const token = window.AuthService ? window.AuthService.getToken() : '';
+      if (token) {
+        try {
+          const resp = await fetch(`/api/master-items/${encodeURIComponent(sku)}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (!resp.ok) {
+            const data = await resp.json().catch(() => ({}));
+            throw new Error(data.error || 'Failed to delete master item');
+          }
+        } catch (e) {
+          console.warn('[DataService] Backend delete failed:', e);
+          throw e;
+        }
       }
       const items = await this.getMasterItems();
       const filtered = items.filter(i => i.sku.toUpperCase() !== sku.toUpperCase());
@@ -640,6 +656,10 @@
     },
 
     async approvePurchaseRequest(id) {
+      if (window.PermissionService && !window.PermissionService.can('CAN_APPROVE_PR')) {
+        window.PermissionService.notifyAccessDenied('Access Denied — Administrator permission required to approve PRs.');
+        throw new Error('Access Denied — Administrator permission required to approve PRs.');
+      }
       const token = window.AuthService ? window.AuthService.getToken() : '';
       if (!token) throw new Error('Authentication required.');
       const resp = await fetch(`/api/purchase-requests/${id}/approve`, {
@@ -652,6 +672,10 @@
     },
 
     async rejectPurchaseRequest(id, rejectionReason) {
+      if (window.PermissionService && !window.PermissionService.can('CAN_REJECT_PR')) {
+        window.PermissionService.notifyAccessDenied('Access Denied — Administrator permission required to reject PRs.');
+        throw new Error('Access Denied — Administrator permission required to reject PRs.');
+      }
       const token = window.AuthService ? window.AuthService.getToken() : '';
       if (!token) throw new Error('Authentication required.');
       const resp = await fetch(`/api/purchase-requests/${id}/reject`, {
@@ -700,13 +724,33 @@
       }
     },
 
-    addItem(masterItem) {
-      const existing = this.items.find(i => i.sku.toUpperCase() === masterItem.sku.toUpperCase());
+    addItem(masterItem, options = {}) {
+      if (window.PermissionService && !window.PermissionService.can('CAN_CREATE_PR')) {
+        if (window.UI && window.UI.showAccessDeniedModal) {
+          window.UI.showAccessDeniedModal('Access Denied — PR creation permission required.');
+        } else {
+          alert('Access Denied — PR creation permission required.');
+        }
+        return;
+      }
+      const supplyType = (options.supplyType === 'Cut Size') ? 'Cut Size' : 'Full Size';
+      const origDim = options.originalDimensions || masterItem.size || masterItem.sizeDimensions || '—';
+      const cutLength = (supplyType === 'Cut Size') ? String(options.cutLength || '').trim() : '';
+      const cutWidth = (supplyType === 'Cut Size') ? String(options.cutWidth || '').trim() : '';
+      const isCut = (supplyType === 'Cut Size');
+      const reqCutSize = isCut ? (cutWidth ? `${cutLength} × ${cutWidth} mm` : `${cutLength} mm`) : '';
+
+      const existing = this.items.find(i =>
+        i.sku.toUpperCase() === masterItem.sku.toUpperCase() &&
+        (i.supplyType || 'Full Size') === supplyType &&
+        String(i.cutLength || '') === cutLength &&
+        String(i.cutWidth || '') === cutWidth
+      );
+
       if (existing) {
         existing.quantity = (parseFloat(existing.quantity) || 1) + 1;
       } else {
         const desc = masterItem.itemDescription || DataService.getItemDescription(masterItem);
-        const origDim = masterItem.size || masterItem.sizeDimensions || '';
         this.items.push({
           masterItemId: masterItem.id || null,
           sku: masterItem.sku,
@@ -721,24 +765,23 @@
           weightKg: masterItem.weightKg || null,
           unitPrice: (masterItem.unitPrice !== undefined && masterItem.unitPrice !== null && masterItem.unitPrice !== '') ? parseFloat(masterItem.unitPrice) : null,
           status: (masterItem.status === 'Out of Stock') ? 'Out of Stock' : 'Available',
-          supplyType: (masterItem.supplyType === 'Cut Size') ? 'Cut Size' : 'Full Size',
-          cutLength: '',
-          cutWidth: '',
-          purchaseType: (masterItem.supplyType === 'Cut Size') ? 'PROJECT-SPECIFIC CUT SIZE' : 'STANDARD STOCK ITEM',
-          requiredCutSize: ''
+          supplyType: supplyType,
+          cutLength: cutLength,
+          cutWidth: cutWidth,
+          purchaseType: isCut ? 'PROJECT-SPECIFIC CUT SIZE' : 'STANDARD STOCK ITEM',
+          requiredCutSize: reqCutSize
         });
       }
       this.save();
       this.updateBadge();
-      UI.showToast('Added to Cart', `${masterItem.sku} (${masterItem.productName}) added to PR Cart.`);
+      UI.showToast('Added to Cart', `${masterItem.sku} (${masterItem.productName || masterItem.sku}) [${supplyType}] added to PR Cart.`);
     },
 
-    updateQuantity(sku, newQty) {
-      const item = this.items.find(i => i.sku.toUpperCase() === sku.toUpperCase());
-      if (item) {
+    updateQuantity(idx, newQty) {
+      if (this.items[idx]) {
         const q = parseFloat(newQty);
         if (!isNaN(q) && q > 0) {
-          item.quantity = q;
+          this.items[idx].quantity = q;
           this.save();
           this.renderCartTable();
           this.updateSummary();
@@ -746,13 +789,16 @@
       }
     },
 
-    removeItem(sku) {
-      this.items = this.items.filter(i => i.sku.toUpperCase() !== sku.toUpperCase());
-      this.save();
-      this.updateBadge();
-      this.renderCartTable();
-      this.updateSummary();
-      UI.showToast('Item Removed', `Removed ${sku} from cart.`);
+    removeItem(idx) {
+      if (this.items[idx]) {
+        const removed = this.items[idx];
+        this.items.splice(idx, 1);
+        this.save();
+        this.updateBadge();
+        this.renderCartTable();
+        this.updateSummary();
+        UI.showToast('Item Removed', `Removed ${removed.sku} from cart.`);
+      }
     },
 
     clear() {
@@ -879,8 +925,13 @@
               ? '<span style="color:#e11d48; font-weight:600; font-size:0.8rem;">Missing Price</span>'
               : '—');
 
+        const isCut = (item.supplyType === 'Cut Size');
+        const itemStatus = (item.status === 'Out of Stock') ? 'Out of Stock' : 'Available';
+        const statusClass = itemStatus.toLowerCase().replace(/[\s_]+/g, '-');
+        const origDimDisplay = item.originalDimensions || item.sizeDimensions || item.size || '—';
+
         return `
-          <tr data-sku="${escapeHtml(item.sku)}">
+          <tr data-cart-idx="${idx}" data-sku="${escapeHtml(item.sku)}">
             <td style="color:var(--text-dim); font-family:var(--font-mono);">${idx + 1}</td>
             <td><span class="sku-badge">${escapeHtml(item.sku)}</span></td>
             <td>
@@ -888,57 +939,69 @@
               <div style="font-size:0.75rem; color:var(--text-muted); white-space:pre-wrap; max-width:240px;">${escapeHtml(item.itemDescription || '')}</div>
             </td>
             <td>${escapeHtml(item.materialGrade || '-')}</td>
-            <td style="font-family:var(--font-mono);">${escapeHtml(item.sizeDimensions || '-')}</td>
+            <td style="font-family:var(--font-mono); font-size:0.8rem; color:var(--text-main);">${escapeHtml(origDimDisplay)}</td>
             <td><span class="unit-badge">${escapeHtml(item.unit || 'Sheet')}</span></td>
+            <td style="text-align:center;">
+              <span class="status-badge ${statusClass}">● ${escapeHtml(itemStatus)}</span>
+            </td>
+            <td>
+              <div class="cart-supply-info">
+                <span class="supply-badge ${isCut ? 'cut-size' : 'full-size'}">${isCut ? 'CUT SIZE' : 'FULL SIZE'}</span>
+                ${isCut ? `
+                  <div class="cart-cut-spec-details" style="font-size:0.74rem; color:var(--text-muted); margin-top:4px; line-height:1.4;">
+                    <div>Orig: <span style="font-family:var(--font-mono); color:var(--text-main); font-weight:600;">${escapeHtml(origDimDisplay)}</span></div>
+                    <div>Req: <span style="font-family:var(--font-mono); color:#d97706; font-weight:700;">${escapeHtml(item.cutLength)}${item.cutWidth ? ' × ' + escapeHtml(item.cutWidth) : ''} mm</span></div>
+                  </div>
+                ` : ''}
+              </div>
+            </td>
             <td style="font-weight:600; font-family:var(--font-mono);">${formattedPrice}</td>
             <td style="text-align:center;">
               <div class="cart-qty-ctrl">
-                <button type="button" class="btn-qty-adj btn-cart-minus" data-sku="${escapeHtml(item.sku)}">−</button>
-                <input type="number" min="1" step="1" class="input-qty-val cart-qty-input" data-sku="${escapeHtml(item.sku)}" value="${item.quantity}">
-                <button type="button" class="btn-qty-adj btn-cart-plus" data-sku="${escapeHtml(item.sku)}">+</button>
+                <button type="button" class="btn-qty-adj btn-cart-minus" data-idx="${idx}">−</button>
+                <input type="number" min="1" step="1" class="input-qty-val cart-qty-input" data-idx="${idx}" value="${item.quantity}">
+                <button type="button" class="btn-qty-adj btn-cart-plus" data-idx="${idx}">+</button>
               </div>
             </td>
             <td style="text-align:right; font-weight:700; color:#059669; font-family:var(--font-mono);">${formattedTotal}</td>
             <td style="text-align:center;">
-              <button type="button" class="btn-user-action btn-disable btn-cart-remove" data-sku="${escapeHtml(item.sku)}" title="Remove material">&times;</button>
+              <button type="button" class="btn-user-action btn-disable btn-cart-remove" data-idx="${idx}" title="Remove material">&times;</button>
             </td>
           </tr>
         `;
       }).join('');
 
-      // Bind quantity and remove buttons
+      // Bind quantity and remove buttons by index
       tbody.querySelectorAll('.btn-cart-minus').forEach(btn => {
         btn.addEventListener('click', () => {
-          const sku = btn.getAttribute('data-sku');
-          const item = this.items.find(i => i.sku.toUpperCase() === sku.toUpperCase());
-          if (item && item.quantity > 1) {
-            this.updateQuantity(sku, item.quantity - 1);
+          const idx = parseInt(btn.getAttribute('data-idx'), 10);
+          if (this.items[idx] && this.items[idx].quantity > 1) {
+            this.updateQuantity(idx, this.items[idx].quantity - 1);
           }
         });
       });
 
       tbody.querySelectorAll('.btn-cart-plus').forEach(btn => {
         btn.addEventListener('click', () => {
-          const sku = btn.getAttribute('data-sku');
-          const item = this.items.find(i => i.sku.toUpperCase() === sku.toUpperCase());
-          if (item) {
-            this.updateQuantity(sku, item.quantity + 1);
+          const idx = parseInt(btn.getAttribute('data-idx'), 10);
+          if (this.items[idx]) {
+            this.updateQuantity(idx, this.items[idx].quantity + 1);
           }
         });
       });
 
       tbody.querySelectorAll('.cart-qty-input').forEach(input => {
         input.addEventListener('change', () => {
-          const sku = input.getAttribute('data-sku');
+          const idx = parseInt(input.getAttribute('data-idx'), 10);
           const val = parseFloat(input.value) || 1;
-          this.updateQuantity(sku, val);
+          this.updateQuantity(idx, val);
         });
       });
 
       tbody.querySelectorAll('.btn-cart-remove').forEach(btn => {
         btn.addEventListener('click', () => {
-          const sku = btn.getAttribute('data-sku');
-          this.removeItem(sku);
+          const idx = parseInt(btn.getAttribute('data-idx'), 10);
+          this.removeItem(idx);
         });
       });
     },
@@ -1024,6 +1087,15 @@
     },
 
     async handleSubmitCheckout() {
+      if (window.PermissionService && !window.PermissionService.can('CAN_CREATE_PR')) {
+        if (window.UI && window.UI.showAccessDeniedModal) {
+          window.UI.showAccessDeniedModal('Access Denied — PR creation permission required.');
+        } else {
+          alert('Access Denied — PR creation permission required.');
+        }
+        return;
+      }
+
       if (this.items.length === 0) {
         alert('Your PR Cart is empty. Please add materials from the catalog first.');
         return;
@@ -1074,13 +1146,14 @@
         return;
       }
 
+      const hasAnyCutSize = this.items.some(i => i.supplyType === 'Cut Size' || i.purchaseType === 'PROJECT-SPECIFIC CUT SIZE');
       const prPayload = {
         projectId,
         department: dept,
         requiredDate: reqDate,
         urgency,
-        purchaseType: isCutSize ? 'PROJECT-SPECIFIC CUT SIZE' : 'STANDARD STOCK ITEM',
-        requiredCutSize: isCutSize ? cutSize : null,
+        purchaseType: hasAnyCutSize ? 'PROJECT-SPECIFIC CUT SIZE' : (isCutSize ? 'PROJECT-SPECIFIC CUT SIZE' : 'STANDARD STOCK ITEM'),
+        requiredCutSize: isCutSize ? cutSize : (hasAnyCutSize ? this.items.filter(i => i.supplyType === 'Cut Size').map(i => `${i.sku}: ${i.cutLength}${i.cutWidth ? ' × ' + i.cutWidth : ''} mm`).join('; ') : null),
         reasonForPurchase: reason,
         remarks,
         cartItems: this.items
@@ -2136,6 +2209,19 @@
       } else if (targetCat.toLowerCase().includes('raw')) {
         targetCat = 'Raw Materials';
       }
+
+      if (targetCat === 'Raw Materials') {
+        if (window.PermissionService && !window.PermissionService.can('CAN_VIEW_RAW_MATERIALS') && !window.PermissionService.can('CAN_VIEW_MASTER_CATALOG')) {
+          this.showAccessDeniedModal('Access Denied — Raw Materials catalog permission required.');
+          return;
+        }
+      } else {
+        if (window.PermissionService && !window.PermissionService.can('CAN_VIEW_MASTER_CATALOG')) {
+          this.showAccessDeniedModal('Access Denied — Master Catalog permission required.');
+          return;
+        }
+      }
+
       this.currentCategory = targetCat;
       this.searchQuery = '';
       this.activeSubcategoryFilter = 'ALL';
@@ -2241,11 +2327,15 @@
       const navBtnUsers = document.getElementById('navBtnUsers');
       const navBtnSettings = document.getElementById('navBtnSettings');
       const btnOpenNewSku = document.getElementById('btnOpenNewSku');
+      const btnHeaderNewSku = document.getElementById('btnHeaderNewSku');
       const btnOpenExcelImport = document.getElementById('btnOpenExcelImport');
       const canCreate = window.PermissionService ? window.PermissionService.can('CAN_CREATE_SKU') : (user.role === 'ADMIN');
 
       if (btnOpenExcelImport) {
         btnOpenExcelImport.style.display = canCreate ? '' : 'none';
+      }
+      if (btnHeaderNewSku) {
+        btnHeaderNewSku.style.display = canCreate ? '' : 'none';
       }
 
       if (user.role === 'ADMIN') {
@@ -2431,6 +2521,17 @@
         });
       }
 
+      const btnHeaderNewSku = document.getElementById('btnHeaderNewSku');
+      if (btnHeaderNewSku) {
+        btnHeaderNewSku.addEventListener('click', () => {
+          if (!window.PermissionService || !window.PermissionService.can('CAN_CREATE_SKU')) {
+            this.showAccessDeniedModal('Access Denied — Administrator permission required.');
+            return;
+          }
+          this.openNewSkuModal();
+        });
+      }
+
       // Modal Closers
       document.querySelectorAll('[data-modal-close]').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -2478,7 +2579,7 @@
       const btnResetCatalog = document.getElementById('btnResetCatalog');
       if (btnResetCatalog) {
         btnResetCatalog.addEventListener('click', async () => {
-          if (!window.PermissionService || !window.PermissionService.can('CAN_CREATE_SKU')) {
+          if (!window.PermissionService || !window.PermissionService.can('CAN_ACCESS_SETTINGS')) {
             this.showAccessDeniedModal('Access Denied — Administrator permission required.');
             return;
           }
@@ -2513,6 +2614,27 @@
       if (viewName === 'settings') {
         if (!window.PermissionService || !window.PermissionService.can('CAN_ACCESS_SETTINGS')) {
           this.showAccessDeniedModal('Access Denied — Administrator permission required.');
+          return;
+        }
+      }
+
+      if (viewName === 'catalog') {
+        if (window.PermissionService && !window.PermissionService.can('CAN_VIEW_MASTER_CATALOG')) {
+          this.showAccessDeniedModal('Access Denied — Master Catalog permission required.');
+          return;
+        }
+      }
+
+      if (viewName === 'dashboard') {
+        if (window.PermissionService && !window.PermissionService.can('CAN_VIEW_DASHBOARD')) {
+          this.showAccessDeniedModal('Access Denied — Dashboard permission required.');
+          return;
+        }
+      }
+
+      if (viewName === 'prs') {
+        if (window.PermissionService && !window.PermissionService.can('CAN_VIEW_OWN_PRS') && !window.PermissionService.can('CAN_VIEW_ALL_PRS')) {
+          this.showAccessDeniedModal('Access Denied — Purchase Request permission required.');
           return;
         }
       }
@@ -3120,7 +3242,10 @@
       const navBadge = document.getElementById('navCatalogBadge');
       if (navBadge) navBadge.textContent = masterItems.length;
 
-      const canEdit = window.PermissionService ? window.PermissionService.can('CAN_EDIT_ITEM_DESCRIPTION') : false;
+      const canEditDescription = window.PermissionService ? window.PermissionService.can('CAN_EDIT_ITEM_DESCRIPTION') : false;
+      const canEditPrice = window.PermissionService ? window.PermissionService.can('CAN_EDIT_PRICE') : false;
+      const canEditStatus = window.PermissionService ? window.PermissionService.can('CAN_EDIT_STATUS') : false;
+      const canEditRemarks = window.PermissionService ? window.PermissionService.can('CAN_EDIT_REMARKS') : false;
       const canCreateSku = window.PermissionService ? window.PermissionService.can('CAN_CREATE_SKU') : false;
 
       if (filtered.length === 0) {
@@ -3141,9 +3266,8 @@
         const itemDesc = this.getItemDescription(item);
         const itemStatus = (item.status === 'Out of Stock') ? 'Out of Stock' : 'Available';
         const statusClass = itemStatus.toLowerCase().replace(/[\s_]+/g, '-');
-        const itemSupplyType = (item.supplyType === 'Cut Size') ? 'Cut Size' : 'Full Size';
-        const supplyClass = itemSupplyType.toLowerCase().replace(/[\s_]+/g, '-');
         const itemRemarks = (item.remarks !== undefined && item.remarks !== null) ? item.remarks : '';
+        const isPlateSheet = /plate|sheet|plat/i.test(`${item.productName || ''} ${item.itemDescription || ''} ${item.unit || ''} ${item.subCategory || ''} ${item.category || ''}`);
 
         return `
           <tr data-sku="${escapeHtml(item.sku)}">
@@ -3159,7 +3283,7 @@
             </td>
             <td>
               <div class="catalog-desc-cell-wrapper">
-                ${canEdit ? `
+                ${canEditDescription ? `
                   <textarea 
                     class="catalog-desc-textarea" 
                     data-sku="${escapeHtml(item.sku)}" 
@@ -3189,7 +3313,7 @@
               <span class="weight-val">${item.weightKg ? item.weightKg + ' kg' : '-'}</span>
             </td>
             <td>
-              ${canEdit ? `
+              ${canEditStatus ? `
                 <div class="catalog-status-cell-wrapper">
                   <select class="catalog-status-select status-val-${statusClass}" 
                           data-sku="${escapeHtml(item.sku)}"
@@ -3206,24 +3330,46 @@
               `}
             </td>
             <td>
-              ${canEdit ? `
-                <div class="catalog-supply-cell-wrapper">
-                  <select class="catalog-supply-select supply-val-${supplyClass}" 
+              <div class="catalog-supply-cell-wrapper" id="supplyWrapper_${escapeHtml(item.sku)}">
+                <div class="supply-select-header" style="display:flex; align-items:center; gap:6px;">
+                  <select class="catalog-supply-select supply-val-full-size" 
                           data-sku="${escapeHtml(item.sku)}"
-                          title="Change supply type for ${escapeHtml(item.sku)}">
-                    <option value="Full Size"${itemSupplyType === 'Full Size' ? ' selected' : ''}>Full Size</option>
-                    <option value="Cut Size"${itemSupplyType === 'Cut Size' ? ' selected' : ''}>Cut Size</option>
+                          id="supplySelect_${escapeHtml(item.sku)}"
+                          title="Select Supply Type for ${escapeHtml(item.sku)}">
+                    <option value="Full Size" selected>Full Size</option>
+                    <option value="Cut Size">Cut Size</option>
                   </select>
-                  <div class="catalog-supply-feedback" id="supplyFeedback_${escapeHtml(item.sku)}"></div>
+                  <span class="supply-badge full-size" id="supplyBadge_${escapeHtml(item.sku)}">FULL SIZE</span>
                 </div>
-              ` : `
-                <span class="supply-badge ${supplyClass}">
-                  ${escapeHtml(itemSupplyType)}
-                </span>
-              `}
+                <div class="catalog-cut-panel" id="cutPanel_${escapeHtml(item.sku)}" style="display: none;">
+                  <div class="cut-orig-dim-display" title="Original Dimensions (Read-only)">
+                    <span class="cut-dim-label">Original:</span>
+                    <span class="cut-dim-orig-val" id="origDim_${escapeHtml(item.sku)}">${escapeHtml(item.size || item.sizeDimensions || '—')}</span>
+                  </div>
+                  <div class="cut-inputs-grid">
+                    <div class="cut-input-group">
+                      <label class="cut-dim-sublabel" for="cutLength_${escapeHtml(item.sku)}">Cut Length <span class="req">*</span></label>
+                      <input type="number" step="any" min="0" 
+                             class="input-cut-dim input-cut-length" 
+                             id="cutLength_${escapeHtml(item.sku)}" 
+                             data-sku="${escapeHtml(item.sku)}" 
+                             placeholder="Length (mm)">
+                    </div>
+                    <div class="cut-input-group">
+                      <label class="cut-dim-sublabel" for="cutWidth_${escapeHtml(item.sku)}">Cut Width <span class="cut-width-req-mark req" style="display:${isPlateSheet ? 'inline' : 'none'};">*</span></label>
+                      <input type="number" step="any" min="0" 
+                             class="input-cut-dim input-cut-width" 
+                             id="cutWidth_${escapeHtml(item.sku)}" 
+                             data-sku="${escapeHtml(item.sku)}" 
+                             placeholder="Width (mm)">
+                    </div>
+                  </div>
+                  <div class="cut-dim-error" id="cutErr_${escapeHtml(item.sku)}" style="display:none;"></div>
+                </div>
+              </div>
             </td>
             <td>
-              ${canEdit ? `
+              ${canEditRemarks ? `
                 <div class="catalog-remarks-cell-wrapper">
                   <textarea 
                     class="catalog-remarks-textarea" 
@@ -3242,7 +3388,7 @@
             </td>
             <td>
               <div class="catalog-price-wrapper">
-                ${canEdit ? `
+                ${canEditPrice ? `
                   <div class="price-input-group" id="priceGroup_${escapeHtml(item.sku)}">
                     <span class="price-currency-tag">IDR</span>
                     <input type="number" step="any" min="0" 
@@ -3273,9 +3419,8 @@
         `;
       }).join('');
 
-      // Bind direct editing only if user has admin permission
-      if (canEdit) {
-        // Bind direct editing on Item Description textareas
+      // Bind direct editing on Item Description textareas
+      if (canEditDescription) {
         const debounceTimers = {};
         tbody.querySelectorAll('.catalog-desc-textarea').forEach(textarea => {
           const sku = textarea.getAttribute('data-sku');
@@ -3310,8 +3455,10 @@
             saveVal();
           });
         });
+      }
 
-        // Bind interactive Status selects
+      // Bind interactive Status selects
+      if (canEditStatus) {
         tbody.querySelectorAll('.catalog-status-select').forEach(selectEl => {
           const sku = selectEl.getAttribute('data-sku');
           const feedbackEl = document.getElementById(`statusFeedback_${sku}`);
@@ -3339,37 +3486,47 @@
             }
           });
         });
+      }
 
-        // Bind interactive Supply Type selects
-        tbody.querySelectorAll('.catalog-supply-select').forEach(selectEl => {
-          const sku = selectEl.getAttribute('data-sku');
-          const feedbackEl = document.getElementById(`supplyFeedback_${sku}`);
+      // Bind interactive Supply Type selects (Available to Employee and Admin)
+      tbody.querySelectorAll('.catalog-supply-select').forEach(selectEl => {
+        const sku = selectEl.getAttribute('data-sku');
+        const badgeEl = document.getElementById(`supplyBadge_${sku}`);
+        const cutPanelEl = document.getElementById(`cutPanel_${sku}`);
+        const errEl = document.getElementById(`cutErr_${sku}`);
 
-          selectEl.addEventListener('change', async () => {
-            const newSupply = selectEl.value;
-            const supplyClass = newSupply.toLowerCase().replace(/[\s_]+/g, '-');
-            selectEl.className = `catalog-supply-select supply-val-${supplyClass}`;
-
-            try {
-              await DataService.updateMasterItemSupplyType(sku, newSupply);
-              selectEl.classList.add('saved-flash');
-              setTimeout(() => selectEl.classList.remove('saved-flash'), 800);
-              if (feedbackEl) {
-                feedbackEl.innerHTML = '<span style="color:#10b981; font-weight:600;">✓ Saved</span>';
-                setTimeout(() => {
-                  if (feedbackEl && feedbackEl.textContent.includes('Saved')) feedbackEl.innerHTML = '';
-                }, 2000);
-              }
-            } catch (err) {
-              console.error('[Catalog UI] Error updating supply type:', err);
-              if (feedbackEl) {
-                feedbackEl.innerHTML = '<span style="color:#e11d48; font-weight:600;">Error</span>';
-              }
+        selectEl.addEventListener('change', () => {
+          const newSupply = selectEl.value;
+          if (newSupply === 'Cut Size') {
+            selectEl.className = 'catalog-supply-select supply-val-cut-size';
+            if (badgeEl) {
+              badgeEl.className = 'supply-badge cut-size';
+              badgeEl.textContent = 'CUT SIZE';
             }
-          });
+            if (cutPanelEl) {
+              cutPanelEl.style.display = 'block';
+              const lenInput = cutPanelEl.querySelector('.input-cut-length');
+              if (lenInput) lenInput.focus();
+            }
+          } else {
+            selectEl.className = 'catalog-supply-select supply-val-full-size';
+            if (badgeEl) {
+              badgeEl.className = 'supply-badge full-size';
+              badgeEl.textContent = 'FULL SIZE';
+            }
+            if (cutPanelEl) {
+              cutPanelEl.style.display = 'none';
+            }
+            if (errEl) {
+              errEl.style.display = 'none';
+              errEl.textContent = '';
+            }
+          }
         });
+      });
 
-        // Bind direct editing on Remarks textareas
+      // Bind direct editing on Remarks textareas
+      if (canEditRemarks) {
         const remarksDebounceTimers = {};
         tbody.querySelectorAll('.catalog-remarks-textarea').forEach(textarea => {
           const sku = textarea.getAttribute('data-sku');
@@ -3411,8 +3568,10 @@
             saveRemarks();
           });
         });
+      }
 
-        // Bind direct editing on Current Unit Price inputs
+      // Bind direct editing on Current Unit Price inputs
+      if (canEditPrice) {
         const priceDebounceTimers = {};
         tbody.querySelectorAll('.catalog-price-input').forEach(inputEl => {
           const sku = inputEl.getAttribute('data-sku');
@@ -3503,23 +3662,99 @@
       tbody.querySelectorAll('.btn-action-add-cart').forEach(btn => {
         btn.addEventListener('click', async () => {
           const sku = btn.getAttribute('data-sku');
-          if (canEdit) {
-            const descEl = tbody.querySelector(`.catalog-desc-textarea[data-sku="${sku}"]`);
-            const priceEl = tbody.querySelector(`.catalog-price-input[data-sku="${sku}"]`);
-            const remarksEl = tbody.querySelector(`.catalog-remarks-textarea[data-sku="${sku}"]`);
-            if (descEl) await DataService.updateMasterItemDescription(sku, descEl.value);
-            if (remarksEl) await DataService.updateMasterItemRemarks(sku, remarksEl.value);
-            if (priceEl && priceEl.value.trim() && parseFloat(priceEl.value.trim()) > 0) {
-              try { await DataService.updateMasterItemPrice(sku, priceEl.value.trim()); } catch (e) {}
-            }
+          const descEl = tbody.querySelector(`.catalog-desc-textarea[data-sku="${sku}"]`);
+          const priceEl = tbody.querySelector(`.catalog-price-input[data-sku="${sku}"]`);
+          const remarksEl = tbody.querySelector(`.catalog-remarks-textarea[data-sku="${sku}"]`);
+          if (canEditDescription && descEl) await DataService.updateMasterItemDescription(sku, descEl.value);
+          if (canEditRemarks && remarksEl) await DataService.updateMasterItemRemarks(sku, remarksEl.value);
+          if (canEditPrice && priceEl && priceEl.value.trim() && parseFloat(priceEl.value.trim()) > 0) {
+            try { await DataService.updateMasterItemPrice(sku, priceEl.value.trim()); } catch (e) {}
           }
           const item = await DataService.getMasterItemBySku(sku);
-          if (item) {
-            if (typeof PRCart !== 'undefined' && PRCart.addItem) {
-              PRCart.addItem(item);
+          if (!item) return;
+
+          // Check selected supply type and cut dimensions from row
+          const supplySelect = document.getElementById(`supplySelect_${sku}`);
+          const supplyType = supplySelect ? supplySelect.value : 'Full Size';
+          const errEl = document.getElementById(`cutErr_${sku}`);
+
+          let cutLength = '';
+          let cutWidth = '';
+
+          if (supplyType === 'Cut Size') {
+            const lenInput = document.getElementById(`cutLength_${sku}`);
+            const widInput = document.getElementById(`cutWidth_${sku}`);
+            cutLength = lenInput ? lenInput.value.trim() : '';
+            cutWidth = widInput ? widInput.value.trim() : '';
+
+            // Validate cutLength is positive numeric
+            const lenNum = Number(cutLength);
+            if (!cutLength || isNaN(lenNum) || lenNum <= 0) {
+              if (errEl) {
+                errEl.textContent = 'Required Cut Length must be a positive numeric value.';
+                errEl.style.display = 'block';
+              }
+              if (lenInput) {
+                lenInput.classList.add('input-error');
+                lenInput.focus();
+              }
+              UI.showToast('Validation Error', 'Required Cut Length must be a positive numeric value.');
+              return;
             } else {
-              this.openCreatePrModal(sku);
+              if (lenInput) lenInput.classList.remove('input-error');
             }
+
+            // Check if plate / sheet material
+            const isPlateSheet = /plate|sheet|plat/i.test(`${item.productName || ''} ${item.itemDescription || ''} ${item.unit || ''} ${item.subCategory || ''} ${item.category || ''}`);
+            if (isPlateSheet) {
+              const widNum = Number(cutWidth);
+              if (!cutWidth || isNaN(widNum) || widNum <= 0) {
+                if (errEl) {
+                  errEl.textContent = 'Required Cut Width is mandatory for plate/sheet materials (positive numeric).';
+                  errEl.style.display = 'block';
+                }
+                if (widInput) {
+                  widInput.classList.add('input-error');
+                  widInput.focus();
+                }
+                UI.showToast('Validation Error', 'Required Cut Width is mandatory for plate/sheet materials.');
+                return;
+              } else {
+                if (widInput) widInput.classList.remove('input-error');
+              }
+            } else if (cutWidth) {
+              const widNum = Number(cutWidth);
+              if (isNaN(widNum) || widNum <= 0) {
+                if (errEl) {
+                  errEl.textContent = 'Required Cut Width must be a positive numeric value.';
+                  errEl.style.display = 'block';
+                }
+                if (widInput) {
+                  widInput.classList.add('input-error');
+                  widInput.focus();
+                }
+                UI.showToast('Validation Error', 'Required Cut Width must be a positive numeric value.');
+                return;
+              } else {
+                if (widInput) widInput.classList.remove('input-error');
+              }
+            }
+
+            if (errEl) {
+              errEl.style.display = 'none';
+              errEl.textContent = '';
+            }
+          }
+
+          if (typeof PRCart !== 'undefined' && PRCart.addItem) {
+            PRCart.addItem(item, {
+              supplyType,
+              originalDimensions: item.size || item.sizeDimensions || '—',
+              cutLength,
+              cutWidth
+            });
+          } else {
+            this.openCreatePrModal(sku);
           }
         });
       });
@@ -3527,15 +3762,13 @@
       tbody.querySelectorAll('.btn-action-specs').forEach(btn => {
         btn.addEventListener('click', async () => {
           const sku = btn.getAttribute('data-sku');
-          if (canEdit) {
-            const descEl = tbody.querySelector(`.catalog-desc-textarea[data-sku="${sku}"]`);
-            const priceEl = tbody.querySelector(`.catalog-price-input[data-sku="${sku}"]`);
-            const remarksEl = tbody.querySelector(`.catalog-remarks-textarea[data-sku="${sku}"]`);
-            if (descEl) await DataService.updateMasterItemDescription(sku, descEl.value);
-            if (remarksEl) await DataService.updateMasterItemRemarks(sku, remarksEl.value);
-            if (priceEl && priceEl.value.trim() && parseFloat(priceEl.value.trim()) > 0) {
-              try { await DataService.updateMasterItemPrice(sku, priceEl.value.trim()); } catch (e) {}
-            }
+          const descEl = tbody.querySelector(`.catalog-desc-textarea[data-sku="${sku}"]`);
+          const priceEl = tbody.querySelector(`.catalog-price-input[data-sku="${sku}"]`);
+          const remarksEl = tbody.querySelector(`.catalog-remarks-textarea[data-sku="${sku}"]`);
+          if (canEditDescription && descEl) await DataService.updateMasterItemDescription(sku, descEl.value);
+          if (canEditRemarks && remarksEl) await DataService.updateMasterItemRemarks(sku, remarksEl.value);
+          if (canEditPrice && priceEl && priceEl.value.trim() && parseFloat(priceEl.value.trim()) > 0) {
+            try { await DataService.updateMasterItemPrice(sku, priceEl.value.trim()); } catch (e) {}
           }
           this.openSpecsModal(sku);
         });
@@ -4564,6 +4797,10 @@
     // 5. PURCHASE REQUEST CREATION (WHITE DOCUMENT-STYLE INTERFACE)
     // =========================================================================
     async openCreatePrModal(sku) {
+      if (window.PermissionService && !window.PermissionService.can('CAN_CREATE_PR')) {
+        this.showAccessDeniedModal('Access Denied — PR creation permission required.');
+        return;
+      }
       const item = await DataService.getMasterItemBySku(sku);
       if (!item) {
         alert(`Master SKU ${sku} not found!`);
@@ -4789,6 +5026,10 @@
     },
 
     async handleCreatePurchaseRequest() {
+      if (window.PermissionService && !window.PermissionService.can('CAN_CREATE_PR')) {
+        this.showAccessDeniedModal('Access Denied — PR creation permission required.');
+        return;
+      }
       if (!this.selectedMasterItemForPR) {
         alert('No Master Item selected!');
         return;
@@ -5583,6 +5824,10 @@
     },
 
     openSpecsModal(sku) {
+      if (window.PermissionService && !window.PermissionService.can('CAN_VIEW_SPECS')) {
+        this.showAccessDeniedModal('Access Denied — Specifications viewing permission required.');
+        return;
+      }
       DataService.getMasterItemBySku(sku).then(item => {
         if (!item) return;
         const modal = document.getElementById('modalSpecsView');
@@ -5649,6 +5894,9 @@
     // 7. SYSTEM SETTINGS & GOOGLE SHEETS SETUP
     // =========================================================================
     loadSettingsUI() {
+      if (window.PermissionService && !window.PermissionService.can('CAN_ACCESS_SETTINGS')) {
+        return;
+      }
       const cfg = DataService.getConfig();
       const prefixInput = document.getElementById('cfgSkuPrefix');
       const nextNumInput = document.getElementById('cfgNextNum');
@@ -5662,6 +5910,10 @@
     },
 
     handleSaveSettings() {
+      if (window.PermissionService && !window.PermissionService.can('CAN_ACCESS_SETTINGS')) {
+        this.showAccessDeniedModal('Access Denied — Administrator permission required.');
+        return;
+      }
       const prefix = document.getElementById('cfgSkuPrefix').value.trim() || 'FF';
       const nextNum = parseInt(document.getElementById('cfgNextNum').value, 10) || 4236;
       const driver = document.getElementById('cfgDriver').value;
