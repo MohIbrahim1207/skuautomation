@@ -339,6 +339,16 @@ router.post('/batch-import', async (req, res) => {
     let currentSeq = Math.max(parseInt(maxRes.rows[0].max_seq, 10), 4235);
     const insertedRows = [];
 
+    // Track per-sheet statistics
+    const sheetMap = {};
+    items.forEach(it => {
+      const s = it.sourceSheet || sheetName || 'Default';
+      if (!sheetMap[s]) {
+        sheetMap[s] = { sheetName: s, sheet: s, rowsDetected: 0, rowsImported: 0, rowsSkipped: 0, rowsFailed: 0 };
+      }
+      sheetMap[s].rowsDetected++;
+    });
+
     console.log('[8. PostgreSQL Transaction Start]', { itemsToInsert: items.length, nextStartingSku: `FF${currentSeq + 1}` });
 
     for (let i = 0; i < items.length; i++) {
@@ -441,6 +451,8 @@ router.post('/batch-import', async (req, res) => {
       ]);
 
       insertedRows.push(insertRes.rows[0]);
+      const s = it.sourceSheet || sheetName || 'Default';
+      if (sheetMap[s]) sheetMap[s].rowsImported++;
     }
 
     await client.query('COMMIT');
@@ -455,6 +467,11 @@ router.post('/batch-import', async (req, res) => {
       success: true,
       message: `Successfully imported ${insertedRows.length} Master Items.`,
       count: insertedRows.length,
+      rowsDetected: items.length,
+      rowsImported: insertedRows.length,
+      rowsSkipped: 0,
+      rowsFailed: 0,
+      sheetBreakdown: Object.values(sheetMap),
       startSku: insertedRows[0].sku,
       endSku: insertedRows[insertedRows.length - 1].sku,
       items: insertedRows,
@@ -469,7 +486,14 @@ router.post('/batch-import', async (req, res) => {
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('[Master Items Batch Import] Error:', err);
-    res.status(500).json({ error: err.message || 'Batch import failed. Transaction rolled back.' });
+    res.status(500).json({
+      success: false,
+      error: err.message || 'Batch import failed. Transaction rolled back.',
+      rowsDetected: items ? items.length : 0,
+      rowsImported: 0,
+      rowsSkipped: 0,
+      rowsFailed: items ? items.length : 0
+    });
   } finally {
     client.release();
   }

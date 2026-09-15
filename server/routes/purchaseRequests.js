@@ -213,8 +213,8 @@ router.post('/', async (req, res) => {
           purchase_request_id, master_item_id, sku, product_name, item_description,
           material_grade, size_dimensions, specification, unit, quantity, weight,
           unit_price, estimated_total_cost, purchase_type, required_cut_size,
-          status, supply_type, cut_length, cut_width
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`,
+          status, supply_type, cut_length, cut_width, remarks
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)`,
         [
           prId,
           item.masterItemId || null,
@@ -234,7 +234,8 @@ router.post('/', async (req, res) => {
           itemStatus,
           itemSupplyType,
           cutLength,
-          cutWidth
+          cutWidth,
+          (item.remarks !== undefined && item.remarks !== null) ? String(item.remarks).trim() : ''
         ]
       );
     }
@@ -366,7 +367,8 @@ router.get('/:id', async (req, res) => {
           cutWidth: it.cut_width || '',
           cutDimensions: isCut ? { length: it.cut_length || '', width: it.cut_width || '' } : null,
           purchaseType: it.purchase_type,
-          requiredCutSize: it.required_cut_size
+          requiredCutSize: it.required_cut_size,
+          remarks: it.remarks || ''
         };
       }),
       history: historyRes.rows.map(h => ({

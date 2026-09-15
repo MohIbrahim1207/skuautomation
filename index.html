@@ -1627,6 +1627,7 @@
                     <th>Unit</th>
                     <th style="width: 95px; text-align: center;">Status</th>
                     <th style="min-width: 220px;">Supply Type</th>
+                    <th style="min-width: 140px;">Remarks</th>
                     <th style="width: 120px;">Unit Price (IDR)</th>
                     <th style="width: 120px; text-align: center;">Quantity</th>
                     <th style="width: 135px; text-align: right;">Estimated Total</th>
@@ -1924,8 +1925,8 @@
             <div class="import-drop-icon">📊</div>
             <div class="import-drop-title">Drag &amp; Drop Excel Workbook Here</div>
             <div class="import-drop-subtitle">or <span class="import-browse-link" id="importBrowseLink">Browse Files</span> from your computer</div>
-            <div class="import-drop-hint">Supported formats: .xlsx, .xls • Flow Force SKU &amp; Fasteners/Piping Templates</div>
-            <input type="file" id="importFileInput" accept=".xlsx,.xls" hidden>
+            <div class="import-drop-hint">Supported formats: .xlsx, .xls, .csv • Flow Force SKU &amp; Fasteners/Piping Templates</div>
+            <input type="file" id="importFileInput" accept=".xlsx,.xls,.csv" hidden>
           </div>
 
           <div class="import-file-card" id="importFileInfoCard" style="display:none;">
@@ -2051,13 +2052,43 @@
         <!-- ================= SUCCESS SCREEN ================= -->
         <div class="import-step-content" id="importViewSuccess" style="display:none;">
           <div class="import-success-card">
-            <div class="success-icon-big">🎉</div>
-            <h3 style="margin: 0.5rem 0; color: #10b981; font-size: 1.4rem;">IMPORT COMPLETE</h3>
-            <p style="margin: 0 0 1.25rem; color: var(--text-main); font-size: 1.05rem; font-weight: 600;">
-              <span id="successImportCount">0</span> materials imported successfully into Master Items.
-            </p>
+            <div class="success-icon-big" id="importResultIcon">🎉</div>
+            <h3 style="margin: 0.5rem 0; color: #10b981; font-size: 1.4rem;" id="importResultTitle">IMPORT COMPLETE</h3>
 
-            <div class="success-sku-box">
+            <!-- Prominent Actual Import Statistics -->
+            <div class="import-stats-dashboard" style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:1.1rem 1.25rem; margin:1rem 0; text-align:left;">
+              <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap:10px; text-align:center;">
+                <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:6px; padding:10px 6px;">
+                  <div style="font-size:0.75rem; color:#64748b; text-transform:uppercase; font-weight:700;">Rows Detected</div>
+                  <div style="font-size:1.5rem; font-weight:800; color:#0f172a; margin-top:2px;" id="statRowsDetected">0</div>
+                </div>
+                <div style="background:#ecfdf5; border:1px solid #a7f3d0; border-radius:6px; padding:10px 6px;">
+                  <div style="font-size:0.75rem; color:#059669; text-transform:uppercase; font-weight:700;">Rows Imported</div>
+                  <div style="font-size:1.5rem; font-weight:800; color:#059669; margin-top:2px;" id="statRowsImported">0</div>
+                </div>
+                <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:6px; padding:10px 6px;">
+                  <div style="font-size:0.75rem; color:#64748b; text-transform:uppercase; font-weight:700;">Rows Skipped</div>
+                  <div style="font-size:1.5rem; font-weight:800; color:#64748b; margin-top:2px;" id="statRowsSkipped">0</div>
+                </div>
+                <div style="background:#ffffff; border:1px solid #e2e8f0; border-radius:6px; padding:10px 6px;">
+                  <div style="font-size:0.75rem; color:#64748b; text-transform:uppercase; font-weight:700;">Rows Failed</div>
+                  <div style="font-size:1.5rem; font-weight:800; color:#64748b; margin-top:2px;" id="statRowsFailed">0</div>
+                </div>
+              </div>
+
+              <!-- Main Result Message -->
+              <div style="margin-top:14px; font-weight:700; font-size:1.05rem; color:#059669; text-align:center;" id="importResultSummaryMsg">
+                <span id="successImportCount">0</span> rows imported successfully.
+              </div>
+
+              <!-- Multi-sheet breakdown for workbooks with multiple supported sheets -->
+              <div id="importSheetBreakdownResult" style="margin-top:12px; border-top:1px dashed #cbd5e1; padding-top:10px; display:none;">
+                <div style="font-size:0.78rem; font-weight:700; color:#475569; text-transform:uppercase; margin-bottom:8px;">Worksheet Breakdown:</div>
+                <div id="importSheetBreakdownList" style="display:flex; flex-wrap:wrap; gap:8px;"></div>
+              </div>
+            </div>
+
+            <div class="success-sku-box" id="importResultSkuBox">
               <div style="font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em;">Generated SKU Sequence</div>
               <div class="success-sku-text" id="successSkuRange">FF4236 – FF42XX</div>
             </div>

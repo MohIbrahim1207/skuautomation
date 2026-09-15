@@ -105,6 +105,15 @@ async function generatePrDocuments(prId) {
  * Internal helper: Build Excel Workbook
  */
 function generateExcelFile(pr, items, filePath) {
+  if (!Array.isArray(items) && pr && Array.isArray(pr.items)) {
+    if (typeof items === 'string') {
+      filePath = items;
+    }
+    items = pr.items;
+  }
+  items = items || [];
+  pr = pr || {};
+
   const wb = XLSX.utils.book_new();
 
   const reqDate = pr.created_at ? new Date(pr.created_at).toLocaleDateString('en-GB') : '-';
@@ -118,85 +127,98 @@ function generateExcelFile(pr, items, filePath) {
     ['Bulk Material Handling & Processing Equipment Specialists'],
     [],
     ['PROJECT / REQUEST INFORMATION', '', '', ''],
-    ['PR Number:', pr.pr_number, 'Status:', pr.status],
-    ['Project / PID:', pr.project_code || '-', 'Job Location:', pr.job_location || '-'],
-    ['Project Name:', pr.project_name || '-', 'Request Date:', reqDate],
-    ['Created By:', pr.requester_name || '-', 'Username:', pr.requester_username || '-'],
+    ['PR Number:', pr.pr_number || pr.prNumber, 'Status:', pr.status],
+    ['Project / PID:', pr.project_code || pr.projectId || '-', 'Job Location:', pr.job_location || pr.jobLocation || '-'],
+    ['Project Name:', pr.project_name || pr.projectName || '-', 'Request Date:', reqDate],
+    ['Created By:', pr.requester_name || pr.requestedBy || '-', 'Username:', pr.requester_username || '-'],
     ['Department:', pr.department || '-', 'Required Date:', needDate],
     ['Urgency:', pr.urgency || 'Standard'],
     [],
-    ['ITEM DETAILS', '', '', '', '', '', '', '', '', '', '', ''],
-    ['#', 'SKU', 'Product Name', 'Item Description', 'Material / Grade', 'Original Dimensions', 'Supply Type', 'Required Cut Size', 'Unit', 'Quantity', 'Unit Price (IDR)', 'Estimated Total Cost (IDR)']
+    ['ITEM DETAILS', '', '', '', '', '', '', '', '', '', '', '', ''],
+    ['#', 'SKU', 'Product Name', 'Item Description', 'Material / Grade', 'Original Dimensions', 'Supply Type', 'Required Cut Size', 'Remarks', 'Unit', 'Quantity', 'Unit Price (IDR)', 'Estimated Total Cost (IDR)']
   ];
 
   let allHaveCost = true;
   let grandTotal = 0;
   items.forEach((it, idx) => {
-    const hasPrice = it.unit_price !== null && it.unit_price !== undefined && it.unit_price !== '' && !isNaN(Number(it.unit_price)) && Number(it.unit_price) >= 0;
-    const cost = hasPrice ? (parseFloat(it.estimated_total_cost) || (parseFloat(it.quantity) * parseFloat(it.unit_price))) : null;
+    const rawPrice = (it.unit_price !== undefined && it.unit_price !== null) ? it.unit_price : it.unitPrice;
+    const hasPrice = rawPrice !== null && rawPrice !== undefined && rawPrice !== '' && !isNaN(Number(rawPrice)) && Number(rawPrice) >= 0;
+    const rawEstTotal = (it.estimated_total_cost !== undefined && it.estimated_total_cost !== null) ? it.estimated_total_cost : it.estimatedTotalCost;
+    const cost = hasPrice ? (parseFloat(rawEstTotal) || (parseFloat(it.quantity) * parseFloat(rawPrice))) : null;
     if (cost !== null) {
       grandTotal += cost;
     } else {
       allHaveCost = false;
     }
 
-    const isCut = (it.supply_type === 'Cut Size' || it.purchase_type === 'PROJECT-SPECIFIC CUT SIZE');
-    const origDims = it.size_dimensions || it.original_dimensions || it.size || '-';
+    const isCut = (it.supply_type === 'Cut Size' || it.supplyType === 'Cut Size' || it.purchase_type === 'PROJECT-SPECIFIC CUT SIZE' || it.purchaseType === 'PROJECT-SPECIFIC CUT SIZE');
+    const origDims = it.size_dimensions || it.originalDimensions || it.size || '-';
     let cutDims = '—';
     if (isCut) {
-      const rawCut = it.required_cut_size || (it.cut_length ? `${it.cut_length}${it.cut_width ? ` × ${it.cut_width}` : ''}`.trim() : '');
-      cutDims = rawCut ? (/\b(mm|in|ft|m|cm)\b/i.test(rawCut) ? rawCut : `${rawCut} mm`) : '-';
+      const cLen = it.cut_length || it.cutLength;
+      const cWid = it.cut_width || it.cutWidth;
+      const rawCut = it.required_cut_size || it.requiredCutSize;
+      if (rawCut) {
+        cutDims = rawCut;
+      } else if (cLen) {
+        cutDims = cWid ? `${cLen} × ${cWid} mm` : `${cLen} mm`;
+      }
     }
 
     rows.push([
       idx + 1,
       it.sku,
-      it.product_name,
-      it.item_description, // Preserves multiline linebreaks in cell
-      it.material_grade || '-',
+      it.product_name || it.productName || '-',
+      it.item_description || it.itemDescription || '-',
+      it.material_grade || it.material || it.materialGrade || '-',
       origDims,
       isCut ? 'CUT SIZE' : 'FULL SIZE',
       cutDims,
+      it.remarks || '',
       it.unit || 'Sheet',
-      parseFloat(it.quantity) || 1,
-      hasPrice ? `IDR ${Number(it.unit_price).toLocaleString('id-ID')}` : '—',
-      cost !== null ? `IDR ${Number(cost).toLocaleString('id-ID')}` : '—'
+      it.quantity,
+      hasPrice ? formatIdr(rawPrice) : 'Not Available',
+      cost !== null ? formatIdr(cost) : '—'
     ]);
   });
 
   rows.push([]);
-  rows.push(['', '', '', '', '', '', '', '', '', 'GRAND TOTAL (IDR):', '', (allHaveCost && grandTotal > 0) ? `IDR ${Number(grandTotal).toLocaleString('id-ID')}` : '—']);
+  rows.push([
+    '', '', '', '', '', '', '', '', '', '',
+    'GRAND TOTAL (IDR):',
+    allHaveCost ? formatIdr(grandTotal) : '—'
+  ]);
+
   rows.push([]);
-  rows.push(['REASON / REQUIREMENT']);
-  rows.push(['Reason for Purchase:', pr.reason_for_purchase || '-']);
-  rows.push(['Remarks / Notes:', pr.remarks || '-']);
-  rows.push([]);
-  rows.push(['APPROVAL SECTION']);
-  rows.push(['Created By:', `${pr.requester_name || '-'} (${pr.requester_username || '-'})`, 'Created Date:', reqDate]);
+  rows.push(['REASON / REQUIREMENT', '', '', '']);
+  rows.push(['Reason for Purchase:', pr.reason_for_purchase || pr.reasonForPurchase || '-']);
+  rows.push(['General Remarks:', pr.remarks || '-']);
 
   if (pr.status === 'APPROVED') {
-    rows.push(['Approved By:', `${pr.approver_name || '-'} (${pr.approver_username || 'admin'})`, 'Approved Date:', appDate]);
-    rows.push(['Status:', 'APPROVED']);
+    rows.push([]);
+    rows.push(['APPROVAL RECORD', '', '', '']);
+    rows.push(['Approved By:', pr.approver_name || '-', 'Date Approved:', appDate]);
+    if (pr.approval_notes) rows.push(['Notes:', pr.approval_notes]);
   } else if (pr.status === 'REJECTED') {
-    rows.push(['Rejected By:', `${pr.rejecter_name || '-'} (${pr.rejecter_username || 'admin'})`, 'Rejected Date:', rejDate]);
-    rows.push(['Rejection Reason:', pr.rejection_reason || '-']);
-    rows.push(['Status:', 'REJECTED']);
-  } else {
-    rows.push(['Status:', 'PENDING APPROVAL']);
+    rows.push([]);
+    rows.push(['REJECTION RECORD', '', '', '']);
+    rows.push(['Rejected By:', pr.rejecter_name || '-', 'Date Rejected:', rejDate]);
+    if (pr.rejection_reason) rows.push(['Reason:', pr.rejection_reason]);
   }
 
   const ws = XLSX.utils.aoa_to_sheet(rows);
 
-  // Column width configuration for 12 columns
+  // Column widths
   ws['!cols'] = [
-    { wch: 5 },  // #
-    { wch: 14 }, // SKU
+    { wch: 4 },  // #
+    { wch: 10 }, // SKU
     { wch: 28 }, // Product Name
-    { wch: 45 }, // Item Description
+    { wch: 35 }, // Item Description
     { wch: 18 }, // Material / Grade
-    { wch: 24 }, // Original Dimensions
+    { wch: 20 }, // Original Dimensions
     { wch: 14 }, // Supply Type
     { wch: 22 }, // Required Cut Size
+    { wch: 25 }, // Remarks
     { wch: 10 }, // Unit
     { wch: 10 }, // Quantity
     { wch: 20 }, // Unit Price (IDR)
@@ -204,7 +226,11 @@ function generateExcelFile(pr, items, filePath) {
   ];
 
   XLSX.utils.book_append_sheet(wb, ws, 'Purchase Request');
-  XLSX.writeFile(wb, filePath);
+  if (filePath) {
+    XLSX.writeFile(wb, filePath);
+    return filePath;
+  }
+  return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
 }
 
 /**
@@ -214,18 +240,44 @@ function generateExcelFile(pr, items, filePath) {
 function generatePdfFile(pr, items, filePath) {
   return new Promise((resolve, reject) => {
     try {
+      if (!Array.isArray(items) && pr && Array.isArray(pr.items)) {
+        if (typeof items === 'string') {
+          filePath = items;
+        }
+        items = pr.items;
+      }
+      items = items || [];
+      pr = pr || {};
+
       const doc = new PDFDocument({
         size: 'A4',
         margin: 36,
+        compress: false,
         info: {
-          Title: `Purchase Request ${pr.pr_number}`,
+          Title: `Purchase Request ${pr.pr_number || pr.prNumber}`,
           Author: 'Flow Force System',
           Subject: 'Purchase Request Document'
         }
       });
 
-      const writeStream = fs.createWriteStream(filePath);
-      doc.pipe(writeStream);
+      let writeStream;
+      const buffers = [];
+      if (filePath) {
+        writeStream = fs.createWriteStream(filePath);
+        doc.pipe(writeStream);
+      } else {
+        doc.on('data', b => buffers.push(b));
+      }
+
+      doc.on('end', () => {
+        if (filePath) {
+          resolve(filePath);
+        } else {
+          resolve(Buffer.concat(buffers));
+        }
+      });
+
+      doc.on('error', err => reject(err));
 
       const primaryColor = '#0284c7';
       const textColor = '#0f172a';
@@ -299,8 +351,10 @@ function generatePdfFile(pr, items, filePath) {
       let grandTotal = 0;
 
       items.forEach((it, idx) => {
-        const hasPrice = it.unit_price !== null && it.unit_price !== undefined && it.unit_price !== '' && !isNaN(Number(it.unit_price)) && Number(it.unit_price) >= 0;
-        const cost = hasPrice ? (parseFloat(it.estimated_total_cost) || (parseFloat(it.quantity) * parseFloat(it.unit_price))) : null;
+        const rawPrice = (it.unit_price !== undefined && it.unit_price !== null) ? it.unit_price : it.unitPrice;
+        const rawCost = (it.estimated_total_cost !== undefined && it.estimated_total_cost !== null) ? it.estimated_total_cost : it.estimatedTotalCost;
+        const hasPrice = rawPrice !== null && rawPrice !== undefined && rawPrice !== '' && !isNaN(Number(rawPrice)) && Number(rawPrice) >= 0;
+        const cost = hasPrice ? (parseFloat(rawCost) || (parseFloat(it.quantity) * parseFloat(rawPrice))) : null;
         if (cost !== null) {
           grandTotal += cost;
         } else {
@@ -313,12 +367,22 @@ function generatePdfFile(pr, items, filePath) {
         }
 
         const startY = y;
-        const isCut = (it.supply_type === 'Cut Size' || it.purchase_type === 'PROJECT-SPECIFIC CUT SIZE');
-        const origDims = it.size_dimensions || it.original_dimensions || it.size || '-';
+        const pName = it.product_name || it.productName || '-';
+        const pDesc = it.item_description || it.itemDescription || '';
+        const matGrade = it.material_grade || it.material || it.materialGrade || '-';
+
+        const isCut = (it.supply_type === 'Cut Size' || it.supplyType === 'Cut Size' || it.purchase_type === 'PROJECT-SPECIFIC CUT SIZE' || it.purchaseType === 'PROJECT-SPECIFIC CUT SIZE');
+        const origDims = it.size_dimensions || it.originalDimensions || it.size || '-';
         let cutDims = '—';
         if (isCut) {
-          const rawCut = it.required_cut_size || (it.cut_length ? `${it.cut_length}${it.cut_width ? ` × ${it.cut_width}` : ''}`.trim() : '');
-          cutDims = rawCut ? (/\b(mm|in|ft|m|cm)\b/i.test(rawCut) ? rawCut : `${rawCut} mm`) : '-';
+          const cLen = it.cut_length || it.cutLength;
+          const cWid = it.cut_width || it.cutWidth;
+          const rawCut = it.required_cut_size || it.requiredCutSize;
+          if (rawCut) {
+            cutDims = rawCut;
+          } else if (cLen) {
+            cutDims = cWid ? `${cLen} × ${cWid} mm` : `${cLen} mm`;
+          }
         }
 
         // Col 1: #
@@ -327,17 +391,22 @@ function generatePdfFile(pr, items, filePath) {
         // Col 2: SKU
         doc.font('Helvetica-Bold').fontSize(8).fillColor(textColor).text(it.sku, 56, y, { width: 50 });
 
-        // Col 3: Product Name & Description
-        doc.font('Helvetica-Bold').fontSize(8).fillColor(textColor).text(it.product_name, 108, y, { width: 145 });
-        let descY = y + doc.heightOfString(it.product_name, { width: 145 }) + 2;
-        if (it.item_description) {
-          doc.font('Helvetica').fontSize(7).fillColor('#475569').text(it.item_description, 108, descY, { width: 145 });
-          descY += doc.heightOfString(it.item_description, { width: 145 }) + 2;
+        // Col 3: Product Name & Description & Item Remarks
+        doc.font('Helvetica-Bold').fontSize(8).fillColor(textColor).text(pName, 108, y, { width: 145 });
+        let descY = y + doc.heightOfString(pName, { width: 145 }) + 2;
+        if (pDesc) {
+          doc.font('Helvetica').fontSize(7).fillColor('#475569').text(pDesc, 108, descY, { width: 145 });
+          descY += doc.heightOfString(pDesc, { width: 145 }) + 2;
+        }
+        if (it.remarks) {
+          const remText = `Remarks: ${it.remarks}`;
+          doc.font('Helvetica-Bold').fontSize(7).fillColor('#0284c7').text(remText, 108, descY, { width: 145 });
+          descY += doc.heightOfString(remText, { width: 145 }) + 2;
         }
 
         // Col 4: Material / Grade & Original Dimensions
-        doc.font('Helvetica-Bold').fontSize(7.5).fillColor(textColor).text(it.material_grade || '-', 256, y, { width: 80 });
-        const matH = doc.heightOfString(it.material_grade || '-', { width: 80 });
+        doc.font('Helvetica-Bold').fontSize(7.5).fillColor(textColor).text(matGrade, 256, y, { width: 80 });
+        const matH = doc.heightOfString(matGrade, { width: 80 });
         doc.font('Helvetica').fontSize(7).fillColor('#64748b').text(`Original: ${origDims}`, 256, y + matH + 2, { width: 80 });
         const origH = matH + 2 + doc.heightOfString(`Original: ${origDims}`, { width: 80 });
 
@@ -356,7 +425,7 @@ function generatePdfFile(pr, items, filePath) {
         doc.font('Helvetica').fontSize(7).fillColor('#64748b').text(it.unit || 'Sheet', 424, y + 10, { width: 44 });
 
         // Col 7: Unit Price
-        doc.font('Helvetica').fontSize(7.5).fillColor(textColor).text(hasPrice ? formatIdr(it.unit_price).replace('IDR ', '') : '—', 470, y, { width: 44, align: 'right' });
+        doc.font('Helvetica').fontSize(7.5).fillColor(textColor).text(hasPrice ? formatIdr(rawPrice).replace('IDR ', '') : '—', 470, y, { width: 44, align: 'right' });
 
         // Col 8: Estimated Total
         doc.font('Helvetica-Bold').fontSize(8).fillColor('#059669').text(cost !== null ? formatIdr(cost).replace('IDR ', '') : '—', 516, y, { width: 43, align: 'right' });
@@ -429,8 +498,10 @@ function generatePdfFile(pr, items, filePath) {
 
       doc.end();
 
-      writeStream.on('finish', () => resolve(filePath));
-      writeStream.on('error', (err) => reject(err));
+      if (filePath && writeStream) {
+        writeStream.on('finish', () => resolve(filePath));
+        writeStream.on('error', (err) => reject(err));
+      }
     } catch (err) {
       reject(err);
     }

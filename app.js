@@ -739,12 +739,14 @@
       const cutWidth = (supplyType === 'Cut Size') ? String(options.cutWidth || '').trim() : '';
       const isCut = (supplyType === 'Cut Size');
       const reqCutSize = isCut ? (cutWidth ? `${cutLength} × ${cutWidth} mm` : `${cutLength} mm`) : '';
+      const itemRemarks = (options && options.remarks !== undefined) ? String(options.remarks).trim() : String(masterItem.remarks || '').trim();
 
       const existing = this.items.find(i =>
         i.sku.toUpperCase() === masterItem.sku.toUpperCase() &&
         (i.supplyType || 'Full Size') === supplyType &&
         String(i.cutLength || '') === cutLength &&
-        String(i.cutWidth || '') === cutWidth
+        String(i.cutWidth || '') === cutWidth &&
+        String(i.remarks || '').trim() === itemRemarks
       );
 
       if (existing) {
@@ -769,7 +771,8 @@
           cutLength: cutLength,
           cutWidth: cutWidth,
           purchaseType: isCut ? 'PROJECT-SPECIFIC CUT SIZE' : 'STANDARD STOCK ITEM',
-          requiredCutSize: reqCutSize
+          requiredCutSize: reqCutSize,
+          remarks: itemRemarks
         });
       }
       this.save();
@@ -929,6 +932,7 @@
         const itemStatus = (item.status === 'Out of Stock') ? 'Out of Stock' : 'Available';
         const statusClass = itemStatus.toLowerCase().replace(/[\s_]+/g, '-');
         const origDimDisplay = item.originalDimensions || item.sizeDimensions || item.size || '—';
+        const isFastener = /fastener|bolt|screw|nut|stud/i.test(`${item.productName || ''} ${item.itemDescription || ''} ${item.category || ''}`);
 
         return `
           <tr data-cart-idx="${idx}" data-sku="${escapeHtml(item.sku)}">
@@ -955,6 +959,9 @@
                 ` : ''}
               </div>
             </td>
+            <td>
+              <textarea class="input-cart-item-remarks" data-idx="${idx}" placeholder="${isFastener ? 'e.g. Bolt Length: 100 mm' : 'Item remarks...'}" rows="1" style="width:100%; min-width:130px; font-size:0.75rem; padding:4px 6px; border:1px solid var(--border-subtle); border-radius:4px; resize:vertical; font-family:inherit; background:var(--bg-card); color:var(--text-main);">${escapeHtml(item.remarks || '')}</textarea>
+            </td>
             <td style="font-weight:600; font-family:var(--font-mono);">${formattedPrice}</td>
             <td style="text-align:center;">
               <div class="cart-qty-ctrl">
@@ -970,6 +977,24 @@
           </tr>
         `;
       }).join('');
+
+      // Bind remarks inputs
+      tbody.querySelectorAll('.input-cart-item-remarks').forEach(textarea => {
+        textarea.addEventListener('input', () => {
+          const idx = parseInt(textarea.getAttribute('data-idx'), 10);
+          if (this.items[idx]) {
+            this.items[idx].remarks = textarea.value;
+            this.save();
+          }
+        });
+        textarea.addEventListener('change', () => {
+          const idx = parseInt(textarea.getAttribute('data-idx'), 10);
+          if (this.items[idx]) {
+            this.items[idx].remarks = textarea.value.trim();
+            this.save();
+          }
+        });
+      });
 
       // Bind quantity and remove buttons by index
       tbody.querySelectorAll('.btn-cart-minus').forEach(btn => {
@@ -1658,8 +1683,8 @@
     handleFile(file) {
       if (!file) return;
       const lower = file.name.toLowerCase();
-      if (!lower.endsWith('.xlsx') && !lower.endsWith('.xls')) {
-        alert('Invalid file format. Please upload an Excel workbook (.xlsx or .xls).');
+      if (!lower.endsWith('.xlsx') && !lower.endsWith('.xls') && !lower.endsWith('.csv')) {
+        alert('Invalid file format. Please upload an Excel workbook (.xlsx, .xls) or CSV file (.csv).');
         return;
       }
 
@@ -1682,15 +1707,17 @@
           let supported = allSheetNames.filter(name => {
             const l = name.trim().toLowerCase();
             if (l.includes('instructions')) return false;
-            if (l === 'sheet1' || l === 'sheet 1') return false; // Ignore default empty Sheet1
+            if (allSheetNames.length > 1 && (l === 'sheet1' || l === 'sheet 1')) return false; // Ignore default empty Sheet1 if other sheets exist
             return standardKeywords.some(kw => l.includes(kw));
           });
 
-          // Fallback: If no standard keywords matched, include all non-instruction sheets (excluding Sheet1)
+          // Fallback: If no standard keywords matched, include all non-instruction sheets
           if (supported.length === 0) {
             supported = allSheetNames.filter(name => {
               const l = name.trim().toLowerCase();
-              return !l.includes('instructions') && l !== 'sheet1' && l !== 'sheet 1';
+              if (l.includes('instructions')) return false;
+              if (allSheetNames.length > 1 && (l === 'sheet1' || l === 'sheet 1')) return false;
+              return true;
             });
           }
 
@@ -2102,11 +2129,31 @@
           throw new Error(data.error || 'Batch import failed');
         }
 
+        const rowsDetected = (data.rowsDetected !== undefined) ? data.rowsDetected : (this.parsedItems ? this.parsedItems.length : data.count);
+        const rowsImported = (data.rowsImported !== undefined) ? data.rowsImported : data.count;
+        const rowsSkipped = (data.rowsSkipped !== undefined) ? data.rowsSkipped : 0;
+        const rowsFailed = (data.rowsFailed !== undefined) ? data.rowsFailed : 0;
+
+        const statDetectedEl = document.getElementById('statRowsDetected');
+        const statImportedEl = document.getElementById('statRowsImported');
+        const statSkippedEl = document.getElementById('statRowsSkipped');
+        const statFailedEl = document.getElementById('statRowsFailed');
+        const summaryMsgEl = document.getElementById('importResultSummaryMsg');
         const successCount = document.getElementById('successImportCount');
         const successSkuRange = document.getElementById('successSkuRange');
         const successMeta = document.getElementById('successMetaDetails');
+        const sheetBreakdownContainer = document.getElementById('importSheetBreakdownResult');
+        const sheetBreakdownList = document.getElementById('importSheetBreakdownList');
 
-        if (successCount) successCount.textContent = data.count;
+        if (statDetectedEl) statDetectedEl.textContent = rowsDetected;
+        if (statImportedEl) statImportedEl.textContent = rowsImported;
+        if (statSkippedEl) statSkippedEl.textContent = rowsSkipped;
+        if (statFailedEl) statFailedEl.textContent = rowsFailed;
+
+        if (successCount) successCount.textContent = rowsImported;
+        if (summaryMsgEl) {
+          summaryMsgEl.innerHTML = `<span id="successImportCount">${rowsImported}</span> rows imported successfully.`;
+        }
         if (successSkuRange) successSkuRange.textContent = `${data.startSku} – ${data.endSku}`;
         if (successMeta) {
           successMeta.innerHTML = `
@@ -2114,6 +2161,24 @@
             Imported by: <strong>${escapeHtml(data.audit.importedBy)}</strong> • Timestamp: <strong>${formatDateDisplay(data.audit.timestamp)}</strong><br>
             PostgreSQL Transaction Status: <span style="color:#10b981; font-weight:700;">COMMITTED</span>
           `;
+        }
+
+        // Render sheet breakdown if multi-sheet breakdown available
+        if (sheetBreakdownContainer && sheetBreakdownList) {
+          const breakdown = Array.isArray(data.sheetBreakdown) ? data.sheetBreakdown : [];
+          if (breakdown.length > 0) {
+            sheetBreakdownContainer.style.display = 'block';
+            sheetBreakdownList.innerHTML = breakdown.map(s => `
+              <div style="background:#ffffff; border:1px solid #cbd5e1; border-radius:4px; padding:4px 10px; font-size:0.8rem; display:flex; align-items:center; gap:6px;">
+                <span style="font-weight:600; color:#1e293b;">${escapeHtml(s.sheetName)}:</span>
+                <span style="color:#059669; font-weight:700;">${s.rowsImported || 0} imported</span>
+                ${(s.rowsSkipped && s.rowsSkipped > 0) ? `<span style="color:#64748b; font-size:0.75rem;">(${s.rowsSkipped} skipped)</span>` : ''}
+                ${(s.rowsFailed && s.rowsFailed > 0) ? `<span style="color:#e11d48; font-size:0.75rem;">(${s.rowsFailed} failed)</span>` : ''}
+              </div>
+            `).join('');
+          } else {
+            sheetBreakdownContainer.style.display = 'none';
+          }
         }
 
         await DataService.getMasterItems();
@@ -2127,7 +2192,7 @@
           DataService.saveConfig(DataService.config);
         }
 
-        UI.showToast('Import Complete', `Successfully imported ${data.count} materials (${data.startSku} – ${data.endSku}).`);
+        UI.showToast('Import Complete', `Successfully imported ${rowsImported} materials (${data.startSku} – ${data.endSku}).`);
         this.showStep(4);
 
       } catch (err) {
@@ -3666,12 +3731,13 @@
           const priceEl = tbody.querySelector(`.catalog-price-input[data-sku="${sku}"]`);
           const remarksEl = tbody.querySelector(`.catalog-remarks-textarea[data-sku="${sku}"]`);
           if (canEditDescription && descEl) await DataService.updateMasterItemDescription(sku, descEl.value);
-          if (canEditRemarks && remarksEl) await DataService.updateMasterItemRemarks(sku, remarksEl.value);
           if (canEditPrice && priceEl && priceEl.value.trim() && parseFloat(priceEl.value.trim()) > 0) {
             try { await DataService.updateMasterItemPrice(sku, priceEl.value.trim()); } catch (e) {}
           }
           const item = await DataService.getMasterItemBySku(sku);
           if (!item) return;
+
+          const rowRemarks = remarksEl ? remarksEl.value.trim() : (item.remarks || '');
 
           // Check selected supply type and cut dimensions from row
           const supplySelect = document.getElementById(`supplySelect_${sku}`);
@@ -3751,7 +3817,8 @@
               supplyType,
               originalDimensions: item.size || item.sizeDimensions || '—',
               cutLength,
-              cutWidth
+              cutWidth,
+              remarks: rowRemarks
             });
           } else {
             this.openCreatePrModal(sku);
@@ -5332,7 +5399,8 @@
           quantity: pr.quantity,
           weight: pr.weightKg || pr.totalWeightKg,
           unitPrice: pr.unitPrice,
-          estimatedTotalCost: pr.totalCost || (pr.unitPrice * pr.quantity)
+          estimatedTotalCost: pr.totalCost || (pr.unitPrice * pr.quantity),
+          remarks: pr.remarks || ''
         }];
 
         const grandTotal = items.reduce((sum, it) => sum + (parseFloat(it.estimatedTotalCost || (it.unitPrice * it.quantity)) || 0), 0);
@@ -5407,6 +5475,7 @@
                             <div style="font-weight:600; color:var(--text-main);">${escapeHtml(it.productName || '—')}</div>
                             <div style="font-size:0.78rem; color:var(--text-muted); white-space:pre-wrap; margin-top:3px; line-height:1.45;">${escapeHtml(it.itemDescription || '')}</div>
                             <div style="font-size:0.75rem; color:#64748b; margin-top:3px;"><span style="font-weight:600;">Original:</span> <span style="font-family:var(--font-mono);">${escapeHtml(origDims)}</span></div>
+                            ${it.remarks ? `<div style="font-size:0.75rem; color:#0284c7; background:#f0f9ff; padding:2px 6px; border-radius:4px; border:1px solid #bae6fd; margin-top:4px; display:inline-block;"><strong>Remarks:</strong> ${escapeHtml(it.remarks)}</div>` : ''}
                           </td>
                           <td>${escapeHtml(it.materialGrade || it.material || '-')}</td>
                           <td style="font-family:var(--font-mono); font-weight:600; color:#334155;">${escapeHtml(origDims)}</td>
@@ -5731,7 +5800,8 @@
         quantity: pr.quantity,
         weight: pr.weightKg || pr.totalWeightKg,
         unitPrice: pr.unitPrice,
-        estimatedTotalCost: pr.totalCost || (pr.unitPrice * pr.quantity)
+        estimatedTotalCost: pr.totalCost || (pr.unitPrice * pr.quantity),
+        remarks: pr.remarks || ''
       }];
 
       const grandTotal = items.reduce((sum, it) => sum + (parseFloat(it.estimatedTotalCost || (it.unitPrice * it.quantity)) || 0), 0);
@@ -5805,6 +5875,7 @@
                         <div style="font-weight:600; color:var(--text-main);">${escapeHtml(it.productName || '—')}</div>
                         <div style="font-size:0.78rem; color:var(--text-muted); white-space:pre-wrap; margin-top:3px; line-height:1.45;">${escapeHtml(it.itemDescription || '')}</div>
                         <div style="font-size:0.75rem; color:#64748b; margin-top:3px;"><span style="font-weight:600;">Original:</span> <span style="font-family:var(--font-mono);">${escapeHtml(origDims)}</span></div>
+                        ${it.remarks ? `<div style="font-size:0.75rem; color:#0284c7; background:#f0f9ff; padding:2px 6px; border-radius:4px; border:1px solid #bae6fd; margin-top:3px; display:inline-block;"><strong>Remarks:</strong> ${escapeHtml(it.remarks)}</div>` : ''}
                       </td>
                       <td>${escapeHtml(it.materialGrade || it.material || '-')}</td>
                       <td style="font-family:var(--font-mono); font-weight:600; color:#334155;">${escapeHtml(origDims)}</td>
