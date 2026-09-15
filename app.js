@@ -756,6 +756,7 @@
         this.items.push({
           masterItemId: masterItem.id || null,
           sku: masterItem.sku,
+          category: masterItem.category || (options && options.category) || '',
           productName: masterItem.productName,
           itemDescription: desc,
           materialGrade: masterItem.material || masterItem.materialGrade || '',
@@ -932,7 +933,7 @@
         const itemStatus = (item.status === 'Out of Stock') ? 'Out of Stock' : 'Available';
         const statusClass = itemStatus.toLowerCase().replace(/[\s_]+/g, '-');
         const origDimDisplay = item.originalDimensions || item.sizeDimensions || item.size || '—';
-        const isFastener = /fastener|bolt|screw|nut|stud/i.test(`${item.productName || ''} ${item.itemDescription || ''} ${item.category || ''}`);
+        const isFastener = (item.category || '').toLowerCase() === 'fasteners' || /fastener|bolt|screw|nut|stud/i.test(`${item.productName || ''} ${item.itemDescription || ''} ${item.category || ''}`);
 
         return `
           <tr data-cart-idx="${idx}" data-sku="${escapeHtml(item.sku)}">
@@ -950,13 +951,17 @@
             </td>
             <td>
               <div class="cart-supply-info">
-                <span class="supply-badge ${isCut ? 'cut-size' : 'full-size'}">${isCut ? 'CUT SIZE' : 'FULL SIZE'}</span>
-                ${isCut ? `
-                  <div class="cart-cut-spec-details" style="font-size:0.74rem; color:var(--text-muted); margin-top:4px; line-height:1.4;">
-                    <div>Orig: <span style="font-family:var(--font-mono); color:var(--text-main); font-weight:600;">${escapeHtml(origDimDisplay)}</span></div>
-                    <div>Req: <span style="font-family:var(--font-mono); color:#d97706; font-weight:700;">${escapeHtml(item.cutLength)}${item.cutWidth ? ' × ' + escapeHtml(item.cutWidth) : ''} mm</span></div>
-                  </div>
-                ` : ''}
+                ${isFastener ? `
+                  <span style="color:var(--text-muted); font-size:0.88rem; font-weight:500;">—</span>
+                ` : `
+                  <span class="supply-badge ${isCut ? 'cut-size' : 'full-size'}">${isCut ? 'CUT SIZE' : 'FULL SIZE'}</span>
+                  ${isCut ? `
+                    <div class="cart-cut-spec-details" style="font-size:0.74rem; color:var(--text-muted); margin-top:4px; line-height:1.4;">
+                      <div>Orig: <span style="font-family:var(--font-mono); color:var(--text-main); font-weight:600;">${escapeHtml(origDimDisplay)}</span></div>
+                      <div>Req: <span style="font-family:var(--font-mono); color:#d97706; font-weight:700;">${escapeHtml(item.cutLength)}${item.cutWidth ? ' × ' + escapeHtml(item.cutWidth) : ''} mm</span></div>
+                    </div>
+                  ` : ''}
+                `}
               </div>
             </td>
             <td>
@@ -2298,6 +2303,7 @@
       const subtitleEl = document.getElementById('catalogPageSubtitle');
       const specEl = document.getElementById('catalogSourceSpec');
       const navLabel = document.getElementById('navCatalogLabel');
+      const supplyTh = document.getElementById('catalogSupplyTypeTh');
 
       if (targetCat === 'Fasteners') {
         if (titleEl) titleEl.textContent = 'Fasteners Master Catalog';
@@ -2305,18 +2311,21 @@
         if (specEl) specEl.textContent = 'Fasteners Procurement Standard • DIN / ISO Specifications';
         if (searchInput) searchInput.placeholder = 'Search Fasteners by SKU, Product Name, Material, Size, Standard...';
         if (navLabel) navLabel.textContent = '🔩 Fasteners';
+        if (supplyTh) supplyTh.textContent = 'Bolt Length';
       } else if (targetCat === 'Piping & Fittings') {
         if (titleEl) titleEl.textContent = 'Piping & Fittings Master Catalog';
         if (subtitleEl) subtitleEl.textContent = 'Single source of truth for Piping & Fittings procurement specifications';
         if (specEl) specEl.textContent = 'Process Piping & Fittings Standard • ASTM / ASME Specifications';
         if (searchInput) searchInput.placeholder = 'Search Piping by SKU, Product Name, Size, Schedule, Standard...';
         if (navLabel) navLabel.textContent = '🚰 Piping & Fittings';
+        if (supplyTh) supplyTh.textContent = 'Supply Type';
       } else if (targetCat === 'Electrical') {
         if (titleEl) titleEl.textContent = 'Electrical Master Catalog';
         if (subtitleEl) subtitleEl.textContent = 'Single source of truth for Electrical procurement specifications';
         if (specEl) specEl.textContent = 'Electrical & Instrumentation Specifications';
         if (searchInput) searchInput.placeholder = 'Search Electrical by SKU, Product Name, Material, Size, Specification...';
         if (navLabel) navLabel.textContent = '⚡ Electrical';
+        if (supplyTh) supplyTh.textContent = 'Supply Type';
       } else {
         this.currentCategory = 'Raw Materials';
         if (titleEl) titleEl.textContent = 'Raw Materials Master Catalog';
@@ -2324,6 +2333,7 @@
         if (specEl) specEl.textContent = 'Single Source of Truth • PT Persada Nusantara Steel Specifications';
         if (searchInput) searchInput.placeholder = 'Search by SKU (e.g. FF4186), Product Name, Material, Size, or Spec...';
         if (navLabel) navLabel.textContent = '📦 Raw Materials';
+        if (supplyTh) supplyTh.textContent = 'Supply Type';
       }
 
       this.switchView('catalog');
@@ -3145,6 +3155,14 @@
       return DataService.getItemDescription(item);
     },
 
+    formatBoltLengthRemark(val) {
+      if (!val || !val.trim()) return '';
+      val = val.trim();
+      if (/^bolt\s*length:\s*/i.test(val)) return val;
+      if (/^length:\s*/i.test(val)) return `Bolt ${val}`;
+      return `Bolt Length: ${val}`;
+    },
+
     async renderMasterCatalogTable() {
       const tbody = document.getElementById('masterCatalogTbody');
       const countEl = document.getElementById('catalogRowCount');
@@ -3301,6 +3319,12 @@
         return searchCorpus.includes(q);
       });
 
+      const isFastenersCat = (this.currentCategory || '').trim().toLowerCase() === 'fasteners';
+      const supplyTh = document.getElementById('catalogSupplyTypeTh');
+      if (supplyTh) {
+        supplyTh.textContent = isFastenersCat ? 'Bolt Length' : 'Supply Type';
+      }
+
       if (countEl) {
         countEl.innerHTML = `Showing <strong>${filtered.length}</strong> of <strong>${categoryItems.length}</strong> Master Items`;
       }
@@ -3333,6 +3357,8 @@
         const statusClass = itemStatus.toLowerCase().replace(/[\s_]+/g, '-');
         const itemRemarks = (item.remarks !== undefined && item.remarks !== null) ? item.remarks : '';
         const isPlateSheet = /plate|sheet|plat/i.test(`${item.productName || ''} ${item.itemDescription || ''} ${item.unit || ''} ${item.subCategory || ''} ${item.category || ''}`);
+        const isFastenerItem = isFastenersCat || (item.category || '').trim().toLowerCase() === 'fasteners';
+        const isNonBolt = isFastenerItem && /nut|washer|ring|u-bolt/i.test(`${item.productName || ''} ${item.itemDescription || ''} ${item.subCategory || ''}`);
 
         return `
           <tr data-sku="${escapeHtml(item.sku)}">
@@ -3395,43 +3421,64 @@
               `}
             </td>
             <td>
-              <div class="catalog-supply-cell-wrapper" id="supplyWrapper_${escapeHtml(item.sku)}">
-                <div class="supply-select-header" style="display:flex; align-items:center; gap:6px;">
-                  <select class="catalog-supply-select supply-val-full-size" 
-                          data-sku="${escapeHtml(item.sku)}"
-                          id="supplySelect_${escapeHtml(item.sku)}"
-                          title="Select Supply Type for ${escapeHtml(item.sku)}">
-                    <option value="Full Size" selected>Full Size</option>
-                    <option value="Cut Size">Cut Size</option>
-                  </select>
-                  <span class="supply-badge full-size" id="supplyBadge_${escapeHtml(item.sku)}">FULL SIZE</span>
-                </div>
-                <div class="catalog-cut-panel" id="cutPanel_${escapeHtml(item.sku)}" style="display: none;">
-                  <div class="cut-orig-dim-display" title="Original Dimensions (Read-only)">
-                    <span class="cut-dim-label">Original:</span>
-                    <span class="cut-dim-orig-val" id="origDim_${escapeHtml(item.sku)}">${escapeHtml(item.size || item.sizeDimensions || '—')}</span>
-                  </div>
-                  <div class="cut-inputs-grid">
-                    <div class="cut-input-group">
-                      <label class="cut-dim-sublabel" for="cutLength_${escapeHtml(item.sku)}">Cut Length <span class="req">*</span></label>
-                      <input type="number" step="any" min="0" 
-                             class="input-cut-dim input-cut-length" 
-                             id="cutLength_${escapeHtml(item.sku)}" 
-                             data-sku="${escapeHtml(item.sku)}" 
-                             placeholder="Length (mm)">
+              ${isFastenerItem ? `
+                <div class="catalog-bolt-length-cell-wrapper" id="boltLengthWrapper_${escapeHtml(item.sku)}">
+                  ${isNonBolt ? `
+                    <div style="display:flex; align-items:center; justify-content:center; min-height:34px;">
+                      <span class="bolt-length-na" style="color:var(--text-muted); font-size:1rem; font-weight:500;" title="Bolt length not applicable for this fastener type">—</span>
+                      <input type="hidden" id="boltLength_${escapeHtml(item.sku)}" class="catalog-bolt-length-input" value="">
                     </div>
-                    <div class="cut-input-group">
-                      <label class="cut-dim-sublabel" for="cutWidth_${escapeHtml(item.sku)}">Cut Width <span class="cut-width-req-mark req" style="display:${isPlateSheet ? 'inline' : 'none'};">*</span></label>
-                      <input type="number" step="any" min="0" 
-                             class="input-cut-dim input-cut-width" 
-                             id="cutWidth_${escapeHtml(item.sku)}" 
+                  ` : `
+                    <div style="display:flex; align-items:center;">
+                      <input type="text" 
+                             class="catalog-bolt-length-input" 
+                             id="boltLength_${escapeHtml(item.sku)}" 
                              data-sku="${escapeHtml(item.sku)}" 
-                             placeholder="Width (mm)">
+                             placeholder="e.g. 100 mm (optional)" 
+                             style="width:100%; min-width:130px; font-size:0.8rem; padding:6px 8px; border:1px solid var(--border-subtle); border-radius:4px; font-family:var(--font-mono); background:var(--bg-card); color:var(--text-main);"
+                             title="Optional Bolt Length (e.g. 100 mm, 150 mm, M12 x 100 mm, Length: 75 mm)">
                     </div>
-                  </div>
-                  <div class="cut-dim-error" id="cutErr_${escapeHtml(item.sku)}" style="display:none;"></div>
+                  `}
                 </div>
-              </div>
+              ` : `
+                <div class="catalog-supply-cell-wrapper" id="supplyWrapper_${escapeHtml(item.sku)}">
+                  <div class="supply-select-header" style="display:flex; align-items:center; gap:6px;">
+                    <select class="catalog-supply-select supply-val-full-size" 
+                            data-sku="${escapeHtml(item.sku)}"
+                            id="supplySelect_${escapeHtml(item.sku)}"
+                            title="Select Supply Type for ${escapeHtml(item.sku)}">
+                      <option value="Full Size" selected>Full Size</option>
+                      <option value="Cut Size">Cut Size</option>
+                    </select>
+                    <span class="supply-badge full-size" id="supplyBadge_${escapeHtml(item.sku)}">FULL SIZE</span>
+                  </div>
+                  <div class="catalog-cut-panel" id="cutPanel_${escapeHtml(item.sku)}" style="display: none;">
+                    <div class="cut-orig-dim-display" title="Original Dimensions (Read-only)">
+                      <span class="cut-dim-label">Original:</span>
+                      <span class="cut-dim-orig-val" id="origDim_${escapeHtml(item.sku)}">${escapeHtml(item.size || item.sizeDimensions || '—')}</span>
+                    </div>
+                    <div class="cut-inputs-grid">
+                      <div class="cut-input-group">
+                        <label class="cut-dim-sublabel" for="cutLength_${escapeHtml(item.sku)}">Cut Length <span class="req">*</span></label>
+                        <input type="number" step="any" min="0" 
+                               class="input-cut-dim input-cut-length" 
+                               id="cutLength_${escapeHtml(item.sku)}" 
+                               data-sku="${escapeHtml(item.sku)}" 
+                               placeholder="Length (mm)">
+                      </div>
+                      <div class="cut-input-group">
+                        <label class="cut-dim-sublabel" for="cutWidth_${escapeHtml(item.sku)}">Cut Width <span class="cut-width-req-mark req" style="display:${isPlateSheet ? 'inline' : 'none'};">*</span></label>
+                        <input type="number" step="any" min="0" 
+                               class="input-cut-dim input-cut-width" 
+                               id="cutWidth_${escapeHtml(item.sku)}" 
+                               data-sku="${escapeHtml(item.sku)}" 
+                               placeholder="Width (mm)">
+                      </div>
+                    </div>
+                    <div class="cut-dim-error" id="cutErr_${escapeHtml(item.sku)}" style="display:none;"></div>
+                  </div>
+                </div>
+              `}
             </td>
             <td>
               ${canEditRemarks ? `
@@ -3738,87 +3785,108 @@
           if (!item) return;
 
           const rowRemarks = remarksEl ? remarksEl.value.trim() : (item.remarks || '');
+          const isFastener = (item.category || '').trim().toLowerCase() === 'fasteners' || (UI.currentCategory || '').trim().toLowerCase() === 'fasteners';
 
-          // Check selected supply type and cut dimensions from row
-          const supplySelect = document.getElementById(`supplySelect_${sku}`);
-          const supplyType = supplySelect ? supplySelect.value : 'Full Size';
-          const errEl = document.getElementById(`cutErr_${sku}`);
-
+          let finalRemarks = rowRemarks;
+          let supplyType = 'Full Size';
           let cutLength = '';
           let cutWidth = '';
 
-          if (supplyType === 'Cut Size') {
-            const lenInput = document.getElementById(`cutLength_${sku}`);
-            const widInput = document.getElementById(`cutWidth_${sku}`);
-            cutLength = lenInput ? lenInput.value.trim() : '';
-            cutWidth = widInput ? widInput.value.trim() : '';
+          if (isFastener) {
+            const boltInput = document.getElementById(`boltLength_${sku}`);
+            const boltVal = boltInput ? boltInput.value.trim() : '';
+            if (boltVal) {
+              const boltRemark = UI.formatBoltLengthRemark(boltVal);
+              if (finalRemarks) {
+                if (/bolt\s*length\s*:[^\n;|,]+/i.test(finalRemarks)) {
+                  finalRemarks = finalRemarks.replace(/bolt\s*length\s*:[^\n;|,]+/i, boltRemark);
+                } else {
+                  finalRemarks = `${boltRemark} | ${finalRemarks}`;
+                }
+              } else {
+                finalRemarks = boltRemark;
+              }
+            }
+          } else {
+            // Check selected supply type and cut dimensions from row
+            const supplySelect = document.getElementById(`supplySelect_${sku}`);
+            supplyType = supplySelect ? supplySelect.value : 'Full Size';
+            const errEl = document.getElementById(`cutErr_${sku}`);
 
-            // Validate cutLength is positive numeric
-            const lenNum = Number(cutLength);
-            if (!cutLength || isNaN(lenNum) || lenNum <= 0) {
+            if (supplyType === 'Cut Size') {
+              const lenInput = document.getElementById(`cutLength_${sku}`);
+              const widInput = document.getElementById(`cutWidth_${sku}`);
+              cutLength = lenInput ? lenInput.value.trim() : '';
+              cutWidth = widInput ? widInput.value.trim() : '';
+
+              // Validate cutLength is positive numeric
+              const lenNum = Number(cutLength);
+              if (!cutLength || isNaN(lenNum) || lenNum <= 0) {
+                if (errEl) {
+                  errEl.textContent = 'Required Cut Length must be a positive numeric value.';
+                  errEl.style.display = 'block';
+                }
+                if (lenInput) {
+                  lenInput.classList.add('input-error');
+                  lenInput.focus();
+                }
+                UI.showToast('Validation Error', 'Required Cut Length must be a positive numeric value.');
+                return;
+              } else {
+                if (lenInput) lenInput.classList.remove('input-error');
+              }
+
+              // Check if plate / sheet material
+              const isPlateSheet = /plate|sheet|plat/i.test(`${item.productName || ''} ${item.itemDescription || ''} ${item.unit || ''} ${item.subCategory || ''} ${item.category || ''}`);
+              if (isPlateSheet) {
+                const widNum = Number(cutWidth);
+                if (!cutWidth || isNaN(widNum) || widNum <= 0) {
+                  if (errEl) {
+                    errEl.textContent = 'Required Cut Width is mandatory for plate/sheet materials (positive numeric).';
+                    errEl.style.display = 'block';
+                  }
+                  if (widInput) {
+                    widInput.classList.add('input-error');
+                    widInput.focus();
+                  }
+                  UI.showToast('Validation Error', 'Required Cut Width is mandatory for plate/sheet materials.');
+                  return;
+                } else {
+                  if (widInput) widInput.classList.remove('input-error');
+                }
+              } else if (cutWidth) {
+                const widNum = Number(cutWidth);
+                if (isNaN(widNum) || widNum <= 0) {
+                  if (errEl) {
+                    errEl.textContent = 'Required Cut Width must be a positive numeric value.';
+                    errEl.style.display = 'block';
+                  }
+                  if (widInput) {
+                    widInput.classList.add('input-error');
+                    widInput.focus();
+                  }
+                  UI.showToast('Validation Error', 'Required Cut Width must be a positive numeric value.');
+                  return;
+                } else {
+                  if (widInput) widInput.classList.remove('input-error');
+                }
+              }
+
               if (errEl) {
-                errEl.textContent = 'Required Cut Length must be a positive numeric value.';
-                errEl.style.display = 'block';
+                errEl.style.display = 'none';
+                errEl.textContent = '';
               }
-              if (lenInput) {
-                lenInput.classList.add('input-error');
-                lenInput.focus();
-              }
-              UI.showToast('Validation Error', 'Required Cut Length must be a positive numeric value.');
-              return;
-            } else {
-              if (lenInput) lenInput.classList.remove('input-error');
-            }
-
-            // Check if plate / sheet material
-            const isPlateSheet = /plate|sheet|plat/i.test(`${item.productName || ''} ${item.itemDescription || ''} ${item.unit || ''} ${item.subCategory || ''} ${item.category || ''}`);
-            if (isPlateSheet) {
-              const widNum = Number(cutWidth);
-              if (!cutWidth || isNaN(widNum) || widNum <= 0) {
-                if (errEl) {
-                  errEl.textContent = 'Required Cut Width is mandatory for plate/sheet materials (positive numeric).';
-                  errEl.style.display = 'block';
-                }
-                if (widInput) {
-                  widInput.classList.add('input-error');
-                  widInput.focus();
-                }
-                UI.showToast('Validation Error', 'Required Cut Width is mandatory for plate/sheet materials.');
-                return;
-              } else {
-                if (widInput) widInput.classList.remove('input-error');
-              }
-            } else if (cutWidth) {
-              const widNum = Number(cutWidth);
-              if (isNaN(widNum) || widNum <= 0) {
-                if (errEl) {
-                  errEl.textContent = 'Required Cut Width must be a positive numeric value.';
-                  errEl.style.display = 'block';
-                }
-                if (widInput) {
-                  widInput.classList.add('input-error');
-                  widInput.focus();
-                }
-                UI.showToast('Validation Error', 'Required Cut Width must be a positive numeric value.');
-                return;
-              } else {
-                if (widInput) widInput.classList.remove('input-error');
-              }
-            }
-
-            if (errEl) {
-              errEl.style.display = 'none';
-              errEl.textContent = '';
             }
           }
 
           if (typeof PRCart !== 'undefined' && PRCart.addItem) {
             PRCart.addItem(item, {
+              category: item.category || (isFastener ? 'Fasteners' : ''),
               supplyType,
               originalDimensions: item.size || item.sizeDimensions || '—',
               cutLength,
               cutWidth,
-              remarks: rowRemarks
+              remarks: finalRemarks
             });
           } else {
             this.openCreatePrModal(sku);
@@ -5457,7 +5525,8 @@
                       const priceStr = formattedUnitPrice !== '—' ? `${formattedUnitPrice} / ${escapeHtml(it.unit || 'Unit')}` : '—';
                       const totStr = formatCurrency(tot);
 
-                      const isCut = (it.supplyType === 'Cut Size' || it.supply_type === 'Cut Size' || it.purchaseType === 'PROJECT-SPECIFIC CUT SIZE' || it.purchase_type === 'PROJECT-SPECIFIC CUT SIZE');
+                      const isFastener = (it.category || '').toLowerCase() === 'fasteners' || /fastener|bolt|screw|nut|stud/i.test(`${it.productName || it.product_name || ''} ${it.itemDescription || it.item_description || ''} ${it.category || ''}`);
+                      const isCut = !isFastener && (it.supplyType === 'Cut Size' || it.supply_type === 'Cut Size' || it.purchaseType === 'PROJECT-SPECIFIC CUT SIZE' || it.purchase_type === 'PROJECT-SPECIFIC CUT SIZE');
                       const origDims = it.originalDimensions || it.sizeDimensions || it.size_dimensions || it.size || '—';
                       let rawCut = it.requiredCutSize || it.required_cut_size || '';
                       if (!rawCut && (it.cutLength || it.cut_length)) {
@@ -5480,12 +5549,16 @@
                           <td>${escapeHtml(it.materialGrade || it.material || '-')}</td>
                           <td style="font-family:var(--font-mono); font-weight:600; color:#334155;">${escapeHtml(origDims)}</td>
                           <td>
-                            <span class="supply-badge ${isCut ? 'cut-size' : 'full-size'}" style="font-weight:700; font-size:0.75rem; letter-spacing:0.5px; padding:3px 8px; border-radius:4px; display:inline-block;">
-                              ${isCut ? '✂️ CUT SIZE' : 'FULL SIZE'}
-                            </span>
+                            ${isFastener ? `
+                              <span style="color:var(--text-muted); font-size:0.88rem;">—</span>
+                            ` : `
+                              <span class="supply-badge ${isCut ? 'cut-size' : 'full-size'}" style="font-weight:700; font-size:0.75rem; letter-spacing:0.5px; padding:3px 8px; border-radius:4px; display:inline-block;">
+                                ${isCut ? '✂️ CUT SIZE' : 'FULL SIZE'}
+                              </span>
+                            `}
                           </td>
                           <td>
-                            ${isCut ? `
+                            ${(!isFastener && isCut) ? `
                               <span style="font-family:var(--font-mono); font-weight:700; color:#c2410c; background:#fff7ed; padding:3px 8px; border-radius:4px; border:1px solid #fed7aa; display:inline-block; font-size:0.82rem;">
                                 ${escapeHtml(cutDisplay)}
                               </span>
@@ -5857,7 +5930,8 @@
                   const formattedUnitPrice = (p !== null) ? `IDR ${p.toLocaleString('id-ID')} / ${escapeHtml(it.unit || 'Unit')}` : '—';
                   const totStr = (tot !== null) ? `IDR ${tot.toLocaleString('id-ID')}` : '—';
 
-                  const isCut = (it.supplyType === 'Cut Size' || it.supply_type === 'Cut Size' || it.purchaseType === 'PROJECT-SPECIFIC CUT SIZE' || it.purchase_type === 'PROJECT-SPECIFIC CUT SIZE');
+                  const isFastener = (it.category || '').toLowerCase() === 'fasteners' || /fastener|bolt|screw|nut|stud/i.test(`${it.productName || it.product_name || ''} ${it.itemDescription || it.item_description || ''} ${it.category || ''}`);
+                  const isCut = !isFastener && (it.supplyType === 'Cut Size' || it.supply_type === 'Cut Size' || it.purchaseType === 'PROJECT-SPECIFIC CUT SIZE' || it.purchase_type === 'PROJECT-SPECIFIC CUT SIZE');
                   const origDims = it.originalDimensions || it.sizeDimensions || it.size_dimensions || it.size || '—';
                   let rawCut = it.requiredCutSize || it.required_cut_size || '';
                   if (!rawCut && (it.cutLength || it.cut_length)) {
@@ -5880,12 +5954,16 @@
                       <td>${escapeHtml(it.materialGrade || it.material || '-')}</td>
                       <td style="font-family:var(--font-mono); font-weight:600; color:#334155;">${escapeHtml(origDims)}</td>
                       <td>
-                        <span class="supply-badge ${isCut ? 'cut-size' : 'full-size'}" style="font-weight:700; font-size:0.75rem; letter-spacing:0.5px; padding:3px 8px; border-radius:4px; display:inline-block;">
-                          ${isCut ? '✂️ CUT SIZE' : 'FULL SIZE'}
-                        </span>
+                        ${isFastener ? `
+                          <span style="color:var(--text-muted); font-size:0.88rem;">—</span>
+                        ` : `
+                          <span class="supply-badge ${isCut ? 'cut-size' : 'full-size'}" style="font-weight:700; font-size:0.75rem; letter-spacing:0.5px; padding:3px 8px; border-radius:4px; display:inline-block;">
+                            ${isCut ? '✂️ CUT SIZE' : 'FULL SIZE'}
+                          </span>
+                        `}
                       </td>
                       <td>
-                        ${isCut ? `
+                        ${(!isFastener && isCut) ? `
                           <span style="font-family:var(--font-mono); font-weight:700; color:#c2410c; background:#fff7ed; padding:3px 8px; border-radius:4px; border:1px solid #fed7aa; display:inline-block; font-size:0.82rem;">
                             ${escapeHtml(cutDisplay)}
                           </span>

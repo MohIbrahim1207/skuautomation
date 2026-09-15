@@ -105,7 +105,10 @@ async function generatePrDocuments(prId) {
  * Internal helper: Build Excel Workbook
  */
 function generateExcelFile(pr, items, filePath) {
-  if (!Array.isArray(items) && pr && Array.isArray(pr.items)) {
+  if (pr && pr.pr && Array.isArray(pr.items) && !items) {
+    items = pr.items;
+    pr = pr.pr;
+  } else if (!Array.isArray(items) && pr && Array.isArray(pr.items)) {
     if (typeof items === 'string') {
       filePath = items;
     }
@@ -151,7 +154,8 @@ function generateExcelFile(pr, items, filePath) {
       allHaveCost = false;
     }
 
-    const isCut = (it.supply_type === 'Cut Size' || it.supplyType === 'Cut Size' || it.purchase_type === 'PROJECT-SPECIFIC CUT SIZE' || it.purchaseType === 'PROJECT-SPECIFIC CUT SIZE');
+    const isFastener = (it.category || '').toLowerCase() === 'fasteners' || /fastener|bolt|screw|nut|stud/i.test(`${it.product_name || it.productName || ''} ${it.item_description || it.itemDescription || ''} ${it.category || ''}`);
+    const isCut = !isFastener && (it.supply_type === 'Cut Size' || it.supplyType === 'Cut Size' || it.purchase_type === 'PROJECT-SPECIFIC CUT SIZE' || it.purchaseType === 'PROJECT-SPECIFIC CUT SIZE');
     const origDims = it.size_dimensions || it.originalDimensions || it.size || '-';
     let cutDims = '—';
     if (isCut) {
@@ -172,8 +176,8 @@ function generateExcelFile(pr, items, filePath) {
       it.item_description || it.itemDescription || '-',
       it.material_grade || it.material || it.materialGrade || '-',
       origDims,
-      isCut ? 'CUT SIZE' : 'FULL SIZE',
-      cutDims,
+      isFastener ? '—' : (isCut ? 'CUT SIZE' : 'FULL SIZE'),
+      isFastener ? '—' : cutDims,
       it.remarks || '',
       it.unit || 'Sheet',
       it.quantity,
@@ -240,7 +244,10 @@ function generateExcelFile(pr, items, filePath) {
 function generatePdfFile(pr, items, filePath) {
   return new Promise((resolve, reject) => {
     try {
-      if (!Array.isArray(items) && pr && Array.isArray(pr.items)) {
+      if (pr && pr.pr && Array.isArray(pr.items) && !items) {
+        items = pr.items;
+        pr = pr.pr;
+      } else if (!Array.isArray(items) && pr && Array.isArray(pr.items)) {
         if (typeof items === 'string') {
           filePath = items;
         }
@@ -371,7 +378,8 @@ function generatePdfFile(pr, items, filePath) {
         const pDesc = it.item_description || it.itemDescription || '';
         const matGrade = it.material_grade || it.material || it.materialGrade || '-';
 
-        const isCut = (it.supply_type === 'Cut Size' || it.supplyType === 'Cut Size' || it.purchase_type === 'PROJECT-SPECIFIC CUT SIZE' || it.purchaseType === 'PROJECT-SPECIFIC CUT SIZE');
+        const isFastener = (it.category || '').toLowerCase() === 'fasteners' || /fastener|bolt|screw|nut|stud/i.test(`${it.product_name || it.productName || ''} ${it.item_description || it.itemDescription || ''} ${it.category || ''}`);
+        const isCut = !isFastener && (it.supply_type === 'Cut Size' || it.supplyType === 'Cut Size' || it.purchase_type === 'PROJECT-SPECIFIC CUT SIZE' || it.purchaseType === 'PROJECT-SPECIFIC CUT SIZE');
         const origDims = it.size_dimensions || it.originalDimensions || it.size || '-';
         let cutDims = '—';
         if (isCut) {
@@ -411,7 +419,9 @@ function generatePdfFile(pr, items, filePath) {
         const origH = matH + 2 + doc.heightOfString(`Original: ${origDims}`, { width: 80 });
 
         // Col 5: Supply Type & Required Cut Size
-        if (isCut) {
+        if (isFastener) {
+          doc.font('Helvetica').fontSize(7.5).fillColor('#64748b').text('—', 338, y, { width: 84 });
+        } else if (isCut) {
           doc.font('Helvetica-Bold').fontSize(7.5).fillColor('#c2410c').text('[ CUT SIZE ]', 338, y, { width: 84 });
           doc.font('Helvetica-Bold').fontSize(7).fillColor('#9a3412').text(`Required Cut:\n${cutDims}`, 338, y + 10, { width: 84 });
         } else {
