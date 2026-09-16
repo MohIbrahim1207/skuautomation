@@ -98,6 +98,7 @@ CREATE TABLE IF NOT EXISTS pr_items (
   supply_type VARCHAR(50) DEFAULT 'Full Size',
   cut_length VARCHAR(100) DEFAULT '',
   cut_width VARCHAR(100) DEFAULT '',
+  remarks TEXT DEFAULT '',
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 

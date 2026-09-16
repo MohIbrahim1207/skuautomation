@@ -87,8 +87,10 @@ const runStartupMigrations = async () => {
       ALTER TABLE pr_items ADD COLUMN IF NOT EXISTS supply_type VARCHAR(50) DEFAULT 'Full Size';
       ALTER TABLE pr_items ADD COLUMN IF NOT EXISTS cut_length VARCHAR(100) DEFAULT '';
       ALTER TABLE pr_items ADD COLUMN IF NOT EXISTS cut_width VARCHAR(100) DEFAULT '';
+      ALTER TABLE pr_items ADD COLUMN IF NOT EXISTS remarks TEXT DEFAULT '';
       UPDATE pr_items SET status = 'Available' WHERE status IS NULL OR status NOT IN ('Available', 'Out of Stock');
       UPDATE pr_items SET supply_type = 'Full Size' WHERE supply_type IS NULL OR supply_type NOT IN ('Full Size', 'Cut Size');
+      UPDATE pr_items SET remarks = '' WHERE remarks IS NULL;
     `);
     console.log('✅ [DB] Verified schema (Status: Available/Out of Stock, Supply Type: Full Size/Cut Size, Remarks)');
   } catch (err) {
