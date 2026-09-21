@@ -56,6 +56,7 @@ app.use('/api/projects', require('./routes/projects'));
 app.use('/api/master-items', require('./routes/masterItems'));
 app.use('/api/purchase-requests', require('./routes/purchaseRequests'));
 app.use('/api/documents', require('./routes/documents'));
+app.use('/api/import-submissions', require('./routes/importSubmissions'));
 
 // Serve Static Frontend Assets (no-cache for real-time frontend updates)
 app.use(express.static(path.join(__dirname, '..'), {

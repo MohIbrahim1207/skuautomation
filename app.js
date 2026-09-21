@@ -1527,8 +1527,8 @@
     },
 
     async openModal() {
-      if (!window.PermissionService || !window.PermissionService.can('CAN_CREATE_SKU')) {
-        UI.showAccessDeniedModal('Access Denied — Administrator or Engineering permission required.');
+      if (!window.PermissionService || !window.PermissionService.can('CAN_IMPORT_EXCEL')) {
+        UI.showAccessDeniedModal('Access Denied — Import Excel permission required.');
         return;
       }
 
@@ -1557,6 +1557,8 @@
       if (previewTbody) previewTbody.innerHTML = '';
       const breakdownEl = document.getElementById('previewSheetBreakdownDisplay');
       if (breakdownEl) breakdownEl.innerHTML = '';
+      const errorNotice = document.getElementById('importPreviewErrorNotice');
+      if (errorNotice) errorNotice.style.display = 'none';
 
       // Fetch fresh master items
       try {
@@ -1600,8 +1602,8 @@
       if (subtitle) {
         const labels = {
           1: 'Step 1 of 3 — Select Excel',
-          2: 'Step 2 of 3 — Preview Records',
-          3: 'Step 3 of 3 — Confirm Import',
+          2: 'Step 2 of 3 — Preview Records & Validation',
+          3: 'Step 3 of 3 — Confirm & Submit for Review',
           4: 'Import Complete'
         };
         subtitle.textContent = labels[stepNum] || '';
@@ -1671,17 +1673,12 @@
 
       document.getElementById('btnViewImportedCatalog')?.addEventListener('click', () => {
         UI.closeModal('modalExcelImport');
-        let importedCat = 'Raw Materials';
-        if (this.sheetBreakdown && this.sheetBreakdown['Piping & Fittings']) {
-          importedCat = 'Piping & Fittings';
-        } else if (this.sheetBreakdown && this.sheetBreakdown['Fasteners']) {
-          importedCat = 'Fasteners';
-        } else if (this.parsedItems && this.parsedItems.length > 0 && this.parsedItems[0].category) {
-          importedCat = this.parsedItems[0].category;
+        const currentUser = window.AuthService ? window.AuthService.getCurrentUser() : null;
+        if (currentUser && currentUser.role === 'ADMIN') {
+          UI.switchView('import-review');
         } else {
-          importedCat = UI.currentCategory || 'Raw Materials';
+          UI.switchView('my-imports');
         }
-        UI.openCategory(importedCat);
       });
     },
 
@@ -1712,7 +1709,7 @@
           let supported = allSheetNames.filter(name => {
             const l = name.trim().toLowerCase();
             if (l.includes('instructions')) return false;
-            if (allSheetNames.length > 1 && (l === 'sheet1' || l === 'sheet 1')) return false; // Ignore default empty Sheet1 if other sheets exist
+            if (allSheetNames.length > 1 && (l === 'sheet1' || l === 'sheet 1')) return false;
             return standardKeywords.some(kw => l.includes(kw));
           });
 
@@ -1818,29 +1815,23 @@
       if (!this.workbook || !this.supportedSheets || this.supportedSheets.length === 0) {
         this.parsedItems = [];
         this.sheetBreakdown = {};
+        this.validationErrorsCount = 0;
         return;
       }
 
       const allParsed = [];
       const sheetBreakdown = {};
 
+      const existingSkuUpperSet = new Set((this.existingMasterItems || []).map(i => (i.sku || '').toUpperCase().trim()));
+
       for (const sheetName of this.supportedSheets) {
         const ws = this.workbook.Sheets[sheetName];
         if (!ws) continue;
 
-        // Use blankrows: true to process the COMPLETE row range without silent row shifting
         const rawData = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', blankrows: true, raw: false });
-
-        console.log('[2. XLSX Parser - Sheet]', {
-          sheet: sheetName,
-          totalRawRowsFromSheetJS: rawData.length,
-          range: ws['!ref']
-        });
-
         if (!rawData || rawData.length === 0) continue;
 
         const headerRow = rawData[0].map(h => String(h || '').trim());
-
         const colMap = {};
         headerRow.forEach((col, idx) => {
           if (col) {
@@ -1881,28 +1872,21 @@
           const row = rawData[r];
           if (!row || !Array.isArray(row)) continue;
 
-          // Detect genuinely populated rows — check for any non-empty cell across the entire row
           const nonEmptyCells = row.map((cell, idx) => ({ cell: cell !== null && cell !== undefined ? String(cell).trim() : '', idx }))
                                    .filter(c => c.cell !== '');
 
-          if (nonEmptyCells.length === 0) {
-            // Empty Excel row — ignore
-            continue;
-          }
+          if (nonEmptyCells.length === 0) continue;
 
-          // Check if row is template guidance/instructions footer row
           const firstVal = nonEmptyCells[0].cell.toLowerCase();
           if (firstVal.includes('guidance only') || firstVal.includes('delete it before import') || firstVal.includes('example row is for guidance')) {
-            console.log(`[Excel Import] Row ${r + 1} in "${sheetName}" is template guidance row — skipped.`);
             continue;
           }
 
           const excelRowNum = r + 1;
 
-          // Preserve values exactly as supplied in Excel without fabricating missing values
-          // Optional fields: Product Name, Item Description, Current Unit Price are allowed to be blank
-          const productName = getVal(row, ['Product Name', 'Product', 'Item Name']);
-          const itemDescription = getMultilineVal(row, ['Item Description', 'Description', 'Spec Details']);
+          const rawSku = getVal(row, ['SKU', 'Item Code', 'Product Code', 'Part Number']);
+          const productName = getVal(row, ['Product Name', 'Product', 'Item Name', 'Name']);
+          const itemDescription = getMultilineVal(row, ['Item Description', 'Description', 'Spec Details', 'Specification Details']);
           
           let category = getVal(row, ['Category']);
           if (!category) {
@@ -1915,11 +1899,20 @@
             category = 'Fasteners';
           }
 
-          const subCategory = getVal(row, ['Subcategory', 'Sub Category']);
+          const subCategory = getVal(row, ['Subcategory', 'Sub Category', 'Sub-Category']);
           const material = getVal(row, ['Material / Grade', 'Material', 'Grade']);
           const size = getVal(row, ['Nominal Size / DN / NPS', 'Size / Dimensions', 'Size / Diameter', 'Size', 'Dimensions', 'Diameter', 'Nominal Size', 'DN', 'NPS']);
+          
+          // Business dimension columns: A, B, C, D, L1, L2
+          const dimA = getVal(row, ['A (mm)', 'A', 'Dim A', 'Outer Dim (mm)', 'Outer Dim', 'Width (mm)', 'Width']);
+          const dimB = getVal(row, ['B (mm)', 'B', 'Dim B', 'Inner Dim (mm)', 'Inner Dim', 'Height (mm)', 'Height']);
+          const dimC = getVal(row, ['C (mm)', 'C', 'Dim C', 'Flange Thickness (mm)', 'Flange Thk', 'Flange Thickness']);
+          const dimD = getVal(row, ['D (mm)', 'D', 'Dim D', 'Web Thickness (mm)', 'Web Thk', 'Web Thickness']);
+          const dimL1 = getVal(row, ['L1 (mm)', 'L1', 'Dim L1', 'Length 1 (mm)', 'Standard Length (mm)', 'Length (mm)', 'Length']);
+          const dimL2 = getVal(row, ['L2 (mm)', 'L2', 'Dim L2', 'Length 2 (mm)', 'Cut Length (mm)']);
+
           const specification = getVal(row, ['Standard / Specification', 'Specification / Standard', 'Specification', 'Standard', 'Spec']);
-          const unit = getVal(row, ['Unit / UOM', 'Unit', 'UOM']);
+          const unit = getVal(row, ['Unit / UOM', 'Unit', 'UOM']) || 'Sheet';
 
           const rawWeight = getVal(row, ['Weight (kg)', 'Weight (kg/pc)', 'Weight', 'Theoretical Weight']);
           const weightKg = (!isNaN(parseFloat(rawWeight)) && parseFloat(rawWeight) > 0) ? parseFloat(rawWeight) : null;
@@ -1927,6 +1920,8 @@
           const brand = getVal(row, ['Brand / Manufacturer', 'Manufacturer', 'Brand', 'Maker']);
           const supplierName = getVal(row, ['Supplier Name', 'Supplier', 'Vendor']);
           const rawPrice = getVal(row, ['Current Unit Price (IDR)', 'Current Unit Price', 'Unit Price (IDR)', 'Unit Price', 'Price']);
+          const rawSupplyType = getVal(row, ['Supply Type', 'Supply', 'Type']);
+          const supplyType = (rawSupplyType && rawSupplyType.toLowerCase().includes('cut')) ? 'Cut Size' : 'Full Size';
 
           const fastenerType = getVal(row, ['Fastener Type']);
           const length = getVal(row, ['Length']);
@@ -1941,24 +1936,82 @@
           const projectPid = getVal(row, ['Project / PID (if cut size)', 'Project / PID (if project-specific)', 'Project / PID (if cut/project-specific)', 'Project / PID', 'Project', 'PID']);
           const remarks = getVal(row, ['Remarks', 'Notes']);
 
+          // Calculated size string if size is missing
+          const dimParts = [dimA, dimB, dimC, dimD, dimL1].filter(Boolean);
+          const calculatedSize = size || (dimParts.length > 0 ? dimParts.join(' × ') : '—');
+
+          // SKU & Validation rules
+          const isBlankSku = !rawSku || rawSku.trim() === '';
+          const cleanSku = rawSku ? rawSku.trim() : '';
+          const isExistingSku = !isBlankSku && existingSkuUpperSet.has(cleanSku.toUpperCase());
+
+          const validationErrors = [];
+          const validationWarnings = [];
+
+          if (!productName || productName.trim() === '') {
+            validationErrors.push('Missing Product Name');
+          }
+          if (!material || material.trim() === '') {
+            validationWarnings.push('Missing Material / Grade');
+          }
+
+          if (isBlankSku) {
+            validationWarnings.push('NEW ITEM — SKU TO BE ASSIGNED');
+          } else if (isExistingSku) {
+            validationWarnings.push('Existing SKU found — requires Admin review.');
+          }
+
+          if (rawPrice !== undefined && rawPrice !== null && String(rawPrice).trim() !== '') {
+            const pNum = Number(String(rawPrice).replace(/[^0-9.-]/g, ''));
+            if (isNaN(pNum) || pNum < 0) {
+              validationErrors.push('Invalid Unit Price');
+            }
+          }
+          if (rawWeight !== undefined && rawWeight !== null && String(rawWeight).trim() !== '') {
+            const wNum = Number(String(rawWeight).replace(/[^0-9.-]/g, ''));
+            if (isNaN(wNum) || wNum < 0) {
+              validationErrors.push('Invalid Weight');
+            }
+          }
+
+          // Check dimension values for illegal characters
+          [dimA, dimB, dimC, dimD, dimL1, dimL2].forEach((dVal, dIdx) => {
+            if (dVal && /[<>{}\\]/.test(dVal)) {
+              const dNames = ['A', 'B', 'C', 'D', 'L1', 'L2'];
+              validationErrors.push(`Invalid Dimension ${dNames[dIdx]}`);
+            }
+          });
+
+          const validationStatus = validationErrors.length > 0 ? 'ERROR' : (validationWarnings.length > 0 ? 'WARNING' : 'VALID');
+
           allParsed.push({
             excelRowNum,
             sourceSheet: sheetName,
+            sku: cleanSku,
+            isBlankSku,
+            isExistingSku,
             productName,
             itemDescription,
             category,
             subCategory,
             material,
-            size,
+            size: calculatedSize,
             specification,
             unit,
             weightKg,
             brand,
             supplierName,
             unitPrice: rawPrice,
+            supplyType,
             materialType,
             projectPid,
             remarks,
+            dimA,
+            dimB,
+            dimC,
+            dimD,
+            dimL1,
+            dimL2,
             pipeFittingType,
             od,
             wallThickness,
@@ -1968,7 +2021,9 @@
             length,
             threadPitch,
             finish,
-            _isDuplicate: false
+            validationErrors,
+            validationWarnings,
+            validationStatus
           });
 
           sheetItemCount++;
@@ -1979,9 +2034,11 @@
 
       this.parsedItems = allParsed;
       this.sheetBreakdown = sheetBreakdown;
+      this.validationErrorsCount = allParsed.filter(it => it.validationStatus === 'ERROR').length;
 
       console.log('[3. Parsed Rows Across All Sheets]', {
         totalGenuinePopulatedRows: this.parsedItems.length,
+        validationErrorsCount: this.validationErrorsCount,
         sheetBreakdown: this.sheetBreakdown
       });
     },
@@ -1991,6 +2048,7 @@
       const rowCountEl = document.getElementById('previewRowCountDisplay');
       const breakdownEl = document.getElementById('previewSheetBreakdownDisplay');
       const btnStep3 = document.getElementById('btnImportGoStep3');
+      const errorNotice = document.getElementById('importPreviewErrorNotice');
 
       if (rowCountEl) rowCountEl.textContent = this.parsedItems.length;
 
@@ -2000,27 +2058,35 @@
         }).join('');
       }
 
-      console.log('[4. Combined Preview Rendered]', {
-        totalPreviewRows: this.parsedItems.length,
-        sheetBreakdown: this.sheetBreakdown
-      });
+      if (errorNotice) {
+        if (this.validationErrorsCount > 0) {
+          errorNotice.style.display = 'block';
+          errorNotice.innerHTML = `⚠️ <strong>${this.validationErrorsCount} item(s) contain validation errors:</strong> Missing required fields (such as Product Name) or invalid inputs are highlighted in red below. Please resolve them before proceeding.`;
+        } else {
+          errorNotice.style.display = 'none';
+        }
+      }
 
       if (btnStep3) {
-        btnStep3.disabled = (this.parsedItems.length === 0);
+        btnStep3.disabled = (this.parsedItems.length === 0 || this.validationErrorsCount > 0);
       }
 
       if (!tbody) return;
 
       if (this.parsedItems.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding: 2.5rem; color:var(--text-muted);">No populated records detected in the supported worksheets.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="13" style="text-align:center; padding: 2.5rem; color:var(--text-muted);">No populated records detected in the supported worksheets.</td></tr>`;
         return;
       }
 
       tbody.innerHTML = this.parsedItems.map((it, idx) => {
-        const prodNameDisplay = (it.productName && it.productName.trim()) ? escapeHtml(it.productName.trim()) : '—';
+        const prodNameDisplay = (it.productName && it.productName.trim()) ? escapeHtml(it.productName.trim()) : '<span style="color:#ef4444; font-weight:700;">[Required] Missing</span>';
         const descDisplay = (it.itemDescription && it.itemDescription.trim()) ? escapeHtml(it.itemDescription.trim()) : '—';
-        const catDisplay = (it.category && it.category.trim()) ? escapeHtml(it.category.trim()) : '—';
-        const unitDisplay = (it.unit && it.unit.trim()) ? escapeHtml(it.unit.trim()) : '—';
+        const subCatDisplay = (it.subCategory && it.subCategory.trim()) ? escapeHtml(it.subCategory.trim()) : '—';
+        const matDisplay = (it.material && it.material.trim()) ? escapeHtml(it.material.trim()) : '—';
+        const sizeDisplay = (it.size && it.size.trim()) ? escapeHtml(it.size.trim()) : '—';
+        const unitDisplay = (it.unit && it.unit.trim()) ? escapeHtml(it.unit.trim()) : 'Sheet';
+        const weightDisplay = it.weightKg ? `${it.weightKg} kg` : '—';
+        const remarksDisplay = (it.remarks && it.remarks.trim()) ? escapeHtml(it.remarks.trim()) : '—';
 
         let priceDisplay = '—';
         if (it.unitPrice !== undefined && it.unitPrice !== null && String(it.unitPrice).trim() !== '') {
@@ -2032,16 +2098,49 @@
           }
         }
 
+        // SKU display
+        let skuDisplay = '';
+        if (it.isBlankSku) {
+          skuDisplay = `<span class="badge" style="background:#fef3c7; color:#b45309; border:1px solid #fde68a; font-size:0.72rem; font-weight:700;">NEW ITEM — SKU TO BE ASSIGNED</span>`;
+        } else if (it.isExistingSku) {
+          skuDisplay = `<span style="font-family:var(--font-mono); font-weight:700; color:#b45309;">${escapeHtml(it.sku)}</span> <span class="badge" style="background:#fee2e2; color:#b91c1c; font-size:0.68rem;">Existing</span>`;
+        } else {
+          skuDisplay = `<span style="font-family:var(--font-mono); font-weight:700; color:var(--text-main);">${escapeHtml(it.sku)}</span>`;
+        }
+
+        // Supply type badge
+        const isCut = (it.supplyType === 'Cut Size');
+        const supplyBadge = isCut 
+          ? `<span class="badge" style="background:#e0f2fe; color:#0284c7; border:1px solid #bae6fd; font-size:0.72rem; font-weight:700;">CUT SIZE</span>`
+          : `<span class="badge" style="background:#f1f5f9; color:#475569; border:1px solid #cbd5e1; font-size:0.72rem; font-weight:600;">FULL SIZE</span>`;
+
+        // Validation status column
+        let statusBadge = '';
+        if (it.validationStatus === 'ERROR') {
+          statusBadge = `<span class="badge" style="background:#fee2e2; color:#b91c1c; border:1px solid #fecdd3; font-size:0.72rem; font-weight:700;" title="${escapeHtml(it.validationErrors.join('; '))}">❌ ${escapeHtml(it.validationErrors[0])}</span>`;
+        } else if (it.validationStatus === 'WARNING') {
+          statusBadge = `<span class="badge" style="background:#fef3c7; color:#b45309; border:1px solid #fde68a; font-size:0.72rem; font-weight:600;" title="${escapeHtml(it.validationWarnings.join('; '))}">⚠️ ${escapeHtml(it.validationWarnings[0])}</span>`;
+        } else {
+          statusBadge = `<span class="badge" style="background:#ecfdf5; color:#059669; border:1px solid #a7f3d0; font-size:0.72rem; font-weight:700;">✓ Ready</span>`;
+        }
+
+        const rowBg = (it.validationStatus === 'ERROR') ? 'background:#fff1f2;' : '';
+
         return `
-          <tr>
+          <tr style="${rowBg}">
             <td style="color:var(--text-dim); font-family:var(--font-mono);">${idx + 1}</td>
-            <td><span class="badge" style="background:var(--bg-surface-secondary); border:1px solid var(--border-color); padding:2px 7px; border-radius:4px; font-size:0.75rem; font-weight:600;">${escapeHtml(it.sourceSheet || '—')}</span></td>
-            <td style="color:var(--text-muted); font-family:var(--font-mono);">R${it.excelRowNum}</td>
-            <td><span class="category-pill" style="font-size:0.75rem;">${catDisplay}</span></td>
+            <td>${skuDisplay}</td>
             <td style="font-weight:600; color:var(--text-main);">${prodNameDisplay}</td>
-            <td style="color:var(--text-muted); white-space:pre-wrap; max-width:320px;">${descDisplay}</td>
+            <td style="color:var(--text-muted); white-space:pre-wrap; max-width:260px;">${descDisplay}</td>
+            <td><span class="category-pill" style="font-size:0.72rem;">${subCatDisplay}</span></td>
+            <td><span style="font-weight:600;">${matDisplay}</span></td>
+            <td style="font-family:var(--font-mono); font-size:0.78rem;">${sizeDisplay}</td>
             <td><span style="font-weight:600; font-family:var(--font-mono);">${unitDisplay}</span></td>
+            <td style="font-family:var(--font-mono); font-size:0.78rem;">${weightDisplay}</td>
             <td style="font-family:var(--font-mono); font-weight:600; color:var(--text-main);">${priceDisplay}</td>
+            <td>${supplyBadge}</td>
+            <td style="color:var(--text-muted); font-size:0.78rem;">${remarksDisplay}</td>
+            <td>${statusBadge}</td>
           </tr>
         `;
       }).join('');
@@ -2053,35 +2152,23 @@
         return;
       }
 
-      const existingSkus = (this.existingMasterItems || []).map(i => i.sku);
-      let maxSeq = 4235;
-      existingSkus.forEach(s => {
-        if (s) {
-          const match = String(s).match(/^FF(\d+)$/i);
-          if (match) {
-            const n = parseInt(match[1], 10);
-            if (n > maxSeq) maxSeq = n;
-          }
-        }
-      });
+      if (this.validationErrorsCount > 0) {
+        alert(`Cannot proceed: ${this.validationErrorsCount} record(s) contain validation errors. Please fix required fields or re-upload your Excel file.`);
+        return;
+      }
 
-      const startNum = maxSeq + 1;
-      const endNum = maxSeq + this.parsedItems.length;
-
-      console.log('[5. Confirmation Step]', {
-        confirmedItemsCount: this.parsedItems.length,
-        skuRange: `FF${startNum} – FF${endNum}`,
-        sheets: this.supportedSheets,
-        sheetBreakdown: this.sheetBreakdown
-      });
+      const currentUser = window.AuthService ? window.AuthService.getCurrentUser() : null;
+      const isAdmin = currentUser && currentUser.role === 'ADMIN';
 
       const confirmRowCount = document.getElementById('confirmRowCount');
       const confirmFileName = document.getElementById('confirmFileName');
       const confirmSheetName = document.getElementById('confirmSheetName');
-      const confirmSkuRange = document.getElementById('confirmSkuRange');
       const confirmImportUser = document.getElementById('confirmImportUser');
-
-      const currentUser = window.AuthService ? window.AuthService.getCurrentUser() : null;
+      const confirmBadgeLabel = document.getElementById('confirmBadgeLabel');
+      const confirmHeading = document.getElementById('confirmHeading');
+      const confirmSubtext = document.getElementById('confirmSubtext');
+      const confirmStatusText = document.getElementById('confirmStatusText');
+      const btnImportSubmitText = document.getElementById('btnImportSubmitText');
 
       if (confirmRowCount) confirmRowCount.textContent = this.parsedItems.length;
       if (confirmFileName) confirmFileName.textContent = this.file ? this.file.name : 'Excel File';
@@ -2091,8 +2178,21 @@
           .join(', ');
         confirmSheetName.textContent = breakdownStr || (this.supportedSheets ? this.supportedSheets.join(', ') : 'All Worksheets');
       }
-      if (confirmSkuRange) confirmSkuRange.textContent = `FF${startNum} – FF${endNum}`;
-      if (confirmImportUser) confirmImportUser.textContent = currentUser ? `${currentUser.fullName} (${currentUser.username} • ${currentUser.role})` : 'System User';
+      if (confirmImportUser) confirmImportUser.textContent = currentUser ? `${currentUser.fullName || currentUser.username} (${currentUser.role})` : 'System User';
+
+      if (isAdmin) {
+        if (confirmBadgeLabel) confirmBadgeLabel.textContent = 'Company Catalog Staging';
+        if (confirmHeading) confirmHeading.innerHTML = `You are about to stage <span style="color: var(--primary-500); font-weight: 800;">${this.parsedItems.length}</span> items for Review`;
+        if (confirmSubtext) confirmSubtext.textContent = 'Records will be recorded in company staging for review and verification before final commit to the Master Catalog.';
+        if (confirmStatusText) confirmStatusText.textContent = 'PENDING REVIEW';
+        if (btnImportSubmitText) btnImportSubmitText.textContent = 'Submit for Review & Staging 🚀';
+      } else {
+        if (confirmBadgeLabel) confirmBadgeLabel.textContent = 'Controlled Staging Submission';
+        if (confirmHeading) confirmHeading.innerHTML = `You are about to submit <span style="color: var(--primary-500); font-weight: 800;">${this.parsedItems.length}</span> items for Admin Review`;
+        if (confirmSubtext) confirmSubtext.textContent = 'Your imported materials will be staged as a pending submission (IMP-xxxx). Administrator review and approval is required before adding to the Master Catalog.';
+        if (confirmStatusText) confirmStatusText.textContent = 'PENDING ADMIN REVIEW';
+        if (btnImportSubmitText) btnImportSubmitText.textContent = 'Submit for Admin Review 🚀';
+      }
 
       this.showStep(3);
     },
@@ -2101,25 +2201,27 @@
       const btnSubmit = document.getElementById('btnImportConfirmSubmit');
       if (btnSubmit) {
         btnSubmit.disabled = true;
-        btnSubmit.innerHTML = '<span>⏳ Importing Batch Into PostgreSQL...</span>';
+        btnSubmit.innerHTML = '<span>⏳ Submitting to Company Staging...</span>';
       }
 
       try {
         const token = window.AuthService ? window.AuthService.getToken() : '';
+        const currentUser = window.AuthService ? window.AuthService.getCurrentUser() : null;
+        const isAdmin = currentUser && currentUser.role === 'ADMIN';
+
         const payload = {
           fileName: this.file ? this.file.name : 'Upload.xlsx',
           sheetName: this.supportedSheets ? this.supportedSheets.join(', ') : 'Multi-Sheet Import',
           items: this.parsedItems
         };
 
-        console.log('[6. API Request Sent]', {
-          endpoint: '/api/master-items/batch-import',
+        console.log('[6. Staging Import Submission Sent]', {
+          endpoint: '/api/import-submissions',
           payloadItemsCount: payload.items.length,
-          fileName: payload.fileName,
-          sheetName: payload.sheetName
+          fileName: payload.fileName
         });
 
-        const response = await fetch('/api/master-items/batch-import', {
+        const response = await fetch('/api/import-submissions', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -2131,81 +2233,59 @@
         const data = await response.json();
 
         if (!response.ok) {
-          throw new Error(data.error || 'Batch import failed');
+          throw new Error(data.error || 'Import submission failed');
         }
 
-        const rowsDetected = (data.rowsDetected !== undefined) ? data.rowsDetected : (this.parsedItems ? this.parsedItems.length : data.count);
-        const rowsImported = (data.rowsImported !== undefined) ? data.rowsImported : data.count;
-        const rowsSkipped = (data.rowsSkipped !== undefined) ? data.rowsSkipped : 0;
-        const rowsFailed = (data.rowsFailed !== undefined) ? data.rowsFailed : 0;
+        const submissionId = data.importId || (data.submission ? data.submission.importId : 'IMP-0001');
+        const totalRows = data.submission ? data.submission.totalRows : this.parsedItems.length;
 
-        const statDetectedEl = document.getElementById('statRowsDetected');
-        const statImportedEl = document.getElementById('statRowsImported');
-        const statSkippedEl = document.getElementById('statRowsSkipped');
-        const statFailedEl = document.getElementById('statRowsFailed');
+        const statSubmissionId = document.getElementById('statSubmissionId');
+        const statRowsImported = document.getElementById('statRowsImported');
+        const statSubmissionStatus = document.getElementById('statSubmissionStatus');
         const summaryMsgEl = document.getElementById('importResultSummaryMsg');
-        const successCount = document.getElementById('successImportCount');
-        const successSkuRange = document.getElementById('successSkuRange');
         const successMeta = document.getElementById('successMetaDetails');
-        const sheetBreakdownContainer = document.getElementById('importSheetBreakdownResult');
-        const sheetBreakdownList = document.getElementById('importSheetBreakdownList');
+        const btnViewImportedCatalog = document.getElementById('btnViewImportedCatalog');
 
-        if (statDetectedEl) statDetectedEl.textContent = rowsDetected;
-        if (statImportedEl) statImportedEl.textContent = rowsImported;
-        if (statSkippedEl) statSkippedEl.textContent = rowsSkipped;
-        if (statFailedEl) statFailedEl.textContent = rowsFailed;
+        if (statSubmissionId) statSubmissionId.textContent = submissionId;
+        if (statRowsImported) statRowsImported.textContent = totalRows;
+        if (statSubmissionStatus) statSubmissionStatus.textContent = 'PENDING REVIEW';
 
-        if (successCount) successCount.textContent = rowsImported;
         if (summaryMsgEl) {
-          summaryMsgEl.innerHTML = `<span id="successImportCount">${rowsImported}</span> rows imported successfully.`;
+          summaryMsgEl.textContent = `Submission ${submissionId} created successfully with ${totalRows} staged items. Catalog records remain safely unchanged until reviewed.`;
         }
-        if (successSkuRange) successSkuRange.textContent = `${data.startSku} – ${data.endSku}`;
+
         if (successMeta) {
           successMeta.innerHTML = `
-            Workbook: <strong>${escapeHtml(data.audit.fileName)}</strong> [${escapeHtml(data.audit.sheetName)}]<br>
-            Imported by: <strong>${escapeHtml(data.audit.importedBy)}</strong> • Timestamp: <strong>${formatDateDisplay(data.audit.timestamp)}</strong><br>
-            PostgreSQL Transaction Status: <span style="color:#10b981; font-weight:700;">COMMITTED</span>
+            Workbook: <strong>${escapeHtml(payload.fileName)}</strong><br>
+            Submitted by: <strong>${escapeHtml(currentUser ? currentUser.fullName || currentUser.username : 'User')}</strong> • Status: <span style="color:#d97706; font-weight:700;">PENDING REVIEW</span><br>
+            Staging Audit ID: <span style="font-family:var(--font-mono); font-weight:700; color:var(--text-main);">${submissionId}</span>
           `;
         }
 
-        // Render sheet breakdown if multi-sheet breakdown available
-        if (sheetBreakdownContainer && sheetBreakdownList) {
-          const breakdown = Array.isArray(data.sheetBreakdown) ? data.sheetBreakdown : [];
-          if (breakdown.length > 0) {
-            sheetBreakdownContainer.style.display = 'block';
-            sheetBreakdownList.innerHTML = breakdown.map(s => `
-              <div style="background:#ffffff; border:1px solid #cbd5e1; border-radius:4px; padding:4px 10px; font-size:0.8rem; display:flex; align-items:center; gap:6px;">
-                <span style="font-weight:600; color:#1e293b;">${escapeHtml(s.sheetName)}:</span>
-                <span style="color:#059669; font-weight:700;">${s.rowsImported || 0} imported</span>
-                ${(s.rowsSkipped && s.rowsSkipped > 0) ? `<span style="color:#64748b; font-size:0.75rem;">(${s.rowsSkipped} skipped)</span>` : ''}
-                ${(s.rowsFailed && s.rowsFailed > 0) ? `<span style="color:#e11d48; font-size:0.75rem;">(${s.rowsFailed} failed)</span>` : ''}
-              </div>
-            `).join('');
-          } else {
-            sheetBreakdownContainer.style.display = 'none';
+        if (btnViewImportedCatalog) {
+          btnViewImportedCatalog.onclick = () => {
+            UI.closeModal('modalExcelImport');
+            if (isAdmin) {
+              UI.switchView('import-review');
+            } else {
+              UI.switchView('my-imports');
+            }
+          };
+          const btnSpan = btnViewImportedCatalog.querySelector('span');
+          if (btnSpan) {
+            btnSpan.textContent = isAdmin ? 'Open Import Review →' : 'View In My Imports →';
           }
         }
 
-        await DataService.getMasterItems();
-        UI.updateDashboardStats();
-        UI.renderMasterCatalogTable();
-
-        const matchEnd = data.endSku.match(/^FF(\d+)$/i);
-        if (matchEnd && DataService.config) {
-          const nextVal = parseInt(matchEnd[1], 10) + 1;
-          DataService.config.skuNextNumber = nextVal;
-          DataService.saveConfig(DataService.config);
-        }
-
-        UI.showToast('Import Complete', `Successfully imported ${rowsImported} materials (${data.startSku} – ${data.endSku}).`);
+        UI.showToast('Import Submitted', `Submission ${submissionId} created with ${totalRows} items for review.`);
         this.showStep(4);
 
       } catch (err) {
-        alert('Database Import Error: ' + err.message);
+        alert('Import Submission Error: ' + err.message);
       } finally {
         if (btnSubmit) {
           btnSubmit.disabled = false;
-          btnSubmit.innerHTML = '<span>Confirm &amp; Import Into Database 🚀</span>';
+          btnSubmit.innerHTML = '<span id="btnImportSubmitText">Submit for Admin Review 🚀</span>';
         }
       }
     }
@@ -2404,13 +2484,29 @@
       const btnOpenNewSku = document.getElementById('btnOpenNewSku');
       const btnHeaderNewSku = document.getElementById('btnHeaderNewSku');
       const btnOpenExcelImport = document.getElementById('btnOpenExcelImport');
+      const btnCatalogMyImports = document.getElementById('btnCatalogMyImports');
+      const navBtnImportReview = document.getElementById('navBtnImportReview');
+      const navBtnMyImports = document.getElementById('navBtnMyImports');
+      
       const canCreate = window.PermissionService ? window.PermissionService.can('CAN_CREATE_SKU') : (user.role === 'ADMIN');
+      const canImport = window.PermissionService ? window.PermissionService.can('CAN_IMPORT_EXCEL') : true;
+      const canApproveImport = window.PermissionService ? window.PermissionService.can('CAN_APPROVE_IMPORT') : (user.role === 'ADMIN');
+      const canViewMyImports = window.PermissionService ? window.PermissionService.can('CAN_VIEW_MY_IMPORTS') : true;
 
       if (btnOpenExcelImport) {
-        btnOpenExcelImport.style.display = canCreate ? '' : 'none';
+        btnOpenExcelImport.style.display = canImport ? '' : 'none';
+      }
+      if (btnCatalogMyImports) {
+        btnCatalogMyImports.style.display = canViewMyImports ? '' : 'none';
       }
       if (btnHeaderNewSku) {
         btnHeaderNewSku.style.display = canCreate ? '' : 'none';
+      }
+      if (navBtnImportReview) {
+        navBtnImportReview.style.display = canApproveImport ? '' : 'none';
+      }
+      if (navBtnMyImports) {
+        navBtnMyImports.style.display = canViewMyImports ? '' : 'none';
       }
 
       if (user.role === 'ADMIN') {
@@ -2714,6 +2810,20 @@
         }
       }
 
+      if (viewName === 'import-review') {
+        if (window.PermissionService && !window.PermissionService.can('CAN_APPROVE_IMPORT')) {
+          this.showAccessDeniedModal('Access Denied — Administrator import review permission required.');
+          return;
+        }
+      }
+
+      if (viewName === 'my-imports') {
+        if (window.PermissionService && !window.PermissionService.can('CAN_VIEW_MY_IMPORTS')) {
+          this.showAccessDeniedModal('Access Denied — Permission required.');
+          return;
+        }
+      }
+
       this.currentTab = viewName;
 
       // Update Nav Buttons
@@ -2747,6 +2857,10 @@
         }
       } else if (viewName === 'users') {
         this.renderUsersTable();
+      } else if (viewName === 'import-review') {
+        this.loadImportReviewTable();
+      } else if (viewName === 'my-imports') {
+        this.loadMyImportsTable();
       }
       
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -6155,6 +6269,435 @@
       document.querySelectorAll('.modal-backdrop').forEach(modal => {
         modal.classList.remove('active');
       });
+    },
+
+    // =========================================================================
+    // IMPORT REVIEW & STAGING WORKFLOW CONTROLLER (UI METHODS)
+    // =========================================================================
+    async loadImportReviewTable() {
+      const tbody = document.getElementById('importReviewTableTbody');
+      const countEl = document.getElementById('importReviewRowCount');
+      const badgeEl = document.getElementById('navImportReviewBadge');
+
+      if (!tbody) return;
+
+      tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; padding:2rem; color:var(--text-muted);">Loading import submissions...</td></tr>`;
+
+      try {
+        const token = window.AuthService ? window.AuthService.getToken() : '';
+        const res = await fetch('/api/import-submissions', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (!res.ok) throw new Error('Failed to fetch import submissions');
+        const submissions = await res.json();
+
+        const pendingCount = submissions.filter(s => s.status === 'PENDING_REVIEW').length;
+        if (badgeEl) {
+          if (pendingCount > 0) {
+            badgeEl.style.display = 'inline-block';
+            badgeEl.textContent = pendingCount;
+          } else {
+            badgeEl.style.display = 'none';
+          }
+        }
+
+        if (countEl) {
+          countEl.textContent = `${submissions.length} submission(s) total • ${pendingCount} pending review`;
+        }
+
+        if (submissions.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; padding:2.5rem; color:var(--text-muted);">No import submissions found.</td></tr>`;
+          return;
+        }
+
+        tbody.innerHTML = submissions.map((sub, idx) => {
+          let statusBadge = '';
+          if (sub.status === 'PENDING_REVIEW') {
+            statusBadge = `<span class="badge" style="background:#fef3c7; color:#b45309; border:1px solid #fde68a; font-weight:700;">Pending Review</span>`;
+          } else if (sub.status === 'APPROVED') {
+            statusBadge = `<span class="badge" style="background:#ecfdf5; color:#059669; border:1px solid #a7f3d0; font-weight:700;">Approved</span>`;
+          } else if (sub.status === 'REJECTED') {
+            statusBadge = `<span class="badge" style="background:#fee2e2; color:#b91c1c; border:1px solid #fecdd3; font-weight:700;">Rejected</span>`;
+          }
+
+          return `
+            <tr>
+              <td style="color:var(--text-dim); font-family:var(--font-mono);">${idx + 1}</td>
+              <td><span style="font-family:var(--font-mono); font-weight:700; color:var(--text-main);">${escapeHtml(sub.import_id)}</span></td>
+              <td style="font-weight:600; color:var(--text-main);">${escapeHtml(sub.file_name)}</td>
+              <td>${escapeHtml(sub.uploaded_by_full_name || sub.uploaded_by_username)}</td>
+              <td style="font-family:var(--font-mono); font-size:0.8rem; color:var(--text-dim);">${escapeHtml(sub.uploaded_by_username)}</td>
+              <td style="font-size:0.82rem; color:var(--text-muted);">${formatDateDisplay(sub.created_at)}</td>
+              <td style="text-align:center; font-weight:700;">${sub.total_rows}</td>
+              <td style="text-align:center;">${statusBadge}</td>
+              <td style="text-align:right;">
+                <button class="btn btn-primary btn-sm" onclick="UI.openImportReviewDetailsModal('${escapeHtml(sub.id)}')">
+                  <span>${sub.status === 'PENDING_REVIEW' ? 'Review &amp; Verify' : 'View Details'}</span>
+                </button>
+              </td>
+            </tr>
+          `;
+        }).join('');
+
+      } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; padding:2rem; color:#ef4444;">Error loading submissions: ${escapeHtml(err.message)}</td></tr>`;
+      }
+    },
+
+    async loadMyImportsTable() {
+      const tbody = document.getElementById('myImportsTableTbody');
+      const countEl = document.getElementById('myImportsRowCount');
+
+      if (!tbody) return;
+
+      tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; padding:2rem; color:var(--text-muted);">Loading your import submissions...</td></tr>`;
+
+      try {
+        const token = window.AuthService ? window.AuthService.getToken() : '';
+        const res = await fetch('/api/import-submissions', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (!res.ok) throw new Error('Failed to fetch your import submissions');
+        const submissions = await res.json();
+
+        if (countEl) {
+          countEl.textContent = `${submissions.length} import submission(s) recorded`;
+        }
+
+        if (submissions.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; padding:2.5rem; color:var(--text-muted);">You haven't submitted any imports yet. Click "Import New Excel" above to get started.</td></tr>`;
+          return;
+        }
+
+        tbody.innerHTML = submissions.map((sub, idx) => {
+          let statusBadge = '';
+          if (sub.status === 'PENDING_REVIEW') {
+            statusBadge = `<span class="badge" style="background:#fef3c7; color:#b45309; border:1px solid #fde68a; font-weight:700;">Pending Review</span>`;
+          } else if (sub.status === 'APPROVED') {
+            statusBadge = `<span class="badge" style="background:#ecfdf5; color:#059669; border:1px solid #a7f3d0; font-weight:700;">Approved</span>`;
+          } else if (sub.status === 'REJECTED') {
+            statusBadge = `<span class="badge" style="background:#fee2e2; color:#b91c1c; border:1px solid #fecdd3; font-weight:700;">Rejected</span>`;
+          }
+
+          let reviewer = '—';
+          if (sub.approved_by_username) {
+            reviewer = `<span style="color:#059669; font-weight:600;">✓ Approved by ${escapeHtml(sub.approved_by_username)}</span>`;
+          } else if (sub.rejected_by_username) {
+            reviewer = `<span style="color:#b91c1c; font-weight:600;">✗ Rejected by ${escapeHtml(sub.rejected_by_username)}</span>`;
+          }
+
+          let decisionDate = '—';
+          if (sub.approved_at) decisionDate = formatDateDisplay(sub.approved_at);
+          else if (sub.rejected_at) decisionDate = formatDateDisplay(sub.rejected_at);
+
+          return `
+            <tr>
+              <td style="color:var(--text-dim); font-family:var(--font-mono);">${idx + 1}</td>
+              <td><span style="font-family:var(--font-mono); font-weight:700; color:var(--text-main);">${escapeHtml(sub.import_id)}</span></td>
+              <td style="font-weight:600; color:var(--text-main);">${escapeHtml(sub.file_name)}</td>
+              <td style="font-size:0.82rem; color:var(--text-muted);">${formatDateDisplay(sub.created_at)}</td>
+              <td style="text-align:center; font-weight:700;">${sub.total_rows}</td>
+              <td style="text-align:center;">${statusBadge}</td>
+              <td>${reviewer}</td>
+              <td style="font-size:0.82rem; color:var(--text-muted);">${decisionDate}</td>
+              <td style="text-align:right;">
+                <button class="btn btn-secondary btn-sm" onclick="UI.openImportReviewDetailsModal('${escapeHtml(sub.id)}')">
+                  <span>View Details</span>
+                </button>
+              </td>
+            </tr>
+          `;
+        }).join('');
+
+      } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; padding:2rem; color:#ef4444;">Error loading your imports: ${escapeHtml(err.message)}</td></tr>`;
+      }
+    },
+
+    async openImportReviewDetailsModal(submissionId) {
+      const modal = document.getElementById('modalImportReviewDetails');
+      if (!modal) return;
+
+      const importIdEl = document.getElementById('reviewModalImportId');
+      const fileAndUserEl = document.getElementById('reviewModalFileAndUser');
+      const statusBadgeEl = document.getElementById('reviewModalStatusBadge');
+      const alertBannerEl = document.getElementById('reviewModalAlertBanner');
+      const itemCountEl = document.getElementById('reviewModalItemCount');
+      const adminHintEl = document.getElementById('reviewModalAdminHint');
+      const itemsTbody = document.getElementById('reviewModalItemsTbody');
+      const actionBtnsEl = document.getElementById('reviewModalActionButtons');
+      const actionTh = document.getElementById('reviewTableActionHeader');
+
+      if (itemsTbody) itemsTbody.innerHTML = `<tr><td colspan="13" style="text-align:center; padding:2rem;">Loading submission details...</td></tr>`;
+      if (alertBannerEl) alertBannerEl.style.display = 'none';
+
+      modal.classList.add('active');
+
+      try {
+        const token = window.AuthService ? window.AuthService.getToken() : '';
+        const currentUser = window.AuthService ? window.AuthService.getCurrentUser() : null;
+        const res = await fetch(`/api/import-submissions/${submissionId}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (!res.ok) throw new Error('Failed to load submission details');
+        const data = await res.json();
+        const sub = data.submission;
+        const items = data.items || [];
+
+        const isAdmin = currentUser && currentUser.role === 'ADMIN';
+        const isPending = (sub.status === 'PENDING_REVIEW');
+        const canEdit = isAdmin && isPending;
+
+        if (importIdEl) importIdEl.textContent = sub.import_id;
+        if (fileAndUserEl) {
+          fileAndUserEl.textContent = `Workbook: ${sub.file_name} • Submitted by: ${sub.uploaded_by_full_name || sub.uploaded_by_username} on ${formatDateDisplay(sub.created_at)}`;
+        }
+        if (itemCountEl) itemCountEl.textContent = items.length;
+
+        if (statusBadgeEl) {
+          if (sub.status === 'PENDING_REVIEW') {
+            statusBadgeEl.style.background = '#fef3c7';
+            statusBadgeEl.style.color = '#b45309';
+            statusBadgeEl.style.border = '1px solid #fde68a';
+            statusBadgeEl.textContent = 'PENDING ADMIN REVIEW';
+          } else if (sub.status === 'APPROVED') {
+            statusBadgeEl.style.background = '#ecfdf5';
+            statusBadgeEl.style.color = '#059669';
+            statusBadgeEl.style.border = '1px solid #a7f3d0';
+            statusBadgeEl.textContent = 'APPROVED';
+          } else {
+            statusBadgeEl.style.background = '#fee2e2';
+            statusBadgeEl.style.color = '#b91c1c';
+            statusBadgeEl.style.border = '1px solid #fecdd3';
+            statusBadgeEl.textContent = 'REJECTED';
+          }
+        }
+
+        if (alertBannerEl) {
+          if (sub.status === 'REJECTED') {
+            alertBannerEl.style.display = 'block';
+            alertBannerEl.style.background = '#fee2e2';
+            alertBannerEl.style.border = '1px solid #fecdd3';
+            alertBannerEl.style.color = '#991b1b';
+            alertBannerEl.innerHTML = `
+              <strong>Submission Rejected:</strong> ${escapeHtml(sub.rejection_reason || 'No specific reason provided.')}<br>
+              <span style="font-size:0.78rem;">Decided by <strong>${escapeHtml(sub.rejected_by_username || 'Admin')}</strong> on ${formatDateDisplay(sub.rejected_at)}. Staged items were NOT added to the Master Catalog.</span>
+            `;
+          } else if (sub.status === 'APPROVED') {
+            alertBannerEl.style.display = 'block';
+            alertBannerEl.style.background = '#ecfdf5';
+            alertBannerEl.style.border = '1px solid #a7f3d0';
+            alertBannerEl.style.color = '#065f46';
+            alertBannerEl.innerHTML = `
+              <strong>Submission Approved:</strong> All items have been transactionally committed to the Master Raw Materials Catalog with sequential Flow Force SKUs.<br>
+              <span style="font-size:0.78rem;">Approved by <strong>${escapeHtml(sub.approved_by_username || 'Admin')}</strong> on ${formatDateDisplay(sub.approved_at)}.</span>
+            `;
+          } else {
+            alertBannerEl.style.display = 'none';
+          }
+        }
+
+        if (adminHintEl) {
+          if (canEdit) {
+            adminHintEl.style.display = '';
+            adminHintEl.textContent = 'Admin mode: you may modify fields directly and save rows before approving.';
+          } else if (!isAdmin && isPending) {
+            adminHintEl.style.display = '';
+            adminHintEl.textContent = 'Your submission is queued for Administrator review and SKU allocation.';
+          } else {
+            adminHintEl.style.display = 'none';
+          }
+        }
+
+        if (actionTh) {
+          actionTh.style.display = canEdit ? '' : 'none';
+        }
+
+        if (itemsTbody) {
+          itemsTbody.innerHTML = items.map((it, idx) => {
+            let priceDisplay = '—';
+            if (it.unit_price !== null && it.unit_price !== undefined) {
+              priceDisplay = `IDR ${Number(it.unit_price).toLocaleString('id-ID')}`;
+            }
+
+            let skuDisplay = '';
+            if (it.assigned_master_sku) {
+              skuDisplay = `<span style="font-family:var(--font-mono); font-weight:800; color:#059669;">${escapeHtml(it.assigned_master_sku)}</span>`;
+            } else if (!it.sku) {
+              skuDisplay = `<span class="badge" style="background:#fef3c7; color:#b45309; border:1px solid #fde68a; font-size:0.72rem; font-weight:700;">NEW ITEM</span>`;
+            } else {
+              skuDisplay = `<span style="font-family:var(--font-mono); font-weight:700; color:var(--text-main);">${escapeHtml(it.sku)}</span>`;
+            }
+
+            const supplyBadge = (it.supply_type === 'Cut Size')
+              ? `<span class="badge" style="background:#e0f2fe; color:#0284c7; border:1px solid #bae6fd; font-size:0.72rem; font-weight:700;">CUT SIZE</span>`
+              : `<span class="badge" style="background:#f1f5f9; color:#475569; border:1px solid #cbd5e1; font-size:0.72rem; font-weight:600;">FULL SIZE</span>`;
+
+            if (canEdit) {
+              return `
+                <tr id="sub-item-row-${it.id}">
+                  <td style="color:var(--text-dim); font-family:var(--font-mono);">${idx + 1}</td>
+                  <td>${skuDisplay}</td>
+                  <td><input type="text" class="form-input" id="edit-prod-${it.id}" value="${escapeHtml(it.product_name || '')}" style="padding:4px 6px; font-size:0.8rem; width:130px;"></td>
+                  <td><textarea class="form-input" id="edit-desc-${it.id}" style="padding:4px 6px; font-size:0.78rem; width:160px; height:40px; resize:vertical;">${escapeHtml(it.item_description || '')}</textarea></td>
+                  <td><input type="text" class="form-input" id="edit-subcat-${it.id}" value="${escapeHtml(it.sub_category || '')}" style="padding:4px 6px; font-size:0.8rem; width:90px;"></td>
+                  <td><input type="text" class="form-input" id="edit-mat-${it.id}" value="${escapeHtml(it.material || '')}" style="padding:4px 6px; font-size:0.8rem; width:95px;"></td>
+                  <td><input type="text" class="form-input" id="edit-size-${it.id}" value="${escapeHtml(it.size || '')}" style="padding:4px 6px; font-size:0.8rem; width:100px;"></td>
+                  <td><input type="text" class="form-input" id="edit-unit-${it.id}" value="${escapeHtml(it.unit || 'Sheet')}" style="padding:4px 6px; font-size:0.8rem; width:55px;"></td>
+                  <td><input type="number" step="any" class="form-input" id="edit-weight-${it.id}" value="${it.weight_kg !== null ? it.weight_kg : ''}" style="padding:4px 6px; font-size:0.8rem; width:65px;"></td>
+                  <td><input type="number" step="any" class="form-input" id="edit-price-${it.id}" value="${it.unit_price !== null ? it.unit_price : ''}" style="padding:4px 6px; font-size:0.8rem; width:95px;"></td>
+                  <td>
+                    <select class="form-select" id="edit-supply-${it.id}" style="padding:4px 6px; font-size:0.78rem; width:88px;">
+                      <option value="Full Size" ${it.supply_type !== 'Cut Size' ? 'selected' : ''}>Full Size</option>
+                      <option value="Cut Size" ${it.supply_type === 'Cut Size' ? 'selected' : ''}>Cut Size</option>
+                    </select>
+                  </td>
+                  <td><input type="text" class="form-input" id="edit-remarks-${it.id}" value="${escapeHtml(it.remarks || '')}" style="padding:4px 6px; font-size:0.8rem; width:110px;"></td>
+                  <td style="text-align:right;">
+                    <button class="btn btn-secondary btn-sm" onclick="UI.saveSubmissionItem('${sub.id}', '${it.id}')" title="Save Row Changes" style="padding:4px 8px;">
+                      <span>💾 Save</span>
+                    </button>
+                  </td>
+                </tr>
+              `;
+            } else {
+              return `
+                <tr>
+                  <td style="color:var(--text-dim); font-family:var(--font-mono);">${idx + 1}</td>
+                  <td>${skuDisplay}</td>
+                  <td style="font-weight:600; color:var(--text-main);">${escapeHtml(it.product_name || '—')}</td>
+                  <td style="color:var(--text-muted); white-space:pre-wrap; max-width:260px;">${escapeHtml(it.item_description || '—')}</td>
+                  <td><span class="category-pill" style="font-size:0.72rem;">${escapeHtml(it.sub_category || '—')}</span></td>
+                  <td><span style="font-weight:600;">${escapeHtml(it.material || '—')}</span></td>
+                  <td style="font-family:var(--font-mono); font-size:0.78rem;">${escapeHtml(it.size || '—')}</td>
+                  <td><span style="font-weight:600; font-family:var(--font-mono);">${escapeHtml(it.unit || 'Sheet')}</span></td>
+                  <td style="font-family:var(--font-mono); font-size:0.78rem;">${it.weight_kg !== null ? it.weight_kg + ' kg' : '—'}</td>
+                  <td style="font-family:var(--font-mono); font-weight:600; color:var(--text-main);">${priceDisplay}</td>
+                  <td>${supplyBadge}</td>
+                  <td style="color:var(--text-muted); font-size:0.78rem;">${escapeHtml(it.remarks || '—')}</td>
+                </tr>
+              `;
+            }
+          }).join('');
+        }
+
+        if (actionBtnsEl) {
+          if (canEdit) {
+            actionBtnsEl.innerHTML = `
+              <button type="button" class="btn btn-danger" onclick="UI.rejectSubmission('${sub.id}')">
+                <span>❌ Reject Submission</span>
+              </button>
+              <button type="button" class="btn btn-primary" style="background:#10b981; border-color:#059669;" onclick="UI.approveSubmission('${sub.id}')">
+                <span>✅ Approve &amp; Commit to Catalog</span>
+              </button>
+            `;
+          } else {
+            actionBtnsEl.innerHTML = '';
+          }
+        }
+
+      } catch (err) {
+        if (itemsTbody) {
+          itemsTbody.innerHTML = `<tr><td colspan="13" style="text-align:center; padding:2rem; color:#ef4444;">Error: ${escapeHtml(err.message)}</td></tr>`;
+        }
+      }
+    },
+
+    async saveSubmissionItem(submissionId, itemId) {
+      try {
+        const token = window.AuthService ? window.AuthService.getToken() : '';
+        const payload = {
+          productName: document.getElementById(`edit-prod-${itemId}`)?.value,
+          itemDescription: document.getElementById(`edit-desc-${itemId}`)?.value,
+          subCategory: document.getElementById(`edit-subcat-${itemId}`)?.value,
+          material: document.getElementById(`edit-mat-${itemId}`)?.value,
+          size: document.getElementById(`edit-size-${itemId}`)?.value,
+          unit: document.getElementById(`edit-unit-${itemId}`)?.value,
+          weightKg: document.getElementById(`edit-weight-${itemId}`)?.value,
+          unitPrice: document.getElementById(`edit-price-${itemId}`)?.value,
+          supplyType: document.getElementById(`edit-supply-${itemId}`)?.value,
+          remarks: document.getElementById(`edit-remarks-${itemId}`)?.value
+        };
+
+        const res = await fetch(`/api/import-submissions/${submissionId}/items/${itemId}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify(payload)
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to update item');
+
+        UI.showToast('Item Saved', 'Material row updated successfully.');
+      } catch (err) {
+        alert('Failed to save item: ' + err.message);
+      }
+    },
+
+    async approveSubmission(submissionId) {
+      if (!confirm('Are you sure you want to APPROVE this import submission?\n\nAll items will be committed to PostgreSQL master_items with allocated sequential Flow Force SKUs.')) {
+        return;
+      }
+
+      try {
+        const token = window.AuthService ? window.AuthService.getToken() : '';
+        const res = await fetch(`/api/import-submissions/${submissionId}/approve`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          }
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Approval failed');
+
+        UI.closeModal('modalImportReviewDetails');
+        UI.showToast('Import Approved', `Successfully committed ${data.rowsImported} items (${data.startSku} – ${data.endSku}).`);
+
+        // Refresh app state
+        await DataService.getMasterItems();
+        this.updateDashboardStats();
+        this.loadImportReviewTable();
+
+      } catch (err) {
+        alert('Approval Error: ' + err.message);
+      }
+    },
+
+    async rejectSubmission(submissionId) {
+      const reason = prompt('Please enter the reason for rejecting this import submission:');
+      if (reason === null) return;
+      if (!reason.trim()) {
+        alert('A rejection reason is required.');
+        return;
+      }
+
+      try {
+        const token = window.AuthService ? window.AuthService.getToken() : '';
+        const res = await fetch(`/api/import-submissions/${submissionId}/reject`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ rejectionReason: reason.trim() })
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Rejection failed');
+
+        UI.closeModal('modalImportReviewDetails');
+        UI.showToast('Submission Rejected', 'Import submission has been rejected.');
+
+        this.loadImportReviewTable();
+
+      } catch (err) {
+        alert('Rejection Error: ' + err.message);
+      }
     },
 
     showToast(title, message) {
