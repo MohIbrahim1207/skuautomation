@@ -9,6 +9,66 @@ const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const { generatePrDocuments } = require('../services/documentGenerator');
 const { REQUIRE_UNIT_PRICE } = require('../config/pricing');
 
+function validateDuctingItem(item) {
+  const type = (item.ductingType || item.type || '').trim();
+  const d = item.ductingDimensions || item;
+  const getVal = (key1, key2) => {
+    const val = d[key1] !== undefined ? d[key1] : d[key2];
+    return (val !== undefined && val !== null && String(val).trim() !== '') ? Number(val) : NaN;
+  };
+
+  const dimA = getVal('dimA', 'dim_a');
+  const dimB = getVal('dimB', 'dim_b');
+  const dimC = getVal('dimC', 'dim_c');
+  const angleD = getVal('angleD', 'angle_d');
+  const angleB = getVal('angleB', 'angle_b');
+  const radius = getVal('radius', 'radius');
+  const l1 = getVal('l1', 'dim_l1');
+  const l2 = getVal('l2', 'dim_l2');
+  const thickness = getVal('thickness', 'thickness');
+
+  if (!type) {
+    return { valid: false, error: 'Ducting type is required.' };
+  }
+
+  const normType = type.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+  if (normType === 'straightduct') {
+    if (isNaN(dimA) || dimA <= 0) return { valid: false, error: 'Ø A is required and must be a positive number.' };
+    if (isNaN(l1) || l1 <= 0) return { valid: false, error: 'L1 is required and must be a positive number.' };
+    if (isNaN(thickness) || thickness <= 0) return { valid: false, error: 'Thickness is required and must be a positive number.' };
+  } else if (normType === 'yduct') {
+    if (isNaN(dimA) || dimA < 80 || dimA > 1000) {
+      return { valid: false, error: 'Ø A must be between 80 mm and 1000 mm.' };
+    }
+    if (isNaN(dimB) || dimB <= 0) return { valid: false, error: 'Ø B is required and must be a positive number.' };
+    if (isNaN(dimC) || dimC <= 0) return { valid: false, error: 'Ø C is required and must be a positive number.' };
+    if (isNaN(angleD) || angleD <= 0) return { valid: false, error: 'Angle D is required and must be a positive number.' };
+    if (isNaN(l1) || l1 <= 0) return { valid: false, error: 'L1 is required and must be a positive number.' };
+    if (isNaN(l2) || l2 <= 0) return { valid: false, error: 'L2 is required and must be a positive number.' };
+    if (isNaN(thickness) || thickness <= 0) return { valid: false, error: 'Thickness is required and must be a positive number.' };
+  } else if (normType === 'elbow') {
+    if (isNaN(dimA) || dimA < 80 || dimA > 1200) {
+      return { valid: false, error: 'Ø A must be between 80 mm and 1200 mm.' };
+    }
+    if (isNaN(angleB) || angleB <= 0) return { valid: false, error: 'Angle B is required and must be a positive number.' };
+    if (isNaN(radius) || radius <= 0) return { valid: false, error: 'RAD / Radius is required and must be a positive number.' };
+    if (isNaN(thickness) || thickness <= 0) return { valid: false, error: 'Thickness is required and must be a positive number.' };
+  } else if (normType === 'twinduct') {
+    if (isNaN(dimA) || dimA < 80 || dimA > 1000) {
+      return { valid: false, error: 'Ø A must be between 80 mm and 1000 mm.' };
+    }
+    if (isNaN(dimB) || dimB <= 0) return { valid: false, error: 'Ø B is required and must be a positive number.' };
+    if (isNaN(dimC) || dimC <= 0) return { valid: false, error: 'Ø C is required and must be a positive number.' };
+    if (isNaN(angleD) || angleD <= 0) return { valid: false, error: 'Angle D is required and must be a positive number.' };
+    if (isNaN(l1) || l1 <= 0) return { valid: false, error: 'L1 is required and must be a positive number.' };
+  } else {
+    return { valid: false, error: `Unsupported Ducting type: ${type}` };
+  }
+
+  return { valid: true };
+}
+
 router.use(authenticateToken);
 
 // GET /api/purchase-requests - List PRs
@@ -95,18 +155,29 @@ router.post('/', async (req, res) => {
     return res.status(400).json({ error: 'PR Cart is empty. Please add materials to the cart.' });
   }
 
+  // Independent Ducting Validation
+  for (const item of cartItems) {
+    const isDucting = (item.category || '').toLowerCase() === 'ducting' || !!item.ductingType;
+    if (isDucting) {
+      const ductVal = validateDuctingItem(item);
+      if (!ductVal.valid) {
+        return res.status(400).json({ error: ductVal.error });
+      }
+    }
+  }
+
   // Price Requirement: Controlled by REQUIRE_UNIT_PRICE switch
   for (const item of cartItems) {
     if (item.unitPrice !== undefined && item.unitPrice !== null && item.unitPrice !== '') {
       const p = Number(item.unitPrice);
       if (isNaN(p) || !isFinite(p) || p < 0) {
         return res.status(400).json({
-          error: `Invalid price for item: ${item.sku} - ${item.productName || item.sku}`
+          error: `Invalid price for item: ${item.sku || item.productName || 'Ducting'} - ${item.productName || item.sku}`
         });
       }
     } else if (REQUIRE_UNIT_PRICE) {
       return res.status(400).json({
-        error: `Cannot create PR. Current Unit Price is missing for: ${item.sku} - ${item.productName || item.sku}`
+        error: `Cannot create PR. Current Unit Price is missing for: ${item.sku || item.productName || 'Ducting'} - ${item.productName || item.sku}`
       });
     }
   }
@@ -133,6 +204,7 @@ router.post('/', async (req, res) => {
     const prNumber = `PR-${year}-${String(seq).padStart(4, '0')}`;
 
     const hasAnyCutSize = cartItems.some(i => i.supplyType === 'Cut Size' || i.purchaseType === 'PROJECT-SPECIFIC CUT SIZE');
+    const hasAnyDucting = cartItems.some(i => (i.category || '').toLowerCase() === 'ducting' || !!i.ductingType);
 
     // Insert purchase_requests (Initial Status: PENDING_APPROVAL)
     const prInsertRes = await client.query(
@@ -151,7 +223,7 @@ router.post('/', async (req, res) => {
         urgency || 'Standard (1-2 Weeks)',
         reasonForPurchase || null,
         remarks || null,
-        hasAnyCutSize ? 'PROJECT-SPECIFIC CUT SIZE' : 'STANDARD STOCK ITEM',
+        hasAnyDucting ? 'PROJECT-SPECIFIC DUCTING' : (hasAnyCutSize ? 'PROJECT-SPECIFIC CUT SIZE' : 'STANDARD STOCK ITEM'),
         requiredCutSize || null
       ]
     );
@@ -166,7 +238,8 @@ router.post('/', async (req, res) => {
       const totalCost = hasPrice ? (qty * price) : null;
 
       const itemStatus = (item.status === 'Out of Stock') ? 'Out of Stock' : 'Available';
-      const isItemCutSize = (item.supplyType === 'Cut Size' || item.purchaseType === 'PROJECT-SPECIFIC CUT SIZE');
+      const isDucting = (item.category || '').toLowerCase() === 'ducting' || !!item.ductingType;
+      const isItemCutSize = !isDucting && (item.supplyType === 'Cut Size' || item.purchaseType === 'PROJECT-SPECIFIC CUT SIZE');
       const itemSupplyType = isItemCutSize ? 'Cut Size' : 'Full Size';
 
       let cutLength = '';
@@ -208,34 +281,63 @@ router.post('/', async (req, res) => {
         itemRequiredCutSize = cutWidth ? `${cutLength} × ${cutWidth}` : `${cutLength}`;
       }
 
+      // Ducting dimensions extraction
+      const d = item.ductingDimensions || item;
+      const ductType = isDucting ? (item.ductingType || item.type || null) : null;
+      const dimA = isDucting ? (d.dimA !== undefined ? String(d.dimA) : (d.dim_a ? String(d.dim_a) : null)) : null;
+      const dimB = isDucting ? (d.dimB !== undefined ? String(d.dimB) : (d.dim_b ? String(d.dim_b) : null)) : null;
+      const dimC = isDucting ? (d.dimC !== undefined ? String(d.dimC) : (d.dim_c ? String(d.dim_c) : null)) : null;
+      const angleD = isDucting ? (d.angleD !== undefined ? String(d.angleD) : (d.angle_d ? String(d.angle_d) : null)) : null;
+      const angleB = isDucting ? (d.angleB !== undefined ? String(d.angleB) : (d.angle_b ? String(d.angle_b) : null)) : null;
+      const radius = isDucting ? (d.radius !== undefined ? String(d.radius) : null) : null;
+      const dimL1 = isDucting ? (d.l1 !== undefined ? String(d.l1) : (d.dim_l1 ? String(d.dim_l1) : null)) : null;
+      const dimL2 = isDucting ? (d.l2 !== undefined ? String(d.l2) : (d.dim_l2 ? String(d.dim_l2) : null)) : null;
+      const thickness = isDucting ? (d.thickness !== undefined ? String(d.thickness) : null) : null;
+
+      // Critical SKU Rule: Project-specific Ducting dimensions MUST NOT create a Master SKU.
+      // Sku remains NULL / empty for project-specific Ducting
+      const itemSku = (isDucting && (!item.sku || item.sku === 'DUCT-SPEC' || item.sku === 'DUCT-CUSTOM')) ? null : (item.sku || null);
+      const purchaseType = isDucting ? 'PROJECT-SPECIFIC DUCTING' : (isItemCutSize ? 'PROJECT-SPECIFIC CUT SIZE' : 'STANDARD STOCK ITEM');
+
       await client.query(
         `INSERT INTO pr_items (
           purchase_request_id, master_item_id, sku, product_name, item_description,
           material_grade, size_dimensions, specification, unit, quantity, weight,
           unit_price, estimated_total_cost, purchase_type, required_cut_size,
-          status, supply_type, cut_length, cut_width, remarks
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)`,
+          status, supply_type, cut_length, cut_width, remarks,
+          ducting_type, dim_a, dim_b, dim_c, angle_d, angle_b, radius, dim_l1, dim_l2, thickness
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30)`,
         [
           prId,
-          item.masterItemId || null,
-          item.sku,
+          isDucting ? null : (item.masterItemId || null),
+          itemSku,
           item.productName || '',
           item.itemDescription || '', // Preserves multiline text
           item.material || item.materialGrade || null,
           item.size || item.sizeDimensions || item.originalDimensions || null,
           item.specification || null,
-          item.unit || 'Sheet',
+          item.unit || (isDucting ? 'Pcs' : 'Sheet'),
           qty,
           item.weight || item.weightKg || null,
           price,
           totalCost,
-          isItemCutSize ? 'PROJECT-SPECIFIC CUT SIZE' : 'STANDARD STOCK ITEM',
+          purchaseType,
           itemRequiredCutSize,
           itemStatus,
           itemSupplyType,
           cutLength,
           cutWidth,
-          (item.remarks !== undefined && item.remarks !== null) ? String(item.remarks).trim() : ''
+          (item.remarks !== undefined && item.remarks !== null) ? String(item.remarks).trim() : '',
+          ductType,
+          dimA,
+          dimB,
+          dimC,
+          angleD,
+          angleB,
+          radius,
+          dimL1,
+          dimL2,
+          thickness
         ]
       );
     }
@@ -368,7 +470,28 @@ router.get('/:id', async (req, res) => {
           cutDimensions: isCut ? { length: it.cut_length || '', width: it.cut_width || '' } : null,
           purchaseType: it.purchase_type,
           requiredCutSize: it.required_cut_size,
-          remarks: it.remarks || ''
+          remarks: it.remarks || '',
+          ductingType: it.ducting_type || null,
+          dimA: it.dim_a || null,
+          dimB: it.dim_b || null,
+          dimC: it.dim_c || null,
+          angleD: it.angle_d || null,
+          angleB: it.angle_b || null,
+          radius: it.radius || null,
+          l1: it.dim_l1 || null,
+          l2: it.dim_l2 || null,
+          thickness: it.thickness || null,
+          ductingDimensions: it.ducting_type ? {
+            dimA: it.dim_a || null,
+            dimB: it.dim_b || null,
+            dimC: it.dim_c || null,
+            angleD: it.angle_d || null,
+            angleB: it.angle_b || null,
+            radius: it.radius || null,
+            l1: it.dim_l1 || null,
+            l2: it.dim_l2 || null,
+            thickness: it.thickness || null
+          } : null
         };
       }),
       history: historyRes.rows.map(h => ({

@@ -293,23 +293,23 @@
           </div>
         </div>
 
-        <!-- Future Category 1: Ducting -->
-        <div class="category-card future-card" title="Upcoming Phase: Spiral ducts, flexible ducts, HVAC dampers">
+        <!-- Active Category: Ducting -->
+        <div class="category-card active-category" id="cardDucting" onclick="UI.openCategory('Ducting')" title="Ducting: Straight Duct, Y-Duct, Elbow, Twin Duct">
           <div class="category-card-top">
             <div class="category-icon-box">💨</div>
-            <span class="category-status-pill disabled">Upcoming Phase</span>
+            <span class="category-status-pill">● Active</span>
           </div>
           <div class="category-card-body">
             <h3 class="category-card-title">DUCTING</h3>
             <p class="category-card-desc">
-              Spiral ducts, flexible ducts, HVAC dampers, diffusers, and duct insulation materials.
+              Straight ducts, Y-ducts, elbows, and twin ducts with engineering sketch dimension workflows.
             </p>
             <div class="category-card-meta">
-              <span>Status: <strong>Architecture Expandable</strong></span>
+              <span>Types: <strong>4 Engineering Sketches</strong></span>
             </div>
           </div>
-          <div class="category-card-footer">
-            <span style="font-size: 0.8rem; color: var(--text-dim);">Upcoming Module</span>
+          <div class="category-card-footer" onclick="UI.openCategory('Ducting')">
+            <span class="action-cue" id="btnConfigureDucting" onclick="UI.openCategory('Ducting')">Configure Ducting &amp; Create PR →</span>
           </div>
         </div>
 
@@ -2293,6 +2293,164 @@
           <!-- Rendered dynamically: Approve / Reject buttons for Admin -->
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+       MODAL 15: ENGINEERING DUCTING SKETCH WORKFLOW
+       ========================================================================= -->
+  <div class="modal-backdrop" id="modalDuctingWorkflow" style="z-index: 1060;">
+    <div class="modal-box" style="max-width: 880px; width: 95%; max-height: 90vh; height: 90vh; display: flex; flex-direction: column; overflow: hidden;">
+      
+      <!-- STEP 1 — SELECT DUCTING TYPE -->
+      <div id="ductingStep1" style="display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden;">
+        <div class="modal-header" style="flex-shrink: 0;">
+          <div class="modal-title-group">
+            <div class="modal-icon" style="background: rgba(14, 165, 233, 0.15); color: #0284c7;">💨</div>
+            <div>
+              <h3>Select Ducting Type</h3>
+              <div class="modal-subtitle">Choose engineering specification sketch to configure dimensions</div>
+            </div>
+          </div>
+          <button class="modal-close-btn" type="button" onclick="DuctingWorkflowController.close()">&times;</button>
+        </div>
+
+        <div class="modal-body" style="padding: 1.5rem; overflow-y: auto; flex: 1; min-height: 0;">
+          <div class="ducting-type-grid">
+            <!-- 1. Straight Duct -->
+            <div class="ducting-type-card" id="cardTypeStraightDuct" onclick="DuctingWorkflowController.selectType('Straight Duct')">
+              <div class="ducting-type-icon">📏</div>
+              <h4>1. Straight Duct</h4>
+              <p>Ø A, L1, Thickness (mm)</p>
+              <button class="btn btn-secondary btn-sm" type="button">Select</button>
+            </div>
+            <!-- 2. Y-Duct -->
+            <div class="ducting-type-card" id="cardTypeYDuct" onclick="DuctingWorkflowController.selectType('Y-Duct')">
+              <div class="ducting-type-icon">🔀</div>
+              <h4>2. Y-Duct</h4>
+              <p>Ø A (80–1000 mm), Ø B, Ø C, Angle D, L1, L2, Thickness</p>
+              <button class="btn btn-secondary btn-sm" type="button">Select</button>
+            </div>
+            <!-- 3. Elbow -->
+            <div class="ducting-type-card" id="cardTypeElbow" onclick="DuctingWorkflowController.selectType('Elbow')">
+              <div class="ducting-type-icon">↩️</div>
+              <h4>3. Elbow</h4>
+              <p>Ø A (80–1200 mm), Angle B, RAD / Radius, Thickness</p>
+              <button class="btn btn-secondary btn-sm" type="button">Select</button>
+            </div>
+            <!-- 4. Twin Duct -->
+            <div class="ducting-type-card" id="cardTypeTwinDuct" onclick="DuctingWorkflowController.selectType('Twin Duct')">
+              <div class="ducting-type-icon">♊</div>
+              <h4>4. Twin Duct</h4>
+              <p>Ø A (80–1000 mm), Ø B, Ø C, Angle D, L1</p>
+              <button class="btn btn-secondary btn-sm" type="button">Select</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer" style="padding: 1rem 1.5rem; background: var(--bg-surface-secondary); border-top: 1px solid var(--border-color); display: flex; justify-content: flex-end; flex-shrink: 0;">
+          <button type="button" class="btn btn-secondary" onclick="DuctingWorkflowController.close()">Cancel</button>
+        </div>
+      </div>
+
+      <!-- STEP 2 — ENGINEERING SKETCH + DIMENSIONS -->
+      <div id="ductingStep2" style="display: none; flex-direction: column; flex: 1; min-height: 0; overflow: hidden;">
+        <div class="modal-header" style="flex-shrink: 0;">
+          <div class="modal-title-group">
+            <div class="modal-icon" style="background: rgba(14, 165, 233, 0.15); color: #0284c7;">📐</div>
+            <div>
+              <h3 id="ductingStep2Title">Ducting — [Selected Type]</h3>
+              <div class="modal-subtitle">Project-specific engineering dimensions for PR</div>
+            </div>
+          </div>
+          <button class="modal-close-btn" type="button" onclick="DuctingWorkflowController.close()">&times;</button>
+        </div>
+
+        <div class="modal-body" id="ductingStep2ModalBody" style="padding: 1.25rem 1.5rem; overflow-y: auto; flex: 1; min-height: 0;">
+          <div style="margin-bottom: 0.75rem;">
+            <button type="button" class="btn btn-link" style="padding: 0; font-size: 0.88rem; color: #0284c7; cursor: pointer; text-decoration: none; font-weight: 600;" onclick="DuctingWorkflowController.backToStep1()">
+              ← Back to Type Selection
+            </button>
+          </div>
+
+          <!-- Sketch Section: The sketch MUST appear ABOVE the dimension fields -->
+          <div id="ductingSketchSection" style="margin-bottom: 1.25rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; flex-wrap: wrap; gap: 0.5rem;">
+              <h4 id="ductingSketchHeading" style="font-size: 0.98rem; color: var(--text-main); margin: 0; font-weight: 700;">
+                Engineering Sketch — [Selected Type]
+              </h4>
+              <div style="display: flex; align-items: center; gap: 0.5rem;">
+                <input type="file" id="ductingSketchFileInput" accept="image/*,.pdf" style="display: none;" onchange="DuctingWorkflowController.handleSketchUpload(event)">
+                <button type="button" class="btn btn-secondary btn-sm" id="btnDuctingUploadSketch" onclick="DuctingWorkflowController.triggerSketchUpload()" style="display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.8rem; padding: 0.35rem 0.75rem;">
+                  <span>📁</span> Upload Drawing
+                </button>
+                <button type="button" class="btn btn-secondary btn-sm" id="btnDuctingResetSketch" onclick="DuctingWorkflowController.resetUploadedSketch()" style="display: none; font-size: 0.8rem; padding: 0.35rem 0.75rem; color: #ef4444;">
+                  <span>↺</span> Reset to Default
+                </button>
+              </div>
+            </div>
+            <div id="ductingSketchContainer" class="ducting-sketch-box" style="margin-bottom: 0;">
+              <!-- Rendered dynamically by DuctingWorkflowController -->
+            </div>
+          </div>
+
+          <!-- Error Alert Banner -->
+          <div id="ductingValidationAlert" style="display: none; margin-bottom: 1.25rem; padding: 0.75rem 1rem; border-radius: 6px; background: rgba(239, 68, 68, 0.1); border: 1px solid #ef4444; color: #b91c1c; font-size: 0.88rem; font-weight: 600;"></div>
+
+          <!-- Dimensions Form -->
+          <div style="margin-bottom: 1.25rem;">
+            <h4 style="font-size: 0.95rem; color: var(--text-main); margin-bottom: 0.75rem; font-weight: 700; border-bottom: 1px solid var(--border-color); padding-bottom: 0.4rem;">
+              Dimensions
+            </h4>
+            <div id="ductingDimensionsFieldsContainer" class="ducting-fields-grid">
+              <!-- Rendered dynamically for selected type only -->
+            </div>
+          </div>
+
+          <!-- Additional PR Fields: Material / Grade, Quantity, Remarks -->
+          <div style="margin-top: 1.25rem; padding-top: 1rem; border-top: 1px dashed var(--border-color);">
+            <h4 style="font-size: 0.95rem; color: var(--text-main); margin-bottom: 0.75rem; font-weight: 700;">
+              Requisition Details
+            </h4>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+              <div class="form-group">
+                <label style="display: block; font-size: 0.82rem; font-weight: 600; color: var(--text-muted); margin-bottom: 0.35rem;">
+                  Material / Grade <span style="color: red;">*</span>
+                </label>
+                <select id="ductingMaterial" class="form-control" style="width: 100%; padding: 0.5rem; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-surface); color: var(--text-main);">
+                  <option value="GI">GI</option>
+                  <option value="SS304">SS304</option>
+                  <option value="Mild Steel">Mild Steel</option>
+                  <option value="Aluminum">Aluminum</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label style="display: block; font-size: 0.82rem; font-weight: 600; color: var(--text-muted); margin-bottom: 0.35rem;">
+                  Quantity (Pcs) <span style="color: red;">*</span>
+                </label>
+                <input type="number" id="ductingQuantity" class="form-control" min="1" step="1" value="1" style="width: 100%; padding: 0.5rem; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-surface); color: var(--text-main);">
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label style="display: block; font-size: 0.82rem; font-weight: 600; color: var(--text-muted); margin-bottom: 0.35rem;">
+                Remarks
+              </label>
+              <textarea id="ductingRemarks" class="form-control" rows="2" placeholder="Enter any project-specific notes or fabrication remarks..." style="width: 100%; padding: 0.5rem; border-radius: 6px; border: 1px solid var(--border-color); background: var(--bg-surface); color: var(--text-main); font-family: inherit; font-size: 0.85rem;"></textarea>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer" style="padding: 1rem 1.5rem; background: var(--bg-surface-secondary); border-top: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;">
+          <button type="button" class="btn btn-secondary" onclick="DuctingWorkflowController.close()">Cancel</button>
+          <div style="display: flex; gap: 0.75rem;">
+            <button type="button" class="btn btn-secondary" onclick="DuctingWorkflowController.backToStep1()">← Change Type</button>
+            <button type="button" class="btn btn-primary" id="btnDuctingAddToPR" onclick="DuctingWorkflowController.addToPR()">+ Add to PR</button>
+          </div>
+        </div>
+      </div>
+
+    </div>
   </div>
 
   <!-- Toast Notification Container -->
@@ -2310,6 +2468,6 @@
   <!-- Authentication & Access Control Module -->
   <script src="auth.js"></script>
   <!-- Core Application Script with Cache Buster -->
-  <script src="app.js?v=20260911_v3"></script>
+  <script src="app.js?v=20260922_v4"></script>
 </body>
 </html>

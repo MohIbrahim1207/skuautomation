@@ -171,7 +171,7 @@ function generateExcelFile(pr, items, filePath) {
 
     rows.push([
       idx + 1,
-      it.sku,
+      it.sku || '—',
       it.product_name || it.productName || '-',
       it.item_description || it.itemDescription || '-',
       it.material_grade || it.material || it.materialGrade || '-',
@@ -397,7 +397,7 @@ function generatePdfFile(pr, items, filePath) {
         doc.font('Helvetica').fontSize(7.5).fillColor('#64748b').text(String(idx + 1), 36, y, { width: 18 });
 
         // Col 2: SKU
-        doc.font('Helvetica-Bold').fontSize(8).fillColor(textColor).text(it.sku, 56, y, { width: 50 });
+        doc.font('Helvetica-Bold').fontSize(8).fillColor(textColor).text(it.sku || '—', 56, y, { width: 50 });
 
         // Col 3: Product Name & Description & Item Remarks
         doc.font('Helvetica-Bold').fontSize(8).fillColor(textColor).text(pName, 108, y, { width: 145 });

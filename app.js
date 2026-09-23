@@ -733,52 +733,65 @@
         }
         return;
       }
-      const supplyType = (options.supplyType === 'Cut Size') ? 'Cut Size' : 'Full Size';
+      const isDucting = (masterItem.category === 'Ducting') || (options && options.category === 'Ducting') || !!options.ductingType || !!masterItem.ductingType;
+      const supplyType = isDucting ? 'Full Size' : ((options.supplyType === 'Cut Size') ? 'Cut Size' : 'Full Size');
       const origDim = options.originalDimensions || masterItem.size || masterItem.sizeDimensions || '—';
-      const cutLength = (supplyType === 'Cut Size') ? String(options.cutLength || '').trim() : '';
-      const cutWidth = (supplyType === 'Cut Size') ? String(options.cutWidth || '').trim() : '';
-      const isCut = (supplyType === 'Cut Size');
+      const cutLength = (!isDucting && supplyType === 'Cut Size') ? String(options.cutLength || '').trim() : '';
+      const cutWidth = (!isDucting && supplyType === 'Cut Size') ? String(options.cutWidth || '').trim() : '';
+      const isCut = (!isDucting && supplyType === 'Cut Size');
       const reqCutSize = isCut ? (cutWidth ? `${cutLength} × ${cutWidth} mm` : `${cutLength} mm`) : '';
       const itemRemarks = (options && options.remarks !== undefined) ? String(options.remarks).trim() : String(masterItem.remarks || '').trim();
+      const itemSku = masterItem.sku ? String(masterItem.sku).trim() : null;
 
-      const existing = this.items.find(i =>
-        i.sku.toUpperCase() === masterItem.sku.toUpperCase() &&
-        (i.supplyType || 'Full Size') === supplyType &&
-        String(i.cutLength || '') === cutLength &&
-        String(i.cutWidth || '') === cutWidth &&
-        String(i.remarks || '').trim() === itemRemarks
-      );
+      let existing = null;
+      if (!isDucting && itemSku) {
+        existing = this.items.find(i =>
+          i.sku && i.sku.toUpperCase() === itemSku.toUpperCase() &&
+          (i.supplyType || 'Full Size') === supplyType &&
+          String(i.cutLength || '') === cutLength &&
+          String(i.cutWidth || '') === cutWidth &&
+          String(i.remarks || '').trim() === itemRemarks
+        );
+      }
 
       if (existing) {
         existing.quantity = (parseFloat(existing.quantity) || 1) + 1;
       } else {
-        const desc = masterItem.itemDescription || DataService.getItemDescription(masterItem);
+        const desc = masterItem.itemDescription || (DataService && DataService.getItemDescription ? DataService.getItemDescription(masterItem) : (masterItem.productName || ''));
+        const purchaseType = isDucting ? 'PROJECT-SPECIFIC DUCTING' : (isCut ? 'PROJECT-SPECIFIC CUT SIZE' : 'STANDARD STOCK ITEM');
+        const ductType = options.ductingType || masterItem.ductingType || null;
+        const ductDims = options.ductingDimensions || masterItem.ductingDimensions || null;
+
         this.items.push({
-          masterItemId: masterItem.id || null,
-          sku: masterItem.sku,
-          category: masterItem.category || (options && options.category) || '',
+          masterItemId: isDucting ? null : (masterItem.id || null),
+          sku: isDucting ? null : (itemSku || null), // Critical SKU Rule: NULL for project-specific ducting
+          category: isDucting ? 'Ducting' : (masterItem.category || (options && options.category) || ''),
+          ductingType: ductType,
           productName: masterItem.productName,
           itemDescription: desc,
           materialGrade: masterItem.material || masterItem.materialGrade || '',
           sizeDimensions: origDim,
           originalDimensions: origDim,
-          specification: masterItem.specification || masterItem.sourceSheet || 'PT Persada Nusantara Steel Standard',
-          unit: masterItem.unit || 'Sheet',
-          quantity: 1,
+          specification: masterItem.specification || (isDucting ? 'Engineering Sketch Specification' : (masterItem.sourceSheet || 'PT Persada Nusantara Steel Standard')),
+          unit: masterItem.unit || (isDucting ? 'Pcs' : 'Sheet'),
+          quantity: parseFloat(options.quantity || masterItem.quantity) || 1,
           weightKg: masterItem.weightKg || null,
           unitPrice: (masterItem.unitPrice !== undefined && masterItem.unitPrice !== null && masterItem.unitPrice !== '') ? parseFloat(masterItem.unitPrice) : null,
           status: (masterItem.status === 'Out of Stock') ? 'Out of Stock' : 'Available',
           supplyType: supplyType,
           cutLength: cutLength,
           cutWidth: cutWidth,
-          purchaseType: isCut ? 'PROJECT-SPECIFIC CUT SIZE' : 'STANDARD STOCK ITEM',
+          purchaseType: purchaseType,
           requiredCutSize: reqCutSize,
-          remarks: itemRemarks
+          remarks: itemRemarks,
+          ductingDimensions: ductDims,
+          drawingAttachment: options.drawingAttachment || masterItem.drawingAttachment || null
         });
       }
       this.save();
       this.updateBadge();
-      UI.showToast('Added to Cart', `${masterItem.sku} (${masterItem.productName || masterItem.sku}) [${supplyType}] added to PR Cart.`);
+      const displayName = itemSku ? `${itemSku} (${masterItem.productName || itemSku})` : (masterItem.productName || 'Ducting Item');
+      UI.showToast('Added to Cart', `${displayName} added to PR Cart.`);
     },
 
     updateQuantity(idx, newQty) {
@@ -933,25 +946,28 @@
         const itemStatus = (item.status === 'Out of Stock') ? 'Out of Stock' : 'Available';
         const statusClass = itemStatus.toLowerCase().replace(/[\s_]+/g, '-');
         const origDimDisplay = item.originalDimensions || item.sizeDimensions || item.size || '—';
-        const isFastener = (item.category || '').toLowerCase() === 'fasteners' || /fastener|bolt|screw|nut|stud/i.test(`${item.productName || ''} ${item.itemDescription || ''} ${item.category || ''}`);
+        const isDucting = (item.category || '').toLowerCase() === 'ducting' || !!item.ductingType || item.purchaseType === 'PROJECT-SPECIFIC DUCTING';
+        const isFastener = !isDucting && ((item.category || '').toLowerCase() === 'fasteners' || /fastener|bolt|screw|nut|stud/i.test(`${item.productName || ''} ${item.itemDescription || ''} ${item.category || ''}`));
 
         return `
-          <tr data-cart-idx="${idx}" data-sku="${escapeHtml(item.sku)}">
+          <tr data-cart-idx="${idx}" data-sku="${escapeHtml(item.sku || '')}">
             <td style="color:var(--text-dim); font-family:var(--font-mono);">${idx + 1}</td>
-            <td><span class="sku-badge">${escapeHtml(item.sku)}</span></td>
+            <td><span class="sku-badge">${item.sku ? escapeHtml(item.sku) : '<em style="color:#64748b;">Non-SKU</em>'}</span></td>
             <td>
               <div style="font-weight:600; color:var(--text-main);">${escapeHtml(item.productName || '—')}</div>
               <div style="font-size:0.75rem; color:var(--text-muted); white-space:pre-wrap; max-width:240px;">${escapeHtml(item.itemDescription || '')}</div>
             </td>
             <td>${escapeHtml(item.materialGrade || '-')}</td>
             <td style="font-family:var(--font-mono); font-size:0.8rem; color:var(--text-main);">${escapeHtml(origDimDisplay)}</td>
-            <td><span class="unit-badge">${escapeHtml(item.unit || 'Sheet')}</span></td>
+            <td><span class="unit-badge">${escapeHtml(item.unit || (isDucting ? 'Pcs' : 'Sheet'))}</span></td>
             <td style="text-align:center;">
               <span class="status-badge ${statusClass}">● ${escapeHtml(itemStatus)}</span>
             </td>
             <td>
               <div class="cart-supply-info">
-                ${isFastener ? `
+                ${isDucting ? `
+                  <span class="supply-badge" style="background:#e0f2fe; color:#0369a1; font-weight:700;">💨 ${escapeHtml(item.ductingType || 'DUCTING')}</span>
+                ` : isFastener ? `
                   <span style="color:var(--text-muted); font-size:0.88rem; font-weight:500;">—</span>
                 ` : `
                   <span class="supply-badge ${isCut ? 'cut-size' : 'full-size'}">${isCut ? 'CUT SIZE' : 'FULL SIZE'}</span>
@@ -2292,6 +2308,843 @@
   };
 
   // =========================================================================
+  // 1.8. ENGINEERING DUCTING SKETCH WORKFLOW CONTROLLER
+  // =========================================================================
+  const DuctingWorkflowController = {
+    state: {
+      currentStep: 1,
+      selectedType: null,
+      dimensions: {},
+      errors: {},
+      uploadedDrawing: null // { name, size, type, dataUrl }
+    },
+
+    open() {
+      this.reset();
+      const modal = document.getElementById('modalDuctingWorkflow');
+      if (modal) {
+        modal.style.display = 'flex';
+        modal.classList.add('active');
+      }
+      this.showStep1();
+    },
+
+    close() {
+      const modal = document.getElementById('modalDuctingWorkflow');
+      if (modal) {
+        modal.style.display = 'none';
+        modal.classList.remove('active');
+      }
+      this.reset();
+    },
+
+    reset() {
+      this.state = {
+        currentStep: 1,
+        selectedType: null,
+        dimensions: {},
+        errors: {},
+        uploadedDrawing: null
+      };
+      const alert = document.getElementById('ductingValidationAlert');
+      if (alert) {
+        alert.style.display = 'none';
+        alert.textContent = '';
+      }
+      const remarks = document.getElementById('ductingRemarks');
+      if (remarks) remarks.value = '';
+      const qty = document.getElementById('ductingQuantity');
+      if (qty) qty.value = '1';
+      const mat = document.getElementById('ductingMaterial');
+      if (mat) mat.value = 'GI';
+      const fileInput = document.getElementById('ductingSketchFileInput');
+      if (fileInput) fileInput.value = '';
+      const resetBtn = document.getElementById('btnDuctingResetSketch');
+      if (resetBtn) resetBtn.style.display = 'none';
+    },
+
+    showStep1() {
+      this.state.currentStep = 1;
+      const s1 = document.getElementById('ductingStep1');
+      const s2 = document.getElementById('ductingStep2');
+      if (s1) s1.style.display = 'flex';
+      if (s2) s2.style.display = 'none';
+    },
+
+    backToStep1() {
+      this.showStep1();
+    },
+
+    selectType(type) {
+      this.state.selectedType = type;
+      this.state.currentStep = 2;
+      this.state.dimensions = {};
+      this.state.errors = {};
+      this.state.uploadedDrawing = null;
+
+      const fileInput = document.getElementById('ductingSketchFileInput');
+      if (fileInput) fileInput.value = '';
+      const resetBtn = document.getElementById('btnDuctingResetSketch');
+      if (resetBtn) resetBtn.style.display = 'none';
+
+      const s1 = document.getElementById('ductingStep1');
+      const s2 = document.getElementById('ductingStep2');
+      if (s1) s1.style.display = 'none';
+      if (s2) s2.style.display = 'flex';
+
+      this.render();
+
+      // Focus first input field without scrolling past the sketch
+      setTimeout(() => {
+        const firstInput = document.getElementById('dim_a');
+        if (firstInput) firstInput.focus({ preventScroll: true });
+      }, 100);
+    },
+
+    focusField(fieldId) {
+      const el = document.getElementById(fieldId);
+      if (el) {
+        el.focus();
+        el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        el.classList.add('input-focus-highlight');
+        setTimeout(() => el.classList.remove('input-focus-highlight'), 1200);
+      }
+    },
+
+    triggerSketchUpload() {
+      const fileInput = document.getElementById('ductingSketchFileInput');
+      if (fileInput) fileInput.click();
+    },
+
+    handleSketchUpload(event) {
+      const file = event.target.files && event.target.files[0];
+      if (!file) return;
+      this.processUploadedFile(file);
+    },
+
+    handleDroppedFile(file) {
+      if (!file) return;
+      this.processUploadedFile(file);
+    },
+
+    processUploadedFile(file) {
+      const validTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/svg+xml', 'application/pdf'];
+      const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+      const isImg = file.type.startsWith('image/') || /\.(png|jpe?g|webp|svg)$/i.test(file.name);
+
+      if (!isPdf && !isImg) {
+        alert('Unsupported file format. Please upload a PNG, JPG, WebP, SVG, or PDF engineering drawing.');
+        return;
+      }
+
+      if (file.size > 15 * 1024 * 1024) {
+        alert('File size exceeds the 15 MB limit. Please select a smaller file.');
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        this.state.uploadedDrawing = {
+          name: file.name,
+          size: file.size,
+          type: file.type || (isPdf ? 'application/pdf' : 'image/png'),
+          dataUrl: e.target.result,
+          uploadedAt: new Date().toISOString()
+        };
+
+        const resetBtn = document.getElementById('btnDuctingResetSketch');
+        if (resetBtn) resetBtn.style.display = 'inline-flex';
+
+        this.renderSketch(this.state.selectedType);
+        if (window.UI && window.UI.showToast) {
+          window.UI.showToast(`Drawing "${file.name}" attached successfully!`, 'success');
+        }
+      };
+
+      if (isPdf) {
+        // Read as data URL for preview/storage
+        reader.readAsDataURL(file);
+      } else {
+        reader.readAsDataURL(file);
+      }
+    },
+
+    resetUploadedSketch() {
+      this.state.uploadedDrawing = null;
+      const fileInput = document.getElementById('ductingSketchFileInput');
+      if (fileInput) fileInput.value = '';
+      const resetBtn = document.getElementById('btnDuctingResetSketch');
+      if (resetBtn) resetBtn.style.display = 'none';
+
+      this.renderSketch(this.state.selectedType);
+      if (window.UI && window.UI.showToast) {
+        window.UI.showToast('Restored default engineering sketch.', 'info');
+      }
+    },
+
+    render() {
+      const type = this.state.selectedType;
+      if (!type) return;
+
+      const titleEl = document.getElementById('ductingStep2Title');
+      if (titleEl) titleEl.textContent = `Ducting — ${type}`;
+
+      const headingEl = document.getElementById('ductingSketchHeading');
+      if (headingEl) headingEl.textContent = `Engineering Sketch — ${type}`;
+
+      const alert = document.getElementById('ductingValidationAlert');
+      if (alert) {
+        alert.style.display = 'none';
+        alert.textContent = '';
+      }
+
+      // 1. Render Sketch Section (MUST appear ABOVE the dimension fields)
+      this.renderSketch(type);
+
+      // 2. Render Dimension Fields for Selected Type ONLY
+      this.renderDimensionFields(type);
+    },
+
+    getSketchSvg(type) {
+      if (type === 'Straight Duct') {
+        return `
+          <svg viewBox="0 0 540 135" style="max-height: 135px; width: 100%; display: block; margin: 0 auto;" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <marker id="arrowSD" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M 0 1.5 L 10 5 L 0 8.5 z" fill="#0284c7"/>
+              </marker>
+            </defs>
+            <rect x="90" y="32" width="360" height="56" rx="3" fill="#f0f9ff" stroke="#0284c7" stroke-width="2.5"/>
+            <ellipse cx="90" cy="60" rx="14" ry="28" fill="#e0f2fe" stroke="#0284c7" stroke-width="2.5"/>
+            <path d="M 450 32 A 14 28 0 0 1 450 88" fill="none" stroke="#0284c7" stroke-width="2.5"/>
+            <line x1="56" y1="32" x2="56" y2="88" stroke="#0284c7" stroke-width="1.8" marker-start="url(#arrowSD)" marker-end="url(#arrowSD)"/>
+            <line x1="45" y1="32" x2="72" y2="32" stroke="#94a3b8" stroke-width="1"/>
+            <line x1="45" y1="88" x2="72" y2="88" stroke="#94a3b8" stroke-width="1"/>
+            <text x="50" y="24" fill="#0369a1" font-size="12" font-weight="700" text-anchor="middle" font-family="sans-serif">Ø A</text>
+            <line x1="90" y1="108" x2="450" y2="108" stroke="#0284c7" stroke-width="1.8" marker-start="url(#arrowSD)" marker-end="url(#arrowSD)"/>
+            <line x1="90" y1="88" x2="90" y2="118" stroke="#94a3b8" stroke-width="1"/>
+            <line x1="450" y1="88" x2="450" y2="118" stroke="#94a3b8" stroke-width="1"/>
+            <text x="270" y="124" fill="#0369a1" font-size="12" font-weight="700" text-anchor="middle" font-family="sans-serif">L1</text>
+            <path d="M 270 32 L 295 14 L 350 14" fill="none" stroke="#b45309" stroke-width="1.5"/>
+            <circle cx="270" cy="32" r="3" fill="#b45309"/>
+            <text x="355" y="18" fill="#b45309" font-size="11" font-weight="700" font-family="sans-serif">Thickness</text>
+          </svg>
+        `;
+      } else if (type === 'Y-Duct') {
+        return `
+          <svg viewBox="0 0 540 160" style="max-height: 155px; width: 100%; display: block; margin: 0 auto;" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <marker id="arrowY" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M 0 1.5 L 10 5 L 0 8.5 z" fill="#0284c7"/>
+              </marker>
+              <marker id="arrowAmb" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M 0 1.5 L 10 5 L 0 8.5 z" fill="#b45309"/>
+              </marker>
+            </defs>
+            <path d="M 70 55 L 180 55 L 360 18 L 372 48 L 225 80 L 372 112 L 360 142 L 180 105 L 70 105 Z" fill="#f0f9ff" stroke="#0284c7" stroke-width="2.5" stroke-linejoin="round"/>
+            <line x1="180" y1="55" x2="180" y2="105" stroke="#93c5fd" stroke-width="1.5" stroke-dasharray="4,3"/>
+            <ellipse cx="70" cy="80" rx="12" ry="25" fill="#e0f2fe" stroke="#0284c7" stroke-width="2.5"/>
+            <line x1="360" y1="18" x2="372" y2="48" stroke="#0284c7" stroke-width="2.5"/>
+            <line x1="372" y1="112" x2="360" y2="142" stroke="#0284c7" stroke-width="2.5"/>
+            
+            <line x1="42" y1="55" x2="42" y2="105" stroke="#b45309" stroke-width="2" marker-start="url(#arrowAmb)" marker-end="url(#arrowAmb)"/>
+            <line x1="32" y1="55" x2="58" y2="55" stroke="#94a3b8" stroke-width="1"/>
+            <line x1="32" y1="105" x2="58" y2="105" stroke="#94a3b8" stroke-width="1"/>
+            <text x="38" y="44" fill="#b45309" font-size="11" font-weight="800" text-anchor="middle" font-family="sans-serif">Ø A (80–1000)</text>
+
+            <line x1="70" y1="124" x2="180" y2="124" stroke="#0284c7" stroke-width="1.8" marker-start="url(#arrowY)" marker-end="url(#arrowY)"/>
+            <line x1="70" y1="105" x2="70" y2="132" stroke="#94a3b8" stroke-width="1"/>
+            <line x1="180" y1="105" x2="180" y2="132" stroke="#94a3b8" stroke-width="1"/>
+            <text x="125" y="140" fill="#0369a1" font-size="12" font-weight="700" text-anchor="middle" font-family="sans-serif">L1</text>
+
+            <line x1="384" y1="14" x2="396" y2="44" stroke="#0284c7" stroke-width="1.8" marker-start="url(#arrowY)" marker-end="url(#arrowY)"/>
+            <text x="424" y="32" fill="#0369a1" font-size="12" font-weight="700" text-anchor="middle" font-family="sans-serif">Ø B</text>
+
+            <line x1="205" y1="42" x2="340" y2="10" stroke="#0284c7" stroke-width="1.8" marker-start="url(#arrowY)" marker-end="url(#arrowY)"/>
+            <text x="272" y="18" fill="#0369a1" font-size="12" font-weight="700" text-anchor="middle" font-family="sans-serif">L2</text>
+
+            <line x1="396" y1="116" x2="384" y2="146" stroke="#0284c7" stroke-width="1.8" marker-start="url(#arrowY)" marker-end="url(#arrowY)"/>
+            <text x="424" y="136" fill="#0369a1" font-size="12" font-weight="700" text-anchor="middle" font-family="sans-serif">Ø C</text>
+
+            <path d="M 245 70 A 25 25 0 0 1 245 90" fill="none" stroke="#7c3aed" stroke-width="1.8"/>
+            <text x="282" y="84" fill="#7c3aed" font-size="11" font-weight="700" text-anchor="middle" font-family="sans-serif">Angle D (°)</text>
+
+            <path d="M 120 55 L 140 28 L 195 28" fill="none" stroke="#475569" stroke-width="1.2"/>
+            <circle cx="120" cy="55" r="2.5" fill="#475569"/>
+            <text x="198" y="32" fill="#475569" font-size="11" font-weight="600" font-family="sans-serif">Thickness</text>
+          </svg>
+        `;
+      } else if (type === 'Elbow') {
+        return `
+          <svg viewBox="0 0 540 155" style="max-height: 150px; width: 100%; display: block; margin: 0 auto;" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <marker id="arrowE" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M 0 1.5 L 10 5 L 0 8.5 z" fill="#0284c7"/>
+              </marker>
+              <marker id="arrowAmbE" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M 0 1.5 L 10 5 L 0 8.5 z" fill="#b45309"/>
+              </marker>
+            </defs>
+            <path d="M 210 140 A 110 110 0 0 1 320 30 L 320 75 A 65 65 0 0 0 255 140 Z" fill="#f0f9ff" stroke="#0284c7" stroke-width="2.5" stroke-linejoin="round"/>
+            <line x1="210" y1="140" x2="255" y2="140" stroke="#0284c7" stroke-width="2.5"/>
+            <line x1="320" y1="30" x2="320" y2="75" stroke="#0284c7" stroke-width="2.5"/>
+            <path d="M 232.5 140 A 87.5 87.5 0 0 1 320 52.5" fill="none" stroke="#93c5fd" stroke-width="1.5" stroke-dasharray="4,4"/>
+            <circle cx="210" cy="30" r="3" fill="#64748b"/>
+            <line x1="210" y1="30" x2="272" y2="92" stroke="#64748b" stroke-width="1.5" stroke-dasharray="3,3"/>
+            <text x="238" y="75" fill="#0369a1" font-size="12" font-weight="700" font-family="sans-serif">RAD</text>
+
+            <line x1="210" y1="150" x2="255" y2="150" stroke="#b45309" stroke-width="2" marker-start="url(#arrowAmbE)" marker-end="url(#arrowAmbE)"/>
+            <text x="232.5" y="152" fill="#b45309" font-size="11" font-weight="800" text-anchor="middle" font-family="sans-serif" dy="10">Ø A (80–1200)</text>
+
+            <path d="M 210 50 A 20 20 0 0 1 230 30" fill="none" stroke="#7c3aed" stroke-width="1.8"/>
+            <text x="235" y="44" fill="#7c3aed" font-size="11" font-weight="700" font-family="sans-serif">Angle B (°)</text>
+
+            <path d="M 320 30 L 350 20 L 395 20" fill="none" stroke="#475569" stroke-width="1.2"/>
+            <circle cx="320" cy="30" r="2.5" fill="#475569"/>
+            <text x="400" y="24" fill="#475569" font-size="11" font-weight="600" font-family="sans-serif">Thickness</text>
+          </svg>
+        `;
+      } else if (type === 'Twin Duct') {
+        return `
+          <svg viewBox="0 0 540 155" style="max-height: 150px; width: 100%; display: block; margin: 0 auto;" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <marker id="arrowT" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M 0 1.5 L 10 5 L 0 8.5 z" fill="#0284c7"/>
+              </marker>
+              <marker id="arrowAmbT" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M 0 1.5 L 10 5 L 0 8.5 z" fill="#b45309"/>
+              </marker>
+            </defs>
+            <path d="M 70 55 L 180 55 L 360 22 L 360 52 L 220 80 L 360 108 L 360 138 L 180 105 L 70 105 Z" fill="#f0f9ff" stroke="#0284c7" stroke-width="2.5" stroke-linejoin="round"/>
+            <ellipse cx="70" cy="80" rx="12" ry="25" fill="#e0f2fe" stroke="#0284c7" stroke-width="2.5"/>
+            <line x1="360" y1="22" x2="360" y2="52" stroke="#0284c7" stroke-width="2.5"/>
+            <line x1="360" y1="108" x2="360" y2="138" stroke="#0284c7" stroke-width="2.5"/>
+
+            <line x1="42" y1="55" x2="42" y2="105" stroke="#b45309" stroke-width="2" marker-start="url(#arrowAmbT)" marker-end="url(#arrowAmbT)"/>
+            <text x="38" y="44" fill="#b45309" font-size="11" font-weight="800" text-anchor="middle" font-family="sans-serif">Ø A (80–1000)</text>
+
+            <line x1="70" y1="124" x2="180" y2="124" stroke="#0284c7" stroke-width="1.8" marker-start="url(#arrowT)" marker-end="url(#arrowT)"/>
+            <text x="125" y="140" fill="#0369a1" font-size="12" font-weight="700" text-anchor="middle" font-family="sans-serif">L1</text>
+
+            <line x1="375" y1="22" x2="375" y2="52" stroke="#0284c7" stroke-width="1.8" marker-start="url(#arrowT)" marker-end="url(#arrowT)"/>
+            <text x="408" y="41" fill="#0369a1" font-size="12" font-weight="700" text-anchor="middle" font-family="sans-serif">Ø B</text>
+
+            <line x1="375" y1="108" x2="375" y2="138" stroke="#0284c7" stroke-width="1.8" marker-start="url(#arrowT)" marker-end="url(#arrowT)"/>
+            <text x="408" y="127" fill="#0369a1" font-size="12" font-weight="700" text-anchor="middle" font-family="sans-serif">Ø C</text>
+
+            <path d="M 235 70 A 25 25 0 0 1 235 90" fill="none" stroke="#7c3aed" stroke-width="1.8"/>
+            <text x="272" y="84" fill="#7c3aed" font-size="11" font-weight="700" text-anchor="middle" font-family="sans-serif">Angle D (°)</text>
+          </svg>
+        `;
+      }
+      return '';
+    },
+
+    renderSketch(type) {
+      const container = document.getElementById('ductingSketchContainer');
+      if (!container) return;
+
+      let variableBadges = '';
+      if (type === 'Straight Duct') {
+        variableBadges = `
+          <span class="badge-eng-var" onclick="DuctingWorkflowController.focusField('dim_a')" title="Click to edit Ø A">Ø A (mm) ✎</span>
+          <span class="badge-eng-var" onclick="DuctingWorkflowController.focusField('dim_l1')" title="Click to edit L1">L1 (mm) ✎</span>
+          <span class="badge-eng-var" onclick="DuctingWorkflowController.focusField('dim_thickness')" title="Click to edit Thickness">Thickness (mm) ✎</span>
+        `;
+      } else if (type === 'Y-Duct') {
+        variableBadges = `
+          <span class="badge-eng-var required-range" onclick="DuctingWorkflowController.focusField('dim_a')" title="Click to edit Ø A (80–1000 mm)">Ø A: 80–1000 mm ✎</span>
+          <span class="badge-eng-var" onclick="DuctingWorkflowController.focusField('dim_b')" title="Click to edit Ø B">Ø B (mm) ✎</span>
+          <span class="badge-eng-var" onclick="DuctingWorkflowController.focusField('dim_c')" title="Click to edit Ø C">Ø C (mm) ✎</span>
+          <span class="badge-eng-var" onclick="DuctingWorkflowController.focusField('dim_angle_d')" title="Click to edit Angle D">Angle D (°) ✎</span>
+          <span class="badge-eng-var" onclick="DuctingWorkflowController.focusField('dim_l1')" title="Click to edit L1">L1 (mm) ✎</span>
+          <span class="badge-eng-var" onclick="DuctingWorkflowController.focusField('dim_l2')" title="Click to edit L2">L2 (mm) ✎</span>
+          <span class="badge-eng-var" onclick="DuctingWorkflowController.focusField('dim_thickness')" title="Click to edit Thickness">Thickness (mm) ✎</span>
+        `;
+      } else if (type === 'Elbow') {
+        variableBadges = `
+          <span class="badge-eng-var required-range" onclick="DuctingWorkflowController.focusField('dim_a')" title="Click to edit Ø A (80–1200 mm)">Ø A: 80–1200 mm ✎</span>
+          <span class="badge-eng-var" onclick="DuctingWorkflowController.focusField('dim_angle_b')" title="Click to edit Angle B">Angle B (°) ✎</span>
+          <span class="badge-eng-var" onclick="DuctingWorkflowController.focusField('dim_radius')" title="Click to edit RAD / Radius">RAD / Radius (mm) ✎</span>
+          <span class="badge-eng-var" onclick="DuctingWorkflowController.focusField('dim_thickness')" title="Click to edit Thickness">Thickness (mm) ✎</span>
+        `;
+      } else if (type === 'Twin Duct') {
+        variableBadges = `
+          <span class="badge-eng-var required-range" onclick="DuctingWorkflowController.focusField('dim_a')" title="Click to edit Ø A (80–1000 mm)">Ø A: 80–1000 mm ✎</span>
+          <span class="badge-eng-var" onclick="DuctingWorkflowController.focusField('dim_b')" title="Click to edit Ø B">Ø B (mm) ✎</span>
+          <span class="badge-eng-var" onclick="DuctingWorkflowController.focusField('dim_c')" title="Click to edit Ø C">Ø C (mm) ✎</span>
+          <span class="badge-eng-var" onclick="DuctingWorkflowController.focusField('dim_angle_d')" title="Click to edit Angle D">Angle D (°) ✎</span>
+          <span class="badge-eng-var" onclick="DuctingWorkflowController.focusField('dim_l1')" title="Click to edit L1">L1 (mm) ✎</span>
+        `;
+      }
+
+      // Check if user uploaded a custom drawing
+      if (this.state.uploadedDrawing) {
+        const up = this.state.uploadedDrawing;
+        const isPdf = up.type && up.type.includes('pdf');
+        container.innerHTML = `
+          <div style="background: #f8fafc; border: 2px dashed #0284c7; border-radius: 8px; padding: 0.85rem; text-align: center;">
+            <div style="display: flex; align-items: center; justify-content: space-between; background: #ffffff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 0.5rem 0.75rem; margin-bottom: 0.75rem;">
+              <div style="display: flex; align-items: center; gap: 0.6rem; text-align: left;">
+                <span style="font-size: 1.5rem;">${isPdf ? '📄' : '🖼️'}</span>
+                <div>
+                  <div style="font-weight: 700; font-size: 0.88rem; color: #0284c7;">${escapeHtml(up.name)}</div>
+                  <div style="font-size: 0.75rem; color: var(--text-muted);">${(up.size / 1024).toFixed(1)} KB • Custom Engineering Drawing Attached</div>
+                </div>
+              </div>
+              <div style="display: flex; gap: 0.4rem;">
+                <button type="button" class="btn btn-secondary btn-sm" onclick="DuctingWorkflowController.triggerSketchUpload()" style="font-size: 0.75rem; padding: 0.25rem 0.6rem;">Change</button>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="DuctingWorkflowController.resetUploadedSketch()" style="font-size: 0.75rem; padding: 0.25rem 0.6rem; color: #ef4444;">Remove</button>
+              </div>
+            </div>
+            ${isPdf ? `
+              <div style="padding: 1.25rem; background: #ffffff; border-radius: 6px; border: 1px solid var(--border-color);">
+                <div style="font-size: 2.2rem; margin-bottom: 0.25rem;">📑</div>
+                <div style="font-weight: 700; font-size: 0.95rem; color: var(--text-main);">PDF Engineering Specification Attached</div>
+                <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 0.25rem;">The attached PDF will be linked to the Purchase Request requisition item.</div>
+              </div>
+            ` : `
+              <div style="background: #ffffff; border: 1px solid var(--border-color); border-radius: 6px; padding: 0.5rem; max-height: 200px; display: flex; align-items: center; justify-content: center; overflow: hidden;">
+                <img src="${up.dataUrl}" alt="Uploaded Engineering Drawing" style="max-height: 180px; max-width: 100%; object-fit: contain; display: block;" />
+              </div>
+            `}
+            <div class="sketch-variable-pills" style="margin-top: 0.65rem;">
+              ${variableBadges}
+            </div>
+          </div>
+        `;
+      } else {
+        // Default engineering schematic SVG diagram
+        const svgContent = this.getSketchSvg(type);
+        container.innerHTML = `
+          <div style="background: #ffffff; border-radius: 8px; padding: 0.5rem 0.75rem; position: relative;">
+            <div style="position: relative; border-radius: 6px; background: #fbfcfe; border: 1px solid var(--border-color); padding: 0.5rem 0.5rem 0.25rem 0.5rem;">
+              ${svgContent}
+            </div>
+            <div class="sketch-variable-pills" style="margin-top: 0.65rem;">
+              ${variableBadges}
+            </div>
+            <div style="text-align: center; margin-top: 0.35rem; font-size: 0.75rem; color: #64748b;">
+              💡 <em>Click any parameter label above to edit that dimension, or upload your fabrication drawing.</em>
+            </div>
+          </div>
+        `;
+      }
+
+      // Drag and drop event listeners on sketch box
+      container.ondragover = (e) => {
+        e.preventDefault();
+        container.classList.add('drag-over');
+      };
+      container.ondragleave = (e) => {
+        e.preventDefault();
+        container.classList.remove('drag-over');
+      };
+      container.ondrop = (e) => {
+        e.preventDefault();
+        container.classList.remove('drag-over');
+        if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]) {
+          this.handleDroppedFile(e.dataTransfer.files[0]);
+        }
+      };
+    },
+
+    renderDimensionFields(type) {
+      const container = document.getElementById('ductingDimensionsFieldsContainer');
+      if (!container) return;
+
+      let html = '';
+
+      if (type === 'Straight Duct') {
+        html = `
+          <div class="ducting-field-group">
+            <label style="display:block; font-size:0.82rem; font-weight:700; color:var(--text-main); margin-bottom:0.35rem;">
+              Ø A <span style="color:red;">*</span>
+            </label>
+            <div class="ducting-input-unit-wrap">
+              <input type="number" id="dim_a" step="any" placeholder="e.g. 300" required>
+              <span class="ducting-unit-label">mm</span>
+            </div>
+          </div>
+          <div class="ducting-field-group">
+            <label style="display:block; font-size:0.82rem; font-weight:700; color:var(--text-main); margin-bottom:0.35rem;">
+              L1 <span style="color:red;">*</span>
+            </label>
+            <div class="ducting-input-unit-wrap">
+              <input type="number" id="dim_l1" step="any" placeholder="e.g. 1000" required>
+              <span class="ducting-unit-label">mm</span>
+            </div>
+          </div>
+          <div class="ducting-field-group">
+            <label style="display:block; font-size:0.82rem; font-weight:700; color:var(--text-main); margin-bottom:0.35rem;">
+              Thickness <span style="color:red;">*</span>
+            </label>
+            <div class="ducting-input-unit-wrap">
+              <input type="number" id="dim_thickness" step="any" placeholder="e.g. 1.2" required>
+              <span class="ducting-unit-label">mm</span>
+            </div>
+          </div>
+        `;
+      } else if (type === 'Y-Duct') {
+        html = `
+          <div class="ducting-field-group">
+            <label style="display:block; font-size:0.82rem; font-weight:700; color:var(--text-main); margin-bottom:0.35rem;">
+              Ø A <span style="color:red;">*</span>
+            </label>
+            <div class="ducting-input-unit-wrap">
+              <input type="number" id="dim_a" step="any" placeholder="80–1000" required>
+              <span class="ducting-unit-label">mm</span>
+            </div>
+            <div class="ducting-field-help highlight">Req: 80–1000 mm</div>
+          </div>
+          <div class="ducting-field-group">
+            <label style="display:block; font-size:0.82rem; font-weight:700; color:var(--text-main); margin-bottom:0.35rem;">
+              Ø B <span style="color:red;">*</span>
+            </label>
+            <div class="ducting-input-unit-wrap">
+              <input type="number" id="dim_b" step="any" placeholder="e.g. 250" required>
+              <span class="ducting-unit-label">mm</span>
+            </div>
+          </div>
+          <div class="ducting-field-group">
+            <label style="display:block; font-size:0.82rem; font-weight:700; color:var(--text-main); margin-bottom:0.35rem;">
+              Ø C <span style="color:red;">*</span>
+            </label>
+            <div class="ducting-input-unit-wrap">
+              <input type="number" id="dim_c" step="any" placeholder="e.g. 200" required>
+              <span class="ducting-unit-label">mm</span>
+            </div>
+          </div>
+          <div class="ducting-field-group">
+            <label style="display:block; font-size:0.82rem; font-weight:700; color:var(--text-main); margin-bottom:0.35rem;">
+              Angle D <span style="color:red;">*</span>
+            </label>
+            <div class="ducting-input-unit-wrap">
+              <input type="number" id="dim_angle_d" step="any" placeholder="e.g. 45" required>
+              <span class="ducting-unit-label">°</span>
+            </div>
+          </div>
+          <div class="ducting-field-group">
+            <label style="display:block; font-size:0.82rem; font-weight:700; color:var(--text-main); margin-bottom:0.35rem;">
+              L1 <span style="color:red;">*</span>
+            </label>
+            <div class="ducting-input-unit-wrap">
+              <input type="number" id="dim_l1" step="any" placeholder="e.g. 600" required>
+              <span class="ducting-unit-label">mm</span>
+            </div>
+          </div>
+          <div class="ducting-field-group">
+            <label style="display:block; font-size:0.82rem; font-weight:700; color:var(--text-main); margin-bottom:0.35rem;">
+              L2 <span style="color:red;">*</span>
+            </label>
+            <div class="ducting-input-unit-wrap">
+              <input type="number" id="dim_l2" step="any" placeholder="e.g. 400" required>
+              <span class="ducting-unit-label">mm</span>
+            </div>
+          </div>
+          <div class="ducting-field-group">
+            <label style="display:block; font-size:0.82rem; font-weight:700; color:var(--text-main); margin-bottom:0.35rem;">
+              Thickness <span style="color:red;">*</span>
+            </label>
+            <div class="ducting-input-unit-wrap">
+              <input type="number" id="dim_thickness" step="any" placeholder="e.g. 1.5" required>
+              <span class="ducting-unit-label">mm</span>
+            </div>
+          </div>
+        `;
+      } else if (type === 'Elbow') {
+        html = `
+          <div class="ducting-field-group">
+            <label style="display:block; font-size:0.82rem; font-weight:700; color:var(--text-main); margin-bottom:0.35rem;">
+              Ø A <span style="color:red;">*</span>
+            </label>
+            <div class="ducting-input-unit-wrap">
+              <input type="number" id="dim_a" step="any" placeholder="80–1200" required>
+              <span class="ducting-unit-label">mm</span>
+            </div>
+            <div class="ducting-field-help highlight">Req: 80–1200 mm</div>
+          </div>
+          <div class="ducting-field-group">
+            <label style="display:block; font-size:0.82rem; font-weight:700; color:var(--text-main); margin-bottom:0.35rem;">
+              Angle B <span style="color:red;">*</span>
+            </label>
+            <div class="ducting-input-unit-wrap">
+              <input type="number" id="dim_angle_b" step="any" placeholder="e.g. 90" required>
+              <span class="ducting-unit-label">°</span>
+            </div>
+          </div>
+          <div class="ducting-field-group">
+            <label style="display:block; font-size:0.82rem; font-weight:700; color:var(--text-main); margin-bottom:0.35rem;">
+              RAD / Radius <span style="color:red;">*</span>
+            </label>
+            <div class="ducting-input-unit-wrap">
+              <input type="number" id="dim_radius" step="any" placeholder="e.g. 300" required>
+              <span class="ducting-unit-label">mm</span>
+            </div>
+          </div>
+          <div class="ducting-field-group">
+            <label style="display:block; font-size:0.82rem; font-weight:700; color:var(--text-main); margin-bottom:0.35rem;">
+              Thickness <span style="color:red;">*</span>
+            </label>
+            <div class="ducting-input-unit-wrap">
+              <input type="number" id="dim_thickness" step="any" placeholder="e.g. 1.2" required>
+              <span class="ducting-unit-label">mm</span>
+            </div>
+          </div>
+        `;
+      } else if (type === 'Twin Duct') {
+        html = `
+          <div class="ducting-field-group">
+            <label style="display:block; font-size:0.82rem; font-weight:700; color:var(--text-main); margin-bottom:0.35rem;">
+              Ø A <span style="color:red;">*</span>
+            </label>
+            <div class="ducting-input-unit-wrap">
+              <input type="number" id="dim_a" step="any" placeholder="80–1000" required>
+              <span class="ducting-unit-label">mm</span>
+            </div>
+            <div class="ducting-field-help highlight">Req: 80–1000 mm</div>
+          </div>
+          <div class="ducting-field-group">
+            <label style="display:block; font-size:0.82rem; font-weight:700; color:var(--text-main); margin-bottom:0.35rem;">
+              Ø B <span style="color:red;">*</span>
+            </label>
+            <div class="ducting-input-unit-wrap">
+              <input type="number" id="dim_b" step="any" placeholder="e.g. 250" required>
+              <span class="ducting-unit-label">mm</span>
+            </div>
+          </div>
+          <div class="ducting-field-group">
+            <label style="display:block; font-size:0.82rem; font-weight:700; color:var(--text-main); margin-bottom:0.35rem;">
+              Ø C <span style="color:red;">*</span>
+            </label>
+            <div class="ducting-input-unit-wrap">
+              <input type="number" id="dim_c" step="any" placeholder="e.g. 200" required>
+              <span class="ducting-unit-label">mm</span>
+            </div>
+          </div>
+          <div class="ducting-field-group">
+            <label style="display:block; font-size:0.82rem; font-weight:700; color:var(--text-main); margin-bottom:0.35rem;">
+              Angle D <span style="color:red;">*</span>
+            </label>
+            <div class="ducting-input-unit-wrap">
+              <input type="number" id="dim_angle_d" step="any" placeholder="e.g. 45" required>
+              <span class="ducting-unit-label">°</span>
+            </div>
+          </div>
+          <div class="ducting-field-group">
+            <label style="display:block; font-size:0.82rem; font-weight:700; color:var(--text-main); margin-bottom:0.35rem;">
+              L1 <span style="color:red;">*</span>
+            </label>
+            <div class="ducting-input-unit-wrap">
+              <input type="number" id="dim_l1" step="any" placeholder="e.g. 600" required>
+              <span class="ducting-unit-label">mm</span>
+            </div>
+          </div>
+        `;
+      }
+
+      container.innerHTML = html;
+
+      // Realtime validation listener
+      const inputs = container.querySelectorAll('input');
+      inputs.forEach(input => {
+        input.addEventListener('input', () => {
+          input.classList.remove('input-error');
+          const alert = document.getElementById('ductingValidationAlert');
+          if (alert) alert.style.display = 'none';
+        });
+      });
+    },
+
+    getValues() {
+      const getNum = (id) => {
+        const el = document.getElementById(id);
+        if (!el || el.value.trim() === '') return NaN;
+        return parseFloat(el.value);
+      };
+
+      return {
+        dimA: getNum('dim_a'),
+        dimB: getNum('dim_b'),
+        dimC: getNum('dim_c'),
+        angleD: getNum('dim_angle_d'),
+        angleB: getNum('dim_angle_b'),
+        radius: getNum('dim_radius'),
+        l1: getNum('dim_l1'),
+        l2: getNum('dim_l2'),
+        thickness: getNum('dim_thickness')
+      };
+    },
+
+    validate(type, values) {
+      const v = values || this.getValues();
+      const normType = (type || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+      if (normType === 'straightduct') {
+        if (isNaN(v.dimA) || v.dimA <= 0) return { valid: false, field: 'dim_a', error: 'Ø A is required and must be a positive number.' };
+        if (isNaN(v.l1) || v.l1 <= 0) return { valid: false, field: 'dim_l1', error: 'L1 is required and must be a positive number.' };
+        if (isNaN(v.thickness) || v.thickness <= 0) return { valid: false, field: 'dim_thickness', error: 'Thickness is required and must be a positive number.' };
+      } else if (normType === 'yduct') {
+        if (isNaN(v.dimA) || v.dimA < 80 || v.dimA > 1000) {
+          return { valid: false, field: 'dim_a', error: 'Ø A must be between 80 mm and 1000 mm.' };
+        }
+        if (isNaN(v.dimB) || v.dimB <= 0) return { valid: false, field: 'dim_b', error: 'Ø B is required and must be a positive number.' };
+        if (isNaN(v.dimC) || v.dimC <= 0) return { valid: false, field: 'dim_c', error: 'Ø C is required and must be a positive number.' };
+        if (isNaN(v.angleD) || v.angleD <= 0) return { valid: false, field: 'dim_angle_d', error: 'Angle D is required and must be a positive number.' };
+        if (isNaN(v.l1) || v.l1 <= 0) return { valid: false, field: 'dim_l1', error: 'L1 is required and must be a positive number.' };
+        if (isNaN(v.l2) || v.l2 <= 0) return { valid: false, field: 'dim_l2', error: 'L2 is required and must be a positive number.' };
+        if (isNaN(v.thickness) || v.thickness <= 0) return { valid: false, field: 'dim_thickness', error: 'Thickness is required and must be a positive number.' };
+      } else if (normType === 'elbow') {
+        if (isNaN(v.dimA) || v.dimA < 80 || v.dimA > 1200) {
+          return { valid: false, field: 'dim_a', error: 'Ø A must be between 80 mm and 1200 mm.' };
+        }
+        if (isNaN(v.angleB) || v.angleB <= 0) return { valid: false, field: 'dim_angle_b', error: 'Angle B is required and must be a positive number.' };
+        if (isNaN(v.radius) || v.radius <= 0) return { valid: false, field: 'dim_radius', error: 'RAD / Radius is required and must be a positive number.' };
+        if (isNaN(v.thickness) || v.thickness <= 0) return { valid: false, field: 'dim_thickness', error: 'Thickness is required and must be a positive number.' };
+      } else if (normType === 'twinduct') {
+        if (isNaN(v.dimA) || v.dimA < 80 || v.dimA > 1000) {
+          return { valid: false, field: 'dim_a', error: 'Ø A must be between 80 mm and 1000 mm.' };
+        }
+        if (isNaN(v.dimB) || v.dimB <= 0) return { valid: false, field: 'dim_b', error: 'Ø B is required and must be a positive number.' };
+        if (isNaN(v.dimC) || v.dimC <= 0) return { valid: false, field: 'dim_c', error: 'Ø C is required and must be a positive number.' };
+        if (isNaN(v.angleD) || v.angleD <= 0) return { valid: false, field: 'dim_angle_d', error: 'Angle D is required and must be a positive number.' };
+        if (isNaN(v.l1) || v.l1 <= 0) return { valid: false, field: 'dim_l1', error: 'L1 is required and must be a positive number.' };
+      } else {
+        return { valid: false, error: 'Please select a valid Ducting type.' };
+      }
+
+      return { valid: true };
+    },
+
+    addToPR() {
+      const type = this.state.selectedType;
+      if (!type) return;
+
+      const values = this.getValues();
+      const validation = this.validate(type, values);
+
+      const alert = document.getElementById('ductingValidationAlert');
+      if (!validation.valid) {
+        if (alert) {
+          alert.textContent = validation.error;
+          alert.style.display = 'block';
+          alert.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+        if (validation.field) {
+          const el = document.getElementById(validation.field);
+          if (el) {
+            el.classList.add('input-error');
+            el.focus();
+            el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }
+        }
+        return false;
+      }
+
+      const matEl = document.getElementById('ductingMaterial');
+      const qtyEl = document.getElementById('ductingQuantity');
+      const remEl = document.getElementById('ductingRemarks');
+
+      const material = matEl ? matEl.value : 'GI';
+      const quantity = qtyEl ? (parseFloat(qtyEl.value) || 1) : 1;
+      const remarks = remEl ? remEl.value.trim() : '';
+
+      // Format human-readable sizeDimensions and multiline itemDescription
+      let sizeDimensions = '';
+      let itemDescription = '';
+
+      if (type === 'Straight Duct') {
+        sizeDimensions = `ØA: ${values.dimA} mm, L1: ${values.l1} mm, Thickness: ${values.thickness} mm`;
+        itemDescription = `Category: Ducting\nType: Straight Duct\nØA: ${values.dimA} mm\nL1: ${values.l1} mm\nThickness: ${values.thickness} mm`;
+      } else if (type === 'Y-Duct') {
+        sizeDimensions = `ØA: ${values.dimA} mm, ØB: ${values.dimB} mm, ØC: ${values.dimC} mm, Angle D: ${values.angleD}°, L1: ${values.l1} mm, L2: ${values.l2} mm, Thickness: ${values.thickness} mm`;
+        itemDescription = `Category: Ducting\nType: Y-Duct\nØA: ${values.dimA} mm\nØB: ${values.dimB} mm\nØC: ${values.dimC} mm\nAngle D: ${values.angleD}°\nL1: ${values.l1} mm\nL2: ${values.l2} mm\nThickness: ${values.thickness} mm`;
+      } else if (type === 'Elbow') {
+        sizeDimensions = `ØA: ${values.dimA} mm, Angle B: ${values.angleB}°, RAD: ${values.radius} mm, Thickness: ${values.thickness} mm`;
+        itemDescription = `Category: Ducting\nType: Elbow\nØA: ${values.dimA} mm\nAngle B: ${values.angleB}°\nRAD / Radius: ${values.radius} mm\nThickness: ${values.thickness} mm`;
+      } else if (type === 'Twin Duct') {
+        sizeDimensions = `ØA: ${values.dimA} mm, ØB: ${values.dimB} mm, ØC: ${values.dimC} mm, Angle D: ${values.angleD}°, L1: ${values.l1} mm`;
+        itemDescription = `Category: Ducting\nType: Twin Duct\nØA: ${values.dimA} mm\nØB: ${values.dimB} mm\nØC: ${values.dimC} mm\nAngle D: ${values.angleD}°\nL1: ${values.l1} mm`;
+      }
+
+      // Drawing attachment details if user uploaded one
+      const drawingAttachment = this.state.uploadedDrawing ? {
+        name: this.state.uploadedDrawing.name,
+        size: this.state.uploadedDrawing.size,
+        type: this.state.uploadedDrawing.type,
+        dataUrl: this.state.uploadedDrawing.dataUrl
+      } : null;
+
+      if (drawingAttachment) {
+        itemDescription += `\n[Drawing: ${drawingAttachment.name} (${(drawingAttachment.size / 1024).toFixed(1)} KB)]`;
+      }
+
+      // Add to PR Cart
+      PRCart.addItem({
+        masterItemId: null,
+        sku: null, // Critical SKU Rule: NULL for project-specific ducting
+        category: 'Ducting',
+        ductingType: type,
+        productName: `Ducting — ${type}`,
+        material: material,
+        materialGrade: material,
+        size: sizeDimensions,
+        sizeDimensions: sizeDimensions,
+        originalDimensions: sizeDimensions,
+        itemDescription: itemDescription,
+        specification: 'Engineering Sketch Specification',
+        unit: 'Pcs',
+        quantity: quantity,
+        remarks: remarks,
+        drawingAttachment: drawingAttachment,
+        purchaseType: 'PROJECT-SPECIFIC DUCTING',
+        ductingDimensions: {
+          dimA: isNaN(values.dimA) ? null : values.dimA,
+          dimB: isNaN(values.dimB) ? null : values.dimB,
+          dimC: isNaN(values.dimC) ? null : values.dimC,
+          angleD: isNaN(values.angleD) ? null : values.angleD,
+          angleB: isNaN(values.angleB) ? null : values.angleB,
+          radius: isNaN(values.radius) ? null : values.radius,
+          l1: isNaN(values.l1) ? null : values.l1,
+          l2: isNaN(values.l2) ? null : values.l2,
+          thickness: isNaN(values.thickness) ? null : values.thickness
+        }
+      }, {
+        category: 'Ducting',
+        ductingType: type,
+        productName: `Ducting — ${type}`,
+        sizeDimensions: sizeDimensions,
+        itemDescription: itemDescription,
+        materialGrade: material,
+        quantity: quantity,
+        remarks: remarks,
+        drawingAttachment: drawingAttachment,
+        purchaseType: 'PROJECT-SPECIFIC DUCTING',
+        ductingDimensions: {
+          dimA: isNaN(values.dimA) ? null : values.dimA,
+          dimB: isNaN(values.dimB) ? null : values.dimB,
+          dimC: isNaN(values.dimC) ? null : values.dimC,
+          angleD: isNaN(values.angleD) ? null : values.angleD,
+          angleB: isNaN(values.angleB) ? null : values.angleB,
+          radius: isNaN(values.radius) ? null : values.radius,
+          l1: isNaN(values.l1) ? null : values.l1,
+          l2: isNaN(values.l2) ? null : values.l2,
+          thickness: isNaN(values.thickness) ? null : values.thickness
+        }
+      });
+
+      if (window.UI && window.UI.showToast) {
+        window.UI.showToast(`Ducting — ${type} added to PR Cart!`, 'success');
+      }
+
+      this.close();
+      return true;
+    }
+  };
+
+  window.DuctingWorkflowController = DuctingWorkflowController;
+
+  // =========================================================================
   // 2. UI CONTROLLER & EVENT ORCHESTRATION
   // =========================================================================
   const UI = {
@@ -2358,6 +3211,17 @@
         targetCat = 'Electrical';
       } else if (targetCat.toLowerCase().includes('raw')) {
         targetCat = 'Raw Materials';
+      } else if (targetCat.toLowerCase().includes('duct')) {
+        targetCat = 'Ducting';
+      }
+
+      if (targetCat === 'Ducting') {
+        if (window.DuctingWorkflowController && typeof window.DuctingWorkflowController.open === 'function') {
+          window.DuctingWorkflowController.open();
+        } else if (typeof DuctingWorkflowController !== 'undefined' && typeof DuctingWorkflowController.open === 'function') {
+          DuctingWorkflowController.open();
+        }
+        return;
       }
 
       if (targetCat === 'Raw Materials') {
@@ -2666,6 +3530,21 @@
 
       const electricalCard = document.getElementById('cardElectrical');
       if (electricalCard) electricalCard.addEventListener('click', () => this.openCategory('Electrical'));
+
+      const ductingCard = document.getElementById('cardDucting');
+      if (ductingCard && !ductingCard._bound) {
+        ductingCard._bound = true;
+        ductingCard.addEventListener('click', () => this.openCategory('Ducting'));
+      }
+
+      const btnConfigureDucting = document.getElementById('btnConfigureDucting');
+      if (btnConfigureDucting && !btnConfigureDucting._bound) {
+        btnConfigureDucting._bound = true;
+        btnConfigureDucting.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.openCategory('Ducting');
+        });
+      }
 
       // Back to Categories button
       const btnBackCats = document.getElementById('btnBackToCategories');
@@ -5639,8 +6518,9 @@
                       const priceStr = formattedUnitPrice !== '—' ? `${formattedUnitPrice} / ${escapeHtml(it.unit || 'Unit')}` : '—';
                       const totStr = formatCurrency(tot);
 
-                      const isFastener = (it.category || '').toLowerCase() === 'fasteners' || /fastener|bolt|screw|nut|stud/i.test(`${it.productName || it.product_name || ''} ${it.itemDescription || it.item_description || ''} ${it.category || ''}`);
-                      const isCut = !isFastener && (it.supplyType === 'Cut Size' || it.supply_type === 'Cut Size' || it.purchaseType === 'PROJECT-SPECIFIC CUT SIZE' || it.purchase_type === 'PROJECT-SPECIFIC CUT SIZE');
+                      const isDucting = (it.category || '').toLowerCase() === 'ducting' || !!it.ductingType || !!it.ducting_type || it.purchaseType === 'PROJECT-SPECIFIC DUCTING' || it.purchase_type === 'PROJECT-SPECIFIC DUCTING';
+                      const isFastener = !isDucting && ((it.category || '').toLowerCase() === 'fasteners' || /fastener|bolt|screw|nut|stud/i.test(`${it.productName || it.product_name || ''} ${it.itemDescription || it.item_description || ''} ${it.category || ''}`));
+                      const isCut = !isFastener && !isDucting && (it.supplyType === 'Cut Size' || it.supply_type === 'Cut Size' || it.purchaseType === 'PROJECT-SPECIFIC CUT SIZE' || it.purchase_type === 'PROJECT-SPECIFIC CUT SIZE');
                       const origDims = it.originalDimensions || it.sizeDimensions || it.size_dimensions || it.size || '—';
                       let rawCut = it.requiredCutSize || it.required_cut_size || '';
                       if (!rawCut && (it.cutLength || it.cut_length)) {
@@ -5653,7 +6533,7 @@
                       return `
                         <tr>
                           <td style="color:var(--text-dim); font-family:var(--font-mono);">${idx + 1}</td>
-                          <td><span class="sku-badge">${escapeHtml(it.sku)}</span></td>
+                          <td><span class="sku-badge">${it.sku ? escapeHtml(it.sku) : '<em style="color:#64748b;">Non-SKU</em>'}</span></td>
                           <td>
                             <div style="font-weight:600; color:var(--text-main);">${escapeHtml(it.productName || '—')}</div>
                             <div style="font-size:0.78rem; color:var(--text-muted); white-space:pre-wrap; margin-top:3px; line-height:1.45;">${escapeHtml(it.itemDescription || '')}</div>
@@ -5663,7 +6543,11 @@
                           <td>${escapeHtml(it.materialGrade || it.material || '-')}</td>
                           <td style="font-family:var(--font-mono); font-weight:600; color:#334155;">${escapeHtml(origDims)}</td>
                           <td>
-                            ${isFastener ? `
+                            ${isDucting ? `
+                              <span class="supply-badge" style="background:#e0f2fe; color:#0369a1; font-weight:700; font-size:0.75rem; letter-spacing:0.5px; padding:3px 8px; border-radius:4px; display:inline-block;">
+                                💨 ${escapeHtml(it.ductingType || it.ducting_type || 'DUCTING')}
+                              </span>
+                            ` : isFastener ? `
                               <span style="color:var(--text-muted); font-size:0.88rem;">—</span>
                             ` : `
                               <span class="supply-badge ${isCut ? 'cut-size' : 'full-size'}" style="font-weight:700; font-size:0.75rem; letter-spacing:0.5px; padding:3px 8px; border-radius:4px; display:inline-block;">
@@ -5680,7 +6564,7 @@
                               <span style="color:var(--text-muted); font-size:0.88rem;">—</span>
                             `}
                           </td>
-                          <td><span class="unit-badge">${escapeHtml(it.unit || 'Sheet')}</span></td>
+                          <td><span class="unit-badge">${escapeHtml(it.unit || (isDucting ? 'Pcs' : 'Sheet'))}</span></td>
                           <td style="text-align:right; font-weight:700; font-family:var(--font-mono);">${q}</td>
                           <td style="text-align:right; font-weight:600; font-family:var(--font-mono);">${priceStr}</td>
                           <td style="text-align:right; font-weight:700; color:#059669; font-family:var(--font-mono);">${totStr}</td>
@@ -6771,14 +7655,19 @@
 
   // Expose UI to global scope
   window.UI = UI;
+  window.PRCart = PRCart;
   window.DataService = DataService;
   window.formatDateDisplay = formatDateDisplay;
   window.formatCurrency = formatCurrency;
   window.renderUserManagement = () => UI.renderUserManagement();
 
   // Initialize once DOM is ready
-  document.addEventListener('DOMContentLoaded', () => {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+      UI.init();
+    });
+  } else {
     UI.init();
-  });
+  }
 
 })();

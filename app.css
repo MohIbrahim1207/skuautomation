@@ -4372,3 +4372,203 @@ html {
   font-size: 0.74rem;
   line-height: 1.4;
 }
+
+/* ==========================================================================
+   ENGINEERING DUCTING WORKFLOW & SKETCH STYLES
+   ========================================================================== */
+.ducting-type-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1.25rem;
+}
+
+.ducting-type-card {
+  background: var(--bg-surface);
+  border: 2px solid var(--border-color);
+  border-radius: 10px;
+  padding: 1.5rem 1rem;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ducting-type-card:hover {
+  border-color: #0284c7;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(2, 132, 199, 0.12);
+}
+
+.ducting-type-icon {
+  font-size: 2.2rem;
+  margin-bottom: 0.75rem;
+}
+
+.ducting-type-card h4 {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.ducting-type-card p {
+  margin: 0 0 1rem 0;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+  flex-grow: 1;
+}
+
+.ducting-sketch-box {
+  background: #ffffff;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1.25rem;
+  position: relative;
+  overflow: hidden;
+}
+
+.sketch-placeholder-container {
+  border: 2px dashed #94a3b8;
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 1.75rem 1.25rem;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.sketch-placeholder-title {
+  font-weight: 800;
+  font-size: 1.1rem;
+  color: #0f172a;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.sketch-placeholder-path {
+  font-size: 0.78rem;
+  color: #64748b;
+  font-family: var(--font-mono);
+  background: #e2e8f0;
+  padding: 2px 8px;
+  border-radius: 4px;
+  display: inline-block;
+  margin-top: 4px;
+}
+
+.sketch-variable-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: center;
+  margin-top: 1rem;
+}
+
+.badge-eng-var {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1d4ed8;
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 0.78rem;
+  padding: 3px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+  user-select: none;
+}
+
+.badge-eng-var:hover {
+  transform: translateY(-1px);
+  border-color: #0284c7;
+  background: #dbeafe;
+  box-shadow: 0 2px 4px rgba(2, 132, 199, 0.15);
+}
+
+.badge-eng-var.required-range {
+  background: #fffbeb;
+  border-color: #fde68a;
+  color: #b45309;
+}
+
+.badge-eng-var.required-range:hover {
+  background: #fef3c7;
+  border-color: #f59e0b;
+}
+
+.ducting-fields-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.ducting-input-unit-wrap {
+  display: flex;
+  align-items: center;
+  position: relative;
+}
+
+.ducting-input-unit-wrap input {
+  width: 100%;
+  padding: 0.5rem 2.8rem 0.5rem 0.65rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-family: var(--font-mono);
+  color: var(--text-main);
+  background: var(--bg-surface);
+  transition: border-color 0.2s, box-shadow 0.2s, background-color 0.2s;
+}
+
+.ducting-input-unit-wrap input:focus {
+  border-color: #0284c7;
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.2);
+}
+
+.ducting-input-unit-wrap input.input-focus-highlight {
+  border-color: #0284c7 !important;
+  box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.35) !important;
+  background-color: #f0f9ff !important;
+}
+
+.ducting-input-unit-wrap input.input-error {
+  border-color: #ef4444 !important;
+  background-color: #fff1f2 !important;
+  box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.2) !important;
+}
+
+.ducting-sketch-box.drag-over {
+  border-color: #0284c7 !important;
+  background: #f0f9ff !important;
+  box-shadow: inset 0 0 0 2px #0284c7 !important;
+}
+
+.ducting-unit-label {
+  position: absolute;
+  right: 0.65rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.ducting-field-help {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-top: 3px;
+}
+
+.ducting-field-help.highlight {
+  color: #d97706;
+  font-weight: 600;
+}
+
