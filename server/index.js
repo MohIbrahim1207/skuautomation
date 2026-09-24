@@ -27,14 +27,103 @@ if (!fs.existsSync(absStorageDir)) {
   fs.mkdirSync(absStorageDir, { recursive: true });
 }
 
+// Idempotent User Seed & Integrity Check (ADMIN: admin, EMPLOYEE: employee)
+const ensureSeedUsers = async () => {
+  try {
+    // 1. Admin account
+    const adminCheck = await query(`SELECT id, username, role, status, password_hash, must_change_password FROM users WHERE LOWER(username) = 'admin'`);
+    if (adminCheck.rowCount === 0) {
+      const adminHash = await bcrypt.hash('admin123', 10);
+      await query(
+        `INSERT INTO users (id, full_name, username, email, password_hash, role, status, must_change_password)
+         VALUES ('USR-001', 'System Administrator', 'admin', 'admin@flowforce.local', $1, 'ADMIN', 'Active', true)`,
+        [adminHash]
+      );
+      console.log('✅ [DB] Initialized default Admin user (admin)');
+    } else {
+      const admin = adminCheck.rows[0];
+      const updates = [];
+      const params = [];
+      let idx = 1;
+      if (admin.role !== 'ADMIN') {
+        updates.push(`role = $${idx++}`);
+        params.push('ADMIN');
+      }
+      if (admin.status !== 'Active') {
+        updates.push(`status = $${idx++}`);
+        params.push('Active');
+      }
+      const matchesAdmin = admin.password_hash ? await bcrypt.compare('admin123', admin.password_hash) : false;
+      if (!admin.password_hash || !admin.password_hash.startsWith('$2') || (admin.must_change_password && !matchesAdmin)) {
+        const adminHash = await bcrypt.hash('admin123', 10);
+        updates.push(`password_hash = $${idx++}`);
+        params.push(adminHash);
+        updates.push(`must_change_password = true`);
+      }
+      if (updates.length > 0) {
+        params.push(admin.id);
+        await query(`UPDATE users SET ${updates.join(', ')} WHERE id = $${idx}`, params);
+        console.log('✅ [DB] Verified and updated Admin account');
+      }
+    }
+
+    // 2. Employee account
+    const empCheck = await query(`SELECT id, username, role, status, password_hash, must_change_password FROM users WHERE LOWER(username) = 'employee'`);
+    if (empCheck.rowCount === 0) {
+      const empHash = await bcrypt.hash('employee123', 10);
+      await query(
+        `INSERT INTO users (id, full_name, username, email, password_hash, role, status, must_change_password)
+         VALUES ('USR-002', 'Employee', 'employee', 'employee@flowforce.local', $1, 'EMPLOYEE', 'Active', true)`,
+        [empHash]
+      );
+      console.log('✅ [DB] Initialized default Employee user (employee)');
+    } else {
+      const emp = empCheck.rows[0];
+      const updates = [];
+      const params = [];
+      let idx = 1;
+      if (emp.role !== 'EMPLOYEE') {
+        updates.push(`role = $${idx++}`);
+        params.push('EMPLOYEE');
+      }
+      if (emp.status !== 'Active') {
+        updates.push(`status = $${idx++}`);
+        params.push('Active');
+      }
+      const matchesEmp = emp.password_hash ? await bcrypt.compare('employee123', emp.password_hash) : false;
+      if (!emp.password_hash || !emp.password_hash.startsWith('$2') || (emp.must_change_password && !matchesEmp)) {
+        const empHash = await bcrypt.hash('employee123', 10);
+        updates.push(`password_hash = $${idx++}`);
+        params.push(empHash);
+        updates.push(`must_change_password = true`);
+      }
+      if (updates.length > 0) {
+        params.push(emp.id);
+        await query(`UPDATE users SET ${updates.join(', ')} WHERE id = $${idx}`, params);
+        console.log('✅ [DB] Verified and updated Employee account');
+      }
+    }
+
+    // 3. Ensure no NULL must_change_password
+    await query(`UPDATE users SET must_change_password = false WHERE must_change_password IS NULL`);
+    console.log('✅ [DB] User accounts verified in PostgreSQL');
+  } catch (err) {
+    console.warn('[DB User Seed Warning]:', err.message);
+  }
+};
+
 // Health Check API (supports both /health and /api/health)
 const handleHealthCheck = async (req, res) => {
   try {
-    await query('SELECT 1');
+    await ensureSeedUsers();
+    const userRes = await query(`SELECT id, username, role, status, (password_hash IS NOT NULL AND length(password_hash) > 0) AS has_hash, substring(password_hash from 1 for 4) AS hash_prefix, must_change_password FROM users ORDER BY id ASC`);
+    const masterCount = await query(`SELECT COUNT(*) FROM master_items`);
     res.json({
       status: 'ok',
       service: 'Flow Force Enterprise Portal API',
       database: 'connected',
+      masterItemsCount: parseInt(masterCount.rows[0].count, 10),
+      users: userRes.rows,
       timestamp: new Date().toISOString()
     });
   } catch (err) {
@@ -42,7 +131,7 @@ const handleHealthCheck = async (req, res) => {
       status: 'error',
       service: 'Flow Force Enterprise Portal API',
       database: 'unavailable',
-      message: 'Database connection unavailable. Please contact the administrator.',
+      message: err.message,
       timestamp: new Date().toISOString()
     });
   }
@@ -137,88 +226,6 @@ const runStartupMigrations = async () => {
     }
   } catch (err) {
     console.warn('[DB Migration Warning] Startup migration check:', err.message);
-  }
-};
-
-const ensureSeedUsers = async () => {
-  try {
-    // 1. Admin account
-    const adminCheck = await query(`SELECT id, username, role, status, password_hash, must_change_password FROM users WHERE LOWER(username) = 'admin'`);
-    if (adminCheck.rowCount === 0) {
-      const adminHash = await bcrypt.hash('admin123', 10);
-      await query(
-        `INSERT INTO users (id, full_name, username, email, password_hash, role, status, must_change_password)
-         VALUES ('USR-001', 'System Administrator', 'admin', 'admin@flowforce.local', $1, 'ADMIN', 'Active', true)`,
-        [adminHash]
-      );
-      console.log('✅ [DB] Initialized default Admin user (admin)');
-    } else {
-      const admin = adminCheck.rows[0];
-      const updates = [];
-      const params = [];
-      let idx = 1;
-      if (admin.role !== 'ADMIN') {
-        updates.push(`role = $${idx++}`);
-        params.push('ADMIN');
-      }
-      if (admin.status !== 'Active') {
-        updates.push(`status = $${idx++}`);
-        params.push('Active');
-      }
-      if (!admin.password_hash || !admin.password_hash.startsWith('$2')) {
-        const adminHash = await bcrypt.hash('admin123', 10);
-        updates.push(`password_hash = $${idx++}`);
-        params.push(adminHash);
-        updates.push(`must_change_password = true`);
-      }
-      if (updates.length > 0) {
-        params.push(admin.id);
-        await query(`UPDATE users SET ${updates.join(', ')} WHERE id = $${idx}`, params);
-        console.log('✅ [DB] Verified and updated Admin account status/role');
-      }
-    }
-
-    // 2. Employee account
-    const empCheck = await query(`SELECT id, username, role, status, password_hash, must_change_password FROM users WHERE LOWER(username) = 'employee'`);
-    if (empCheck.rowCount === 0) {
-      const empHash = await bcrypt.hash('employee123', 10);
-      await query(
-        `INSERT INTO users (id, full_name, username, email, password_hash, role, status, must_change_password)
-         VALUES ('USR-002', 'Employee', 'employee', 'employee@flowforce.local', $1, 'EMPLOYEE', 'Active', true)`,
-        [empHash]
-      );
-      console.log('✅ [DB] Initialized default Employee user (employee)');
-    } else {
-      const emp = empCheck.rows[0];
-      const updates = [];
-      const params = [];
-      let idx = 1;
-      if (emp.role !== 'EMPLOYEE') {
-        updates.push(`role = $${idx++}`);
-        params.push('EMPLOYEE');
-      }
-      if (emp.status !== 'Active') {
-        updates.push(`status = $${idx++}`);
-        params.push('Active');
-      }
-      if (!emp.password_hash || !emp.password_hash.startsWith('$2')) {
-        const empHash = await bcrypt.hash('employee123', 10);
-        updates.push(`password_hash = $${idx++}`);
-        params.push(empHash);
-        updates.push(`must_change_password = true`);
-      }
-      if (updates.length > 0) {
-        params.push(emp.id);
-        await query(`UPDATE users SET ${updates.join(', ')} WHERE id = $${idx}`, params);
-        console.log('✅ [DB] Verified and updated Employee account status/role');
-      }
-    }
-
-    // 3. Ensure no NULL must_change_password
-    await query(`UPDATE users SET must_change_password = false WHERE must_change_password IS NULL`);
-    console.log('✅ [DB] User accounts verified in PostgreSQL');
-  } catch (err) {
-    console.warn('[DB User Seed Warning]:', err.message);
   }
 };
 
