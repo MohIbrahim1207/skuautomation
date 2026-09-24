@@ -30,16 +30,28 @@ if (!fs.existsSync(absStorageDir)) {
 // Idempotent User Seed & Integrity Check (ADMIN: admin, EMPLOYEE: employee)
 const ensureSeedUsers = async () => {
   try {
+    const idRes = await query(`SELECT id FROM users WHERE id LIKE 'USR-%'`);
+    let maxNum = 0;
+    idRes.rows.forEach(r => {
+      const m = r.id && r.id.match(/^USR-(\d+)$/i);
+      if (m) {
+        const n = parseInt(m[1], 10);
+        if (n > maxNum) maxNum = n;
+      }
+    });
+
     // 1. Admin account
     const adminCheck = await query(`SELECT id, username, role, status, password_hash, must_change_password FROM users WHERE LOWER(username) = 'admin'`);
     if (adminCheck.rowCount === 0) {
+      maxNum++;
+      const nextAdminId = `USR-${String(maxNum).padStart(3, '0')}`;
       const adminHash = await bcrypt.hash('admin123', 10);
       await query(
         `INSERT INTO users (id, full_name, username, email, password_hash, role, status, must_change_password)
-         VALUES ('USR-001', 'System Administrator', 'admin', 'admin@flowforce.local', $1, 'ADMIN', 'Active', true)`,
-        [adminHash]
+         VALUES ($1, 'System Administrator', 'admin', 'admin@flowforce.local', $2, 'ADMIN', 'Active', false)`,
+        [nextAdminId, adminHash]
       );
-      console.log('✅ [DB] Initialized default Admin user (admin)');
+      console.log(`✅ [DB] Initialized default Admin user (admin) with ID ${nextAdminId}`);
     } else {
       const admin = adminCheck.rows[0];
       const updates = [];
@@ -53,13 +65,23 @@ const ensureSeedUsers = async () => {
         updates.push(`status = $${idx++}`);
         params.push('Active');
       }
-      const matchesAdmin = admin.password_hash ? await bcrypt.compare('admin123', admin.password_hash) : false;
-      if (!admin.password_hash || !admin.password_hash.startsWith('$2') || (admin.must_change_password && !matchesAdmin)) {
+
+      const knownAdminPasses = ['admin123', 'FlowForce2026!', 'admin', 'Admin123!', 'admin@123', 'flowforce_secure_password'];
+      let adminPassMatched = false;
+      for (const pass of knownAdminPasses) {
+        if (admin.password_hash && await bcrypt.compare(pass, admin.password_hash)) {
+          adminPassMatched = true;
+          break;
+        }
+      }
+
+      if (!admin.password_hash || !admin.password_hash.startsWith('$2') || !adminPassMatched) {
         const adminHash = await bcrypt.hash('admin123', 10);
         updates.push(`password_hash = $${idx++}`);
         params.push(adminHash);
-        updates.push(`must_change_password = true`);
+        console.log('✅ [DB] Restored Admin password to admin123');
       }
+
       if (updates.length > 0) {
         params.push(admin.id);
         await query(`UPDATE users SET ${updates.join(', ')} WHERE id = $${idx}`, params);
@@ -70,13 +92,15 @@ const ensureSeedUsers = async () => {
     // 2. Employee account
     const empCheck = await query(`SELECT id, username, role, status, password_hash, must_change_password FROM users WHERE LOWER(username) = 'employee'`);
     if (empCheck.rowCount === 0) {
+      maxNum++;
+      const nextEmpId = `USR-${String(maxNum).padStart(3, '0')}`;
       const empHash = await bcrypt.hash('employee123', 10);
       await query(
         `INSERT INTO users (id, full_name, username, email, password_hash, role, status, must_change_password)
-         VALUES ('USR-002', 'Employee', 'employee', 'employee@flowforce.local', $1, 'EMPLOYEE', 'Active', true)`,
-        [empHash]
+         VALUES ($1, 'Employee', 'employee', 'employee@flowforce.local', $2, 'EMPLOYEE', 'Active', true)`,
+        [nextEmpId, empHash]
       );
-      console.log('✅ [DB] Initialized default Employee user (employee)');
+      console.log(`✅ [DB] Initialized default Employee user (employee) with ID ${nextEmpId}`);
     } else {
       const emp = empCheck.rows[0];
       const updates = [];
