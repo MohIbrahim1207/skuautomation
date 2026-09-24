@@ -232,4 +232,12 @@ ALTER TABLE pr_items ALTER COLUMN sku DROP NOT NULL;
 ALTER TABLE purchase_requests DROP CONSTRAINT IF EXISTS purchase_requests_purchase_type_check;
 ALTER TABLE purchase_requests ADD CONSTRAINT purchase_requests_purchase_type_check CHECK (purchase_type IN ('STANDARD STOCK ITEM', 'PROJECT-SPECIFIC CUT SIZE', 'PROJECT-SPECIFIC DUCTING'));
 
+-- 15. SEED INITIAL USERS IF NOT EXISTS (Bcrypt cost 10)
+INSERT INTO users (id, full_name, username, email, password_hash, role, status, must_change_password)
+VALUES 
+  ('USR-001', 'System Administrator', 'admin', 'admin@flowforce.local', '$2a$10$jMQQbGYWhMzOGOZ1ZtCZ9enyo1vrQEk56VOHSD0bUPmhglwDxpXZK', 'ADMIN', 'Active', true),
+  ('USR-002', 'Employee', 'employee', 'employee@flowforce.local', '$2a$10$5Yct6.qI2hO7hZLU3Vw/weuVvgGb48rD0Z/RD2pPMfuLA6.dK6xLe', 'EMPLOYEE', 'Active', true)
+ON CONFLICT (username) DO NOTHING;
+
+
 

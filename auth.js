@@ -429,9 +429,11 @@
         throw new Error('New password must be at least 4 characters long.');
       }
       const token = this.getToken();
+      let updatedUser = this.getCurrentUser() || { id: userId };
+
       if (token) {
         try {
-          await fetch('/api/auth/change-password', {
+          const resp = await fetch('/api/auth/change-password', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -439,11 +441,31 @@
             },
             body: JSON.stringify({ newPassword: newPassword.trim() })
           });
+          if (!resp.ok) {
+            const errData = await resp.json().catch(() => ({}));
+            throw new Error(errData.error || 'Failed to update password on server.');
+          }
+          const data = await resp.json().catch(() => ({}));
+          if (data.user) {
+            updatedUser = data.user;
+          }
         } catch (e) {
-          console.warn('[AuthService] Backend password change failed:', e);
+          console.warn('[AuthService] Backend password change call:', e);
+          if (e.message && !e.message.includes('fetch')) {
+            throw e;
+          }
         }
       }
-      const updatedUser = UserService.setUserPassword(userId, newPassword);
+
+      updatedUser.mustChangePassword = false;
+
+      // Best effort sync to local mock storage
+      try {
+        if (typeof UserService !== 'undefined' && UserService.getUserById && UserService.getUserById(userId)) {
+          UserService.setUserPassword(userId, newPassword);
+        }
+      } catch (e) {}
+
       this.saveSession(updatedUser, token);
       return { success: true, user: this._sanitizeUser(updatedUser) };
     },

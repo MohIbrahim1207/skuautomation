@@ -111,12 +111,30 @@ router.post('/change-password', authenticateToken, async (req, res) => {
 
   try {
     const hash = await bcrypt.hash(newPassword.trim(), 10);
-    await query(
-      `UPDATE users SET password_hash = $1, must_change_password = false, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+    const result = await query(
+      `UPDATE users SET password_hash = $1, must_change_password = false, updated_at = CURRENT_TIMESTAMP WHERE id = $2
+       RETURNING id, full_name, username, email, role, status, must_change_password`,
       [hash, req.user.id]
     );
 
-    res.json({ success: true, message: 'Password updated successfully.' });
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'User account not found.' });
+    }
+
+    const u = result.rows[0];
+    res.json({
+      success: true,
+      message: 'Password updated successfully.',
+      user: {
+        id: u.id,
+        fullName: u.full_name,
+        username: u.username,
+        email: u.email,
+        role: u.role,
+        status: u.status,
+        mustChangePassword: u.must_change_password
+      }
+    });
   } catch (err) {
     console.error('[Auth API] Change password error:', err);
     res.status(500).json({ error: 'Database connection unavailable. Please contact the administrator.' });

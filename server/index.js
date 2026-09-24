@@ -8,6 +8,7 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
+const bcrypt = require('bcryptjs');
 const { query } = require('./db/pool');
 require('dotenv').config();
 
@@ -94,8 +95,130 @@ const runStartupMigrations = async () => {
       UPDATE pr_items SET remarks = '' WHERE remarks IS NULL;
     `);
     console.log('✅ [DB] Verified schema (Status: Available/Out of Stock, Supply Type: Full Size/Cut Size, Remarks)');
+
+    // Ensure initial seed users exist in PostgreSQL (ADMIN: admin, EMPLOYEE: employee)
+    await ensureSeedUsers();
+
+    // Check if master_items has items; populate from raw_materials_master.json if empty
+    const checkItems = await query('SELECT COUNT(*) FROM master_items');
+    if (parseInt(checkItems.rows[0].count, 10) === 0) {
+      const masterJsonPath = path.join(__dirname, '../raw_materials_master.json');
+      if (fs.existsSync(masterJsonPath)) {
+        const rawMaterials = JSON.parse(fs.readFileSync(masterJsonPath, 'utf8'));
+        for (const item of rawMaterials) {
+          await query(
+            `INSERT INTO master_items (
+              sku, product_name, item_description, category, sub_category, 
+              material, size, specification, unit, weight_kg, status, supply_type, remarks, brand, unit_price, source_sheet
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+            ON CONFLICT (sku) DO NOTHING`,
+            [
+              item.sku,
+              item.productName,
+              item.itemDescription || item.productName,
+              item.category || 'Raw Materials',
+              item.subCategory || null,
+              item.material || null,
+              item.size || null,
+              item.specification || null,
+              item.unit || 'Sheet',
+              item.weightKg || null,
+              (item.status === 'Out of Stock' ? 'Out of Stock' : 'Available'),
+              (item.supplyType === 'Cut Size' ? 'Cut Size' : 'Full Size'),
+              item.remarks || '',
+              item.brand || 'PT Persada Nusantara Steel',
+              item.unitPrice || null,
+              item.sourceSheet || 'Catalog'
+            ]
+          );
+        }
+        console.log(`✅ [DB] Populated master_items from raw_materials_master.json (${rawMaterials.length} items).`);
+      }
+    }
   } catch (err) {
     console.warn('[DB Migration Warning] Startup migration check:', err.message);
+  }
+};
+
+const ensureSeedUsers = async () => {
+  try {
+    // 1. Admin account
+    const adminCheck = await query(`SELECT id, username, role, status, password_hash, must_change_password FROM users WHERE LOWER(username) = 'admin'`);
+    if (adminCheck.rowCount === 0) {
+      const adminHash = await bcrypt.hash('admin123', 10);
+      await query(
+        `INSERT INTO users (id, full_name, username, email, password_hash, role, status, must_change_password)
+         VALUES ('USR-001', 'System Administrator', 'admin', 'admin@flowforce.local', $1, 'ADMIN', 'Active', true)`,
+        [adminHash]
+      );
+      console.log('✅ [DB] Initialized default Admin user (admin)');
+    } else {
+      const admin = adminCheck.rows[0];
+      const updates = [];
+      const params = [];
+      let idx = 1;
+      if (admin.role !== 'ADMIN') {
+        updates.push(`role = $${idx++}`);
+        params.push('ADMIN');
+      }
+      if (admin.status !== 'Active') {
+        updates.push(`status = $${idx++}`);
+        params.push('Active');
+      }
+      if (!admin.password_hash || !admin.password_hash.startsWith('$2')) {
+        const adminHash = await bcrypt.hash('admin123', 10);
+        updates.push(`password_hash = $${idx++}`);
+        params.push(adminHash);
+        updates.push(`must_change_password = true`);
+      }
+      if (updates.length > 0) {
+        params.push(admin.id);
+        await query(`UPDATE users SET ${updates.join(', ')} WHERE id = $${idx}`, params);
+        console.log('✅ [DB] Verified and updated Admin account status/role');
+      }
+    }
+
+    // 2. Employee account
+    const empCheck = await query(`SELECT id, username, role, status, password_hash, must_change_password FROM users WHERE LOWER(username) = 'employee'`);
+    if (empCheck.rowCount === 0) {
+      const empHash = await bcrypt.hash('employee123', 10);
+      await query(
+        `INSERT INTO users (id, full_name, username, email, password_hash, role, status, must_change_password)
+         VALUES ('USR-002', 'Employee', 'employee', 'employee@flowforce.local', $1, 'EMPLOYEE', 'Active', true)`,
+        [empHash]
+      );
+      console.log('✅ [DB] Initialized default Employee user (employee)');
+    } else {
+      const emp = empCheck.rows[0];
+      const updates = [];
+      const params = [];
+      let idx = 1;
+      if (emp.role !== 'EMPLOYEE') {
+        updates.push(`role = $${idx++}`);
+        params.push('EMPLOYEE');
+      }
+      if (emp.status !== 'Active') {
+        updates.push(`status = $${idx++}`);
+        params.push('Active');
+      }
+      if (!emp.password_hash || !emp.password_hash.startsWith('$2')) {
+        const empHash = await bcrypt.hash('employee123', 10);
+        updates.push(`password_hash = $${idx++}`);
+        params.push(empHash);
+        updates.push(`must_change_password = true`);
+      }
+      if (updates.length > 0) {
+        params.push(emp.id);
+        await query(`UPDATE users SET ${updates.join(', ')} WHERE id = $${idx}`, params);
+        console.log('✅ [DB] Verified and updated Employee account status/role');
+      }
+    }
+
+    // 3. Ensure no NULL must_change_password
+    await query(`UPDATE users SET must_change_password = false WHERE must_change_password IS NULL`);
+    console.log('✅ [DB] User accounts verified in PostgreSQL');
+  } catch (err) {
+    console.warn('[DB User Seed Warning]:', err.message);
   }
 };
 
