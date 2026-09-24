@@ -379,23 +379,40 @@ router.get('/:id', async (req, res) => {
   const { id } = req.params;
 
   try {
-    const prRes = await query(
-      `SELECT pr.*, 
-              p.project_code, p.project_name, p.job_location,
-              u_req.full_name AS requester_name, u_req.username AS requester_username,
-              u_app.full_name AS approver_name, u_app.username AS approver_username,
-              u_rej.full_name AS rejecter_name, u_rej.username AS rejecter_username
-       FROM purchase_requests pr
-       LEFT JOIN projects p ON p.id = pr.project_id
-       LEFT JOIN users u_req ON u_req.id = pr.created_by_user_id
-       LEFT JOIN users u_app ON u_app.id = pr.approved_by_user_id
-       LEFT JOIN users u_rej ON u_rej.id = pr.rejected_by_user_id
-       WHERE pr.id = $1`,
-      [id]
-    );
+    const isNumericId = /^\d+$/.test(String(id).trim());
+    const prRes = isNumericId
+      ? await query(
+          `SELECT pr.*, 
+                  p.project_code, p.project_name, p.job_location,
+                  u_req.full_name AS requester_name, u_req.username AS requester_username,
+                  u_app.full_name AS approver_name, u_app.username AS approver_username,
+                  u_rej.full_name AS rejecter_name, u_rej.username AS rejecter_username
+           FROM purchase_requests pr
+           LEFT JOIN projects p ON p.id = pr.project_id
+           LEFT JOIN users u_req ON u_req.id = pr.created_by_user_id
+           LEFT JOIN users u_app ON u_app.id = pr.approved_by_user_id
+           LEFT JOIN users u_rej ON u_rej.id = pr.rejected_by_user_id
+           WHERE pr.id = $1`,
+          [parseInt(id, 10)]
+        )
+      : await query(
+          `SELECT pr.*, 
+                  p.project_code, p.project_name, p.job_location,
+                  u_req.full_name AS requester_name, u_req.username AS requester_username,
+                  u_app.full_name AS approver_name, u_app.username AS approver_username,
+                  u_rej.full_name AS rejecter_name, u_rej.username AS rejecter_username
+           FROM purchase_requests pr
+           LEFT JOIN projects p ON p.id = pr.project_id
+           LEFT JOIN users u_req ON u_req.id = pr.created_by_user_id
+           LEFT JOIN users u_app ON u_app.id = pr.approved_by_user_id
+           LEFT JOIN users u_rej ON u_rej.id = pr.rejected_by_user_id
+           WHERE pr.pr_number = $1`,
+          [String(id).trim()]
+        );
 
     if (prRes.rowCount === 0) return res.status(404).json({ error: 'Purchase Request not found.' });
     const pr = prRes.rows[0];
+    const prNumericId = pr.id;
 
     // Backend authorization: Employee can only view their own PR
     if (req.user.role !== 'ADMIN' && pr.created_by_user_id !== req.user.id) {
@@ -404,7 +421,7 @@ router.get('/:id', async (req, res) => {
 
     const itemsRes = await query(
       `SELECT * FROM pr_items WHERE purchase_request_id = $1 ORDER BY id ASC`,
-      [id]
+      [prNumericId]
     );
 
     const historyRes = await query(
@@ -413,12 +430,12 @@ router.get('/:id', async (req, res) => {
        LEFT JOIN users u ON u.id = h.performed_by_user_id
        WHERE h.purchase_request_id = $1
        ORDER BY h.performed_at ASC`,
-      [id]
+      [prNumericId]
     );
 
     const docsRes = await query(
       `SELECT * FROM documents WHERE purchase_request_id = $1 ORDER BY id ASC`,
-      [id]
+      [prNumericId]
     );
 
     res.json({

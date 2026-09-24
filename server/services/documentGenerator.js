@@ -19,7 +19,10 @@ const BASE_STORAGE_DIR = process.env.STORAGE_DIR || './storage';
  */
 function ensureStorageDirectory(projectCode) {
   const cleanCode = (projectCode || 'GENERAL').replace(/[^a-zA-Z0-9_-]/g, '_');
-  const dir = path.join(process.cwd(), BASE_STORAGE_DIR, 'projects', cleanCode, 'purchase-requests');
+  const baseStorage = path.isAbsolute(BASE_STORAGE_DIR)
+    ? BASE_STORAGE_DIR
+    : path.resolve(process.cwd(), BASE_STORAGE_DIR);
+  const dir = path.join(baseStorage, 'projects', cleanCode, 'purchase-requests');
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
   }
@@ -518,9 +521,64 @@ function generatePdfFile(pr, items, filePath) {
   });
 }
 
+/**
+ * Safely checks all approved PRs, identifies any whose physical files
+ * are missing on server storage, and regenerates them into persistent storage.
+ * Does NOT modify business data, items, SKUs, or create duplicate document records.
+ */
+async function restoreMissingApprovedPrDocuments() {
+  const prRes = await query(
+    `SELECT id, pr_number, status, project_id, created_by_user_id 
+     FROM purchase_requests 
+     WHERE status = 'APPROVED'
+     ORDER BY id ASC`
+  );
+
+  const missingPrs = [];
+
+  for (const pr of prRes.rows) {
+    const docRes = await query(
+      `SELECT * FROM documents WHERE purchase_request_id = $1`,
+      [pr.id]
+    );
+
+    let needsRegen = docRes.rowCount === 0;
+    for (const doc of docRes.rows) {
+      const candidates = [
+        path.resolve(process.cwd(), doc.file_path_or_storage_key),
+        path.resolve(process.cwd(), doc.file_path_or_storage_key.replace(/^app[/\\]/, '')),
+        path.resolve('/', doc.file_path_or_storage_key)
+      ];
+      const exists = candidates.some(c => fs.existsSync(c));
+      if (!exists) {
+        needsRegen = true;
+        break;
+      }
+    }
+
+    if (needsRegen) {
+      missingPrs.push(pr);
+    }
+  }
+
+  const restored = [];
+  for (const pr of missingPrs) {
+    console.log(`[Storage Recovery] Regenerating missing documents for approved PR #${pr.id} (${pr.pr_number})...`);
+    await generatePrDocuments(pr.id);
+    restored.push({ prId: pr.id, prNumber: pr.pr_number });
+  }
+
+  return {
+    totalApprovedPrs: prRes.rowCount,
+    missingPrCount: missingPrs.length,
+    restoredPrs: restored
+  };
+}
+
 module.exports = {
   generatePrDocuments,
   generateExcelFile,
   generatePdfFile,
-  formatIdr
+  formatIdr,
+  restoreMissingApprovedPrDocuments
 };

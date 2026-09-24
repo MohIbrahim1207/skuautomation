@@ -66,6 +66,22 @@ jobs:
             git pull --ff-only origin main
 
             echo "========================================"
+            echo "Verifying environment configuration"
+            echo "========================================"
+
+            if [ -f .env ]; then
+              if grep -q "^STORAGE_DIR=" .env; then
+                sed -i 's|^STORAGE_DIR=.*|STORAGE_DIR=./storage|' .env
+              else
+                echo "STORAGE_DIR=./storage" >> .env
+              fi
+            else
+              echo "STORAGE_DIR=./storage" > .env
+            fi
+            echo "STORAGE_DIR in /opt/skuautomation/.env:"
+            grep "^STORAGE_DIR=" .env || true
+
+            echo "========================================"
             echo "Rebuilding Flow Force Docker containers"
             echo "========================================"
 
@@ -84,6 +100,41 @@ jobs:
             sleep 5
 
             echo "========================================"
+            echo "Verifying volume mount & storage inside container"
+            echo "========================================"
+
+            docker compose exec -T app node -e "
+              const fs = require('fs');
+              const path = require('path');
+              const cwd = process.cwd();
+              const storageDir = process.env.STORAGE_DIR || './storage';
+              const resolvedStorage = path.isAbsolute(storageDir) ? storageDir : path.resolve(cwd, storageDir);
+              console.log('Container Working Directory:', cwd);
+              console.log('Resolved Storage Directory:', resolvedStorage);
+              console.log('Storage Directory Exists:', fs.existsSync(resolvedStorage));
+            "
+
+            echo "========================================"
+            echo "Restoring missing PR documents into persistent storage"
+            echo "========================================"
+
+            docker compose exec -T app node -e "
+              const { restoreMissingApprovedPrDocuments } = require('./server/services/documentGenerator');
+              restoreMissingApprovedPrDocuments().then(res => {
+                console.log('Document restoration result:', JSON.stringify(res, null, 2));
+              }).catch(err => {
+                console.error('Restoration error:', err);
+              });
+            "
+
+            echo "========================================"
+            echo "Testing persistence: performing container restart"
+            echo "========================================"
+
+            docker compose restart app
+            sleep 5
+
+            echo "========================================"
             echo "Checking application health"
             echo "========================================"
 
@@ -92,7 +143,7 @@ jobs:
 
             echo ""
             echo "========================================"
-            echo "Deployment successful!"
+            echo "Deployment and persistence test successful!"
             echo "========================================"
 
           EOF

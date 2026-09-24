@@ -22,7 +22,9 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Ensure base storage directory exists
 const STORAGE_DIR = process.env.STORAGE_DIR || './storage';
-const absStorageDir = path.join(process.cwd(), STORAGE_DIR);
+const absStorageDir = path.isAbsolute(STORAGE_DIR)
+  ? STORAGE_DIR
+  : path.resolve(process.cwd(), STORAGE_DIR);
 if (!fs.existsSync(absStorageDir)) {
   fs.mkdirSync(absStorageDir, { recursive: true });
 }
@@ -260,6 +262,14 @@ const runStartupMigrations = async () => {
         }
         console.log(`✅ [DB] Populated master_items from raw_materials_master.json (${rawMaterials.length} items).`);
       }
+    }
+
+    // Verify storage documents for approved PRs and safely regenerate any missing files into persistent storage
+    try {
+      const { restoreMissingApprovedPrDocuments } = require('./services/documentGenerator');
+      await restoreMissingApprovedPrDocuments();
+    } catch (storageErr) {
+      console.warn('[Storage Check Warning]:', storageErr.message);
     }
   } catch (err) {
     console.warn('[DB Migration Warning] Startup migration check:', err.message);
