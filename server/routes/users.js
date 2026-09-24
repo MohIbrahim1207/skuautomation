@@ -38,6 +38,26 @@ router.get('/', async (req, res) => {
   }
 });
 
+// GET /api/users/check-username?username=...
+router.get('/check-username', async (req, res) => {
+  const cleanUsername = (req.query.username || '').trim().toLowerCase();
+
+  if (!cleanUsername) {
+    return res.status(400).json({ error: 'Username is required.' });
+  }
+
+  try {
+    const check = await query('SELECT 1 FROM users WHERE LOWER(username) = $1', [cleanUsername]);
+    res.json({
+      available: check.rowCount === 0,
+      username: cleanUsername
+    });
+  } catch (err) {
+    console.error('[Users API] Check username error:', err);
+    res.status(500).json({ error: 'Database connection unavailable. Please contact the administrator.' });
+  }
+});
+
 // POST /api/users - Add Employee
 router.post('/', async (req, res) => {
   const { fullName, username, email, password, status } = req.body;

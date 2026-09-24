@@ -3863,6 +3863,7 @@
       const titleEl = document.getElementById('modalUserFormTitle');
       const subEl = document.getElementById('modalUserFormSubtitle');
       const errAlert = document.getElementById('userFormErrorAlert');
+      const errMsg = document.getElementById('userFormErrorMsg');
       const passGroup = document.getElementById('ufPasswordGroup');
       const passInput = document.getElementById('ufInitialPassword');
       const statusSelect = document.getElementById('ufStatus');
@@ -3901,10 +3902,41 @@
         if (btnSave) btnSave.textContent = 'Save Employee';
       }
 
+      // Real-time backend username availability check against PostgreSQL
+      const usernameInput = document.getElementById('ufUsername');
+      if (usernameInput && !usernameInput._availabilityBound) {
+        usernameInput._availabilityBound = true;
+        usernameInput.addEventListener('blur', async () => {
+          const currentId = document.getElementById('ufUserId').value;
+          if (currentId) return; // Only check availability on new employee
+          const rawVal = usernameInput.value.trim();
+          if (!rawVal) return;
+          const token = window.AuthService ? window.AuthService.getToken() : '';
+          try {
+            const resp = await fetch(`/api/users/check-username?username=${encodeURIComponent(rawVal)}`, {
+              headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (resp.ok) {
+              const data = await resp.json();
+              if (!data.available) {
+                if (errAlert && errMsg) {
+                  errMsg.textContent = `Username '${data.username}' is already taken. Please choose another.`;
+                  errAlert.style.display = 'flex';
+                }
+              } else {
+                if (errAlert && errMsg && errMsg.textContent.includes('already taken')) {
+                  errAlert.style.display = 'none';
+                }
+              }
+            }
+          } catch (e) {}
+        });
+      }
+
       modal.classList.add('active');
     },
 
-    handleSaveUser() {
+    async handleSaveUser() {
       const id = document.getElementById('ufUserId').value;
       const fullName = document.getElementById('ufFullName').value.trim();
       const username = document.getElementById('ufUsername').value.trim();
@@ -3915,30 +3947,55 @@
 
       const errAlert = document.getElementById('userFormErrorAlert');
       const errMsg = document.getElementById('userFormErrorMsg');
+      if (errAlert) errAlert.style.display = 'none';
 
       try {
         if (!fullName) throw new Error('Full Name is required.');
         if (!username) throw new Error('Username is required.');
 
+        const token = window.AuthService ? window.AuthService.getToken() : '';
+
         if (id) {
-          // Edit existing user
-          window.UserService.updateUser(id, { fullName, username, email, role, status });
+          // Edit existing user in PostgreSQL
+          const resp = await fetch(`/api/users/${encodeURIComponent(id)}`, {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ fullName, username, email, status })
+          });
+          if (!resp.ok) {
+            const errData = await resp.json().catch(() => ({}));
+            throw new Error(errData.error || 'Failed to update user on server.');
+          }
           this.showToast('User Updated', `Account details for ${fullName} updated successfully.`);
         } else {
-          // Add new employee
+          // Add new employee in PostgreSQL
           if (!initialPassword) throw new Error('Password is required.');
-          window.UserService.createUser({
-            fullName,
-            username,
-            email,
-            role: 'EMPLOYEE', // strictly EMPLOYEE
-            status,
-            password: initialPassword
+          const resp = await fetch('/api/users', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+              fullName,
+              username,
+              email: email || `${username.toLowerCase()}@flowforce.local`,
+              role: 'EMPLOYEE',
+              status,
+              password: initialPassword
+            })
           });
+          if (!resp.ok) {
+            const errData = await resp.json().catch(() => ({}));
+            throw new Error(errData.error || 'Failed to create employee on server.');
+          }
           this.showToast('Employee Added', `Employee account for ${fullName} created successfully.`);
         }
         this.closeAllModals();
-        this.renderUsersTable();
+        await this.renderUsersTable();
       } catch (err) {
         if (errAlert && errMsg) {
           errMsg.textContent = err.message;
@@ -3963,7 +4020,7 @@
       modal.classList.add('active');
     },
 
-    handleConfirmResetPassword() {
+    async handleConfirmResetPassword() {
       const id = document.getElementById('rpUserId').value;
       const newTempPass = document.getElementById('rpNewTempPass').value.trim();
 
@@ -3973,17 +4030,30 @@
       }
 
       try {
-        const { user } = window.UserService.resetPassword(id, newTempPass);
+        const token = window.AuthService ? window.AuthService.getToken() : '';
+        const resp = await fetch(`/api/users/${encodeURIComponent(id)}/reset-password`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ tempPassword: newTempPass })
+        });
+        if (!resp.ok) {
+          const errData = await resp.json().catch(() => ({}));
+          throw new Error(errData.error || 'Failed to reset password on server.');
+        }
+        const data = await resp.json();
         this.closeAllModals();
-        this.showToast('Password Reset', `Temporary password set for ${user.fullName}. User must change it on next login.`);
-        this.renderUsersTable();
+        this.showToast('Password Reset', data.message || 'Temporary password set successfully.');
+        await this.renderUsersTable();
       } catch (err) {
         alert('Error resetting password: ' + err.message);
       }
     },
 
     async handleToggleUserStatus(userId) {
-      const user = window.UserService.getUserById(userId);
+      const user = (this.cachedUsers || []).find(u => u.id === userId) || (window.UserService && window.UserService.getUserById ? window.UserService.getUserById(userId) : null);
       if (!user) return;
 
       const newStatus = user.status === 'Active' ? 'Disabled' : 'Active';
@@ -3991,7 +4061,7 @@
 
       // Check preventing disabling the currently logged-in last Admin account or zero active admins
       if (user.role === 'ADMIN' && newStatus === 'Disabled') {
-        const users = window.UserService.getUsers();
+        const users = this.cachedUsers || (window.UserService ? window.UserService.getUsers() : []);
         const activeAdmins = users.filter(u => u.role === 'ADMIN' && u.status === 'Active');
         if (activeAdmins.length <= 1) {
           alert('Cannot disable the only active Administrator account. The system must always have at least one active Admin.');
@@ -4009,22 +4079,54 @@
       }
 
       try {
-        window.UserService.setUserStatus(userId, newStatus);
+        const token = window.AuthService ? window.AuthService.getToken() : '';
+        const resp = await fetch(`/api/users/${encodeURIComponent(userId)}/status`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ status: newStatus })
+        });
+        if (!resp.ok) {
+          const errData = await resp.json().catch(() => ({}));
+          throw new Error(errData.error || 'Failed to update user status on server.');
+        }
         this.showToast(`User ${actionLabel}d`, `Account "${user.fullName}" is now ${newStatus}.`);
-        this.renderUsersTable();
+        await this.renderUsersTable();
       } catch (err) {
         alert(err.message);
       }
     },
 
-    renderUsersTable() {
+    async renderUsersTable() {
       // Robust selector finding tbody
       const tbody = document.getElementById('usersTableTbody') || 
                     document.querySelector('#users table tbody') || 
                     document.querySelector('#usersTable tbody') ||
                     document.querySelector('#view-users table tbody');
 
-      const users = window.UserService ? window.UserService.getUsers() : [];
+      const token = window.AuthService ? window.AuthService.getToken() : '';
+      let users = [];
+
+      try {
+        const resp = await fetch('/api/users', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (resp.ok) {
+          users = await resp.json();
+          this.cachedUsers = users;
+          if (window.UserService) {
+            window.UserService._cachedLiveUsers = users;
+          }
+        } else {
+          console.warn('[Users UI] Failed to fetch users from server, status:', resp.status);
+          users = this.cachedUsers || [];
+        }
+      } catch (err) {
+        console.warn('[Users UI] Network error fetching users:', err);
+        users = this.cachedUsers || [];
+      }
 
       // Update KPI counters
       const elTotal = document.getElementById('kpiTotalUsers');
@@ -4115,7 +4217,7 @@
       tbody.querySelectorAll('.btn-action-user-edit').forEach(btn => {
         btn.addEventListener('click', () => {
           const uid = btn.getAttribute('data-user-id');
-          const found = window.UserService.getUserById(uid);
+          const found = (this.cachedUsers || []).find(u => u.id === uid) || (window.UserService && window.UserService.getUserById ? window.UserService.getUserById(uid) : null);
           if (found) this.openUserModal(found);
         });
       });
@@ -4123,7 +4225,7 @@
       tbody.querySelectorAll('.btn-action-user-reset').forEach(btn => {
         btn.addEventListener('click', () => {
           const uid = btn.getAttribute('data-user-id');
-          const found = window.UserService.getUserById(uid);
+          const found = (this.cachedUsers || []).find(u => u.id === uid) || (window.UserService && window.UserService.getUserById ? window.UserService.getUserById(uid) : null);
           if (found) this.openResetPasswordModal(found);
         });
       });

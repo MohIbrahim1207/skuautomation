@@ -85,6 +85,8 @@
   // 2. USER SERVICE - USER ACCOUNT MANAGEMENT
   // -------------------------------------------------------------------------
   const UserService = {
+    _cachedLiveUsers: null,
+
     init() {
       const existing = localStorage.getItem(AUTH_STORAGE_KEYS.USERS);
       if (!existing || !existing.trim()) {
@@ -97,48 +99,79 @@
           localStorage.setItem(AUTH_STORAGE_KEYS.USERS, JSON.stringify(INITIAL_SEED_USERS));
           return INITIAL_SEED_USERS;
         }
-        // Normalize any seeded employee name if previously saved as 'Standard Employee'
-        let modified = false;
-        users.forEach(u => {
-          if (u.username === 'employee' && u.fullName === 'Standard Employee') {
-            u.fullName = 'Employee';
-            modified = true;
-          }
-        });
-        if (modified) {
-          localStorage.setItem(AUTH_STORAGE_KEYS.USERS, JSON.stringify(users));
-        }
         return users;
       } catch (e) {
-        console.error('[UserService] Error parsing stored users; restoring seed defaults', e);
         localStorage.setItem(AUTH_STORAGE_KEYS.USERS, JSON.stringify(INITIAL_SEED_USERS));
         return INITIAL_SEED_USERS;
       }
     },
 
+    async fetchUsers() {
+      const token = AuthService.getToken();
+      if (token) {
+        try {
+          const resp = await fetch('/api/users', {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (resp.ok) {
+            const data = await resp.json();
+            this._cachedLiveUsers = data;
+            return data;
+          }
+        } catch (e) {
+          console.warn('[UserService] Failed to fetch users from backend:', e);
+        }
+      }
+      return this._cachedLiveUsers || [];
+    },
+
     getUsers() {
-      return this.init();
+      return this._cachedLiveUsers || this.init();
     },
 
     getUserById(id) {
       if (!id) return null;
-      const users = this.getUsers();
+      if (this._cachedLiveUsers && Array.isArray(this._cachedLiveUsers)) {
+        const found = this._cachedLiveUsers.find(u => u.id === id);
+        if (found) return found;
+      }
+      const users = this.init();
       return users.find(u => u.id === id) || null;
     },
 
     getUserByUsername(username) {
       if (!username) return null;
       const clean = username.trim().toLowerCase();
-      const users = this.getUsers();
+      if (this._cachedLiveUsers && Array.isArray(this._cachedLiveUsers)) {
+        const found = this._cachedLiveUsers.find(u => u.username.toLowerCase() === clean || (u.email && u.email.toLowerCase() === clean));
+        if (found) return found;
+      }
+      const users = this.init();
       return users.find(u => u.username.toLowerCase() === clean || (u.email && u.email.toLowerCase() === clean)) || null;
+    },
+
+    async checkUsername(username) {
+      const clean = (username || '').trim().toLowerCase();
+      if (!clean) return { available: false, username: clean };
+      const token = AuthService.getToken();
+      if (token) {
+        try {
+          const resp = await fetch(`/api/users/check-username?username=${encodeURIComponent(clean)}`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+          });
+          if (resp.ok) {
+            return await resp.json();
+          }
+        } catch (e) {}
+      }
+      return { available: true, username: clean };
     },
 
     saveUsers(users) {
       localStorage.setItem(AUTH_STORAGE_KEYS.USERS, JSON.stringify(users));
     },
 
-    createUser({ fullName, username, email, role, password, status }) {
-      const users = this.getUsers();
+    async createUser({ fullName, username, email, role, password, status }) {
       const cleanUsername = (username || '').trim().toLowerCase();
       const cleanEmail = (email || '').trim().toLowerCase();
       const cleanFullName = (fullName || '').trim();
@@ -147,179 +180,112 @@
       if (!cleanUsername) throw new Error('Username is required.');
       if (!password || !password.trim()) throw new Error('Password is required.');
 
-      // Validate email format if provided
-      if (cleanEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
-        throw new Error('Please enter a valid corporate email address.');
-      }
+      const token = AuthService.getToken();
+      if (token) {
+        const resp = await fetch('/api/users', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            fullName: cleanFullName,
+            username: cleanUsername,
+            email: cleanEmail || `${cleanUsername}@flowforce.local`,
+            role: 'EMPLOYEE',
+            status: (status === USER_STATUS.DISABLED) ? 'Disabled' : 'Active',
+            password: password.trim()
+          })
+        });
 
-      // Check unique username
-      const duplicateUsername = users.find(u => u.username.toLowerCase() === cleanUsername);
-      if (duplicateUsername) {
-        throw new Error(`Username '${cleanUsername}' is already taken. Please choose another.`);
-      }
-
-      // Check unique email if provided
-      if (cleanEmail) {
-        const duplicateEmail = users.find(u => u.email && u.email.toLowerCase() === cleanEmail);
-        if (duplicateEmail) {
-          throw new Error(`Email '${cleanEmail}' is already registered.`);
+        if (!resp.ok) {
+          const errData = await resp.json().catch(() => ({}));
+          throw new Error(errData.error || 'Failed to create user on server.');
         }
-      }
 
-      // Role must strictly be EMPLOYEE for employee creation
-      const assignedRole = (role === ROLES.ADMIN) ? ROLES.ADMIN : ROLES.EMPLOYEE;
-
-      // Generate sequential ID based on highest existing ID
-      let maxNum = 0;
-      users.forEach(u => {
-        const match = u.id && u.id.match(/^USR-(\d+)$/i);
-        if (match) {
-          const n = parseInt(match[1], 10);
-          if (n > maxNum) maxNum = n;
+        const newUser = await resp.json();
+        if (this._cachedLiveUsers) {
+          this._cachedLiveUsers.push(newUser);
         }
-      });
-      const id = `USR-${String(maxNum + 1).padStart(3, '0')}`;
-
-      const newUser = {
-        id,
-        fullName: cleanFullName,
-        username: cleanUsername,
-        email: cleanEmail || `${cleanUsername}@flowforce.local`,
-        role: assignedRole,
-        status: (status === USER_STATUS.DISABLED) ? USER_STATUS.DISABLED : USER_STATUS.ACTIVE,
-        passwordHash: pocHash(password.trim()),
-        mustChangePassword: true,
-        createdAt: new Date().toISOString()
-      };
-
-      users.push(newUser);
-      this.saveUsers(users);
-      return newUser;
+        return newUser;
+      }
+      throw new Error('Authentication required.');
     },
 
-    updateUser(id, { fullName, username, email, role, status }) {
-      const users = this.getUsers();
-      const user = users.find(u => u.id === id);
-      if (!user) throw new Error('User not found.');
+    async updateUser(id, { fullName, username, email, role, status }) {
+      const token = AuthService.getToken();
+      if (token) {
+        const resp = await fetch(`/api/users/${encodeURIComponent(id)}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({
+            fullName: (fullName || '').trim(),
+            username: (username || '').trim().toLowerCase(),
+            email: (email || '').trim().toLowerCase(),
+            status: status || 'Active'
+          })
+        });
 
-      const cleanUsername = (username || '').trim().toLowerCase();
-      const cleanEmail = (email || '').trim().toLowerCase();
-      const cleanFullName = (fullName || '').trim();
-
-      // Check duplicate username with another user
-      if (cleanUsername && cleanUsername !== user.username.toLowerCase()) {
-        const duplicate = users.find(u => u.id !== id && u.username.toLowerCase() === cleanUsername);
-        if (duplicate) throw new Error(`Username '${cleanUsername}' is already taken.`);
-        user.username = cleanUsername;
-      }
-
-      // Check duplicate email with another user
-      if (cleanEmail && cleanEmail !== (user.email || '').toLowerCase()) {
-        const duplicate = users.find(u => u.id !== id && u.email && u.email.toLowerCase() === cleanEmail);
-        if (duplicate) throw new Error(`Email '${cleanEmail}' is already taken.`);
-        user.email = cleanEmail;
-      }
-
-      if (cleanFullName) user.fullName = cleanFullName;
-
-      // Role change check
-      if (role && role !== user.role) {
-        if (user.role === ROLES.ADMIN && role !== ROLES.ADMIN) {
-          const activeAdmins = users.filter(u => u.role === ROLES.ADMIN && u.status === USER_STATUS.ACTIVE);
-          if (activeAdmins.length <= 1) {
-            throw new Error('Cannot change role of the only active Administrator account.');
-          }
+        if (!resp.ok) {
+          const errData = await resp.json().catch(() => ({}));
+          throw new Error(errData.error || 'Failed to update user on server.');
         }
-        if (ROLES[role]) user.role = role;
+
+        const result = await resp.json();
+        return result;
       }
-
-      // Status change check
-      if (status && (status === USER_STATUS.ACTIVE || status === USER_STATUS.DISABLED)) {
-        if (user.role === ROLES.ADMIN && status === USER_STATUS.DISABLED) {
-          const activeAdmins = users.filter(u => u.role === ROLES.ADMIN && u.status === USER_STATUS.ACTIVE);
-          if (activeAdmins.length <= 1) {
-            throw new Error('Cannot disable the only active Administrator account.');
-          }
-        }
-        user.status = status;
-      }
-
-      this.saveUsers(users);
-
-      // If active session belongs to this user, update active session
-      const currentSession = AuthService.getCurrentUser();
-      if (currentSession && currentSession.id === id) {
-        if (user.status === USER_STATUS.DISABLED) {
-          AuthService.logout();
-        } else {
-          AuthService.saveSession(user);
-        }
-      }
-
-      return user;
+      throw new Error('Authentication required.');
     },
 
-    setUserStatus(id, newStatus) {
-      if (newStatus !== USER_STATUS.ACTIVE && newStatus !== USER_STATUS.DISABLED) {
-        throw new Error('Invalid user status.');
-      }
-      const users = this.getUsers();
-      const user = users.find(u => u.id === id);
-      if (!user) throw new Error('User not found.');
+    async setUserStatus(id, newStatus) {
+      const token = AuthService.getToken();
+      if (token) {
+        const resp = await fetch(`/api/users/${encodeURIComponent(id)}/status`, {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ status: newStatus })
+        });
 
-      // Prevent disabling the primary admin if it's the only active admin
-      if (user.role === ROLES.ADMIN && newStatus === USER_STATUS.DISABLED) {
-        const activeAdmins = users.filter(u => u.role === ROLES.ADMIN && u.status === USER_STATUS.ACTIVE);
-        if (activeAdmins.length <= 1) {
-          throw new Error('Cannot disable the only active Administrator account. The system must always have at least one active Admin.');
+        if (!resp.ok) {
+          const errData = await resp.json().catch(() => ({}));
+          throw new Error(errData.error || 'Failed to update user status on server.');
         }
+
+        return await resp.json();
       }
-
-      user.status = newStatus;
-      this.saveUsers(users);
-
-      // If disabling currently logged in user, terminate their session
-      const currentSession = AuthService.getCurrentUser();
-      if (currentSession && currentSession.id === id && newStatus === USER_STATUS.DISABLED) {
-        AuthService.logout();
-      }
-
-      return user;
+      throw new Error('Authentication required.');
     },
 
-    resetPassword(id, newPassword) {
-      const users = this.getUsers();
-      const user = users.find(u => u.id === id);
-      if (!user) throw new Error('User not found.');
+    async resetPassword(id, newPassword) {
+      const token = AuthService.getToken();
+      if (token) {
+        const resp = await fetch(`/api/users/${encodeURIComponent(id)}/reset-password`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ tempPassword: newPassword })
+        });
 
-      const targetPass = newPassword || 'FlowForce2026!';
-      user.passwordHash = pocHash(targetPass);
-      user.mustChangePassword = true;
+        if (!resp.ok) {
+          const errData = await resp.json().catch(() => ({}));
+          throw new Error(errData.error || 'Failed to reset password on server.');
+        }
 
-      this.saveUsers(users);
-      return { user, tempPassword: targetPass };
+        return await resp.json();
+      }
+      throw new Error('Authentication required.');
     },
 
     setUserPassword(id, newPassword) {
-      if (!newPassword || newPassword.trim().length < 4) {
-        throw new Error('Password must be at least 4 characters long.');
-      }
-      const users = this.getUsers();
-      const user = users.find(u => u.id === id);
-      if (!user) throw new Error('User not found.');
-
-      user.passwordHash = pocHash(newPassword.trim());
-      user.mustChangePassword = false;
-
-      this.saveUsers(users);
-
-      // Refresh session if same user
-      const currentSession = AuthService.getCurrentUser();
-      if (currentSession && currentSession.id === id) {
-        AuthService.saveSession(user);
-      }
-
-      return user;
+      return { id };
     }
   };
 
