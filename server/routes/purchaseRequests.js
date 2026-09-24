@@ -368,7 +368,7 @@ router.post('/', async (req, res) => {
   } catch (err) {
     await client.query('ROLLBACK');
     console.error('[PR API] Create error:', err);
-    res.status(500).json({ error: 'Database connection unavailable. Please contact the administrator.' });
+    res.status(500).json({ error: err.message || 'Database connection unavailable. Please contact the administrator.' });
   } finally {
     client.release();
   }
