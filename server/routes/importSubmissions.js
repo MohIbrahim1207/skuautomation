@@ -198,14 +198,20 @@ router.post('/', authenticateToken, async (req, res) => {
     res.status(201).json({
       success: true,
       importId: submission.import_id,
+      import_id: submission.import_id,
       message: `Import submission ${submission.import_id} created successfully and queued for Admin review.`,
       submission: {
         id: submission.id,
         importId: submission.import_id,
+        import_id: submission.import_id,
         fileName: submission.file_name,
+        file_name: submission.file_name,
         uploadedByUsername: submission.uploaded_by_username,
+        uploaded_by_username: submission.uploaded_by_username,
         uploadedAt: submission.created_at,
+        created_at: submission.created_at,
         totalRows: submission.total_rows,
+        total_rows: submission.total_rows,
         status: submission.status
       }
     });
@@ -262,19 +268,36 @@ router.get('/', authenticateToken, async (req, res) => {
     const submissions = result.rows.map(r => ({
       id: r.id,
       importId: r.import_id,
+      import_id: r.import_id,
       fileName: r.file_name,
+      file_name: r.file_name,
       uploadedByUserId: r.uploaded_by_user_id,
+      uploaded_by_user_id: r.uploaded_by_user_id,
       uploadedByUsername: r.uploaded_by_username,
+      uploaded_by_username: r.uploaded_by_username,
       uploadedByFullName: r.uploaded_by_full_name || r.uploaded_by_username,
+      uploaded_by_full_name: r.uploaded_by_full_name || r.uploaded_by_username,
       status: r.status,
       totalRows: r.total_rows,
+      total_rows: r.total_rows,
+      approvedByUserId: r.approved_by_user_id,
+      approved_by_user_id: r.approved_by_user_id,
       approvedByUsername: r.approved_by_username,
+      approved_by_username: r.approved_by_username,
       approvedAt: r.approved_at,
+      approved_at: r.approved_at,
+      rejectedByUserId: r.rejected_by_user_id,
+      rejected_by_user_id: r.rejected_by_user_id,
       rejectedByUsername: r.rejected_by_username,
+      rejected_by_username: r.rejected_by_username,
       rejectedAt: r.rejected_at,
+      rejected_at: r.rejected_at,
       rejectionReason: r.rejection_reason,
+      rejection_reason: r.rejection_reason,
       createdAt: r.created_at,
-      updatedAt: r.updated_at
+      created_at: r.created_at,
+      updatedAt: r.updated_at,
+      updated_at: r.updated_at
     }));
 
     res.json(submissions);
@@ -323,48 +346,85 @@ router.get('/:id', authenticateToken, async (req, res) => {
       submission: {
         id: sub.id,
         importId: sub.import_id,
+        import_id: sub.import_id,
         fileName: sub.file_name,
+        file_name: sub.file_name,
         uploadedByUserId: sub.uploaded_by_user_id,
+        uploaded_by_user_id: sub.uploaded_by_user_id,
         uploadedByUsername: sub.uploaded_by_username,
+        uploaded_by_username: sub.uploaded_by_username,
         uploadedByFullName: sub.uploaded_by_full_name || sub.uploaded_by_username,
+        uploaded_by_full_name: sub.uploaded_by_full_name || sub.uploaded_by_username,
         status: sub.status,
         totalRows: sub.total_rows,
+        total_rows: sub.total_rows,
+        approvedByUserId: sub.approved_by_user_id,
+        approved_by_user_id: sub.approved_by_user_id,
         approvedByUsername: sub.approved_by_username,
+        approved_by_username: sub.approved_by_username,
         approvedAt: sub.approved_at,
+        approved_at: sub.approved_at,
+        rejectedByUserId: sub.rejected_by_user_id,
+        rejected_by_user_id: sub.rejected_by_user_id,
         rejectedByUsername: sub.rejected_by_username,
+        rejected_by_username: sub.rejected_by_username,
         rejectedAt: sub.rejected_at,
+        rejected_at: sub.rejected_at,
         rejectionReason: sub.rejection_reason,
-        createdAt: sub.created_at
+        rejection_reason: sub.rejection_reason,
+        createdAt: sub.created_at,
+        created_at: sub.created_at,
+        updatedAt: sub.updated_at,
+        updated_at: sub.updated_at
       },
       items: itemsRes.rows.map(it => ({
         id: it.id,
         rowNumber: it.row_number,
+        row_number: it.row_number,
         sourceSheet: it.source_sheet,
+        source_sheet: it.source_sheet,
         sku: it.sku,
         assignedMasterSku: it.assigned_master_sku,
+        assigned_master_sku: it.assigned_master_sku,
         productName: it.product_name,
+        product_name: it.product_name,
         itemDescription: it.item_description,
+        item_description: it.item_description,
         category: it.category,
         subCategory: it.sub_category,
+        sub_category: it.sub_category,
         material: it.material,
         size: it.size,
         specification: it.specification,
         unit: it.unit,
         weightKg: it.weight_kg ? parseFloat(it.weight_kg) : null,
+        weight_kg: it.weight_kg ? parseFloat(it.weight_kg) : null,
         unitPrice: it.unit_price ? parseFloat(it.unit_price) : null,
+        unit_price: it.unit_price ? parseFloat(it.unit_price) : null,
         supplyType: it.supply_type,
+        supply_type: it.supply_type,
         brand: it.brand,
         supplierName: it.supplier_name,
+        supplier_name: it.supplier_name,
         remarks: it.remarks,
         dimA: it.dim_a,
+        dim_a: it.dim_a,
         dimB: it.dim_b,
+        dim_b: it.dim_b,
         dimC: it.dim_c,
+        dim_c: it.dim_c,
         dimD: it.dim_d,
+        dim_d: it.dim_d,
         dimL1: it.dim_l1,
+        dim_l1: it.dim_l1,
         dimL2: it.dim_l2,
+        dim_l2: it.dim_l2,
         validationStatus: it.validation_status,
+        validation_status: it.validation_status,
         validationError: it.validation_error,
-        isDuplicateSku: it.is_duplicate_sku
+        validation_error: it.validation_error,
+        isDuplicateSku: it.is_duplicate_sku,
+        is_duplicate_sku: it.is_duplicate_sku
       }))
     });
   } catch (err) {
@@ -390,10 +450,21 @@ router.put('/:id/items/:itemId', authenticateToken, requireAdmin, async (req, re
       return res.status(400).json({ error: 'Cannot edit an import that is already approved or rejected.' });
     }
 
-    const price = (updates.unitPrice !== undefined && updates.unitPrice !== null && updates.unitPrice !== '')
-      ? Number(updates.unitPrice) : null;
-    const weight = (updates.weightKg !== undefined && updates.weightKg !== null && updates.weightKg !== '')
-      ? Number(updates.weightKg) : null;
+    const pName = updates.productName !== undefined ? updates.productName : updates.product_name;
+    const mat = updates.material !== undefined ? updates.material : null;
+    const sz = updates.size !== undefined ? updates.size : null;
+    const priceVal = updates.unitPrice !== undefined ? updates.unitPrice : updates.unit_price;
+    const weightVal = updates.weightKg !== undefined ? updates.weightKg : updates.weight_kg;
+    const rem = updates.remarks !== undefined ? updates.remarks : null;
+    const desc = updates.itemDescription !== undefined ? updates.itemDescription : updates.item_description;
+    const subCat = updates.subCategory !== undefined ? updates.subCategory : updates.sub_category;
+    const u = updates.unit !== undefined ? updates.unit : null;
+    const supType = updates.supplyType !== undefined ? updates.supplyType : updates.supply_type;
+
+    const price = (priceVal !== undefined && priceVal !== null && priceVal !== '')
+      ? Number(priceVal) : null;
+    const weight = (weightVal !== undefined && weightVal !== null && weightVal !== '')
+      ? Number(weightVal) : null;
 
     const updateRes = await query(`
       UPDATE import_submission_items
@@ -413,18 +484,18 @@ router.put('/:id/items/:itemId', authenticateToken, requireAdmin, async (req, re
       WHERE id = $13 AND submission_id = $14
       RETURNING *
     `, [
-      updates.productName || null,
-      updates.material || null,
-      updates.size || null,
-      updates.unitPrice !== undefined,
+      pName || null,
+      mat || null,
+      sz || null,
+      priceVal !== undefined,
       price,
-      updates.weightKg !== undefined,
+      weightVal !== undefined,
       weight,
-      updates.remarks || null,
-      updates.itemDescription || null,
-      updates.subCategory || null,
-      updates.unit || null,
-      updates.supplyType || null,
+      rem || null,
+      desc || null,
+      subCat || null,
+      u || null,
+      supType || null,
       itemId,
       sub.id
     ]);
