@@ -180,12 +180,14 @@ app.use('/api/master-items', require('./routes/masterItems'));
 app.use('/api/purchase-requests', require('./routes/purchaseRequests'));
 app.use('/api/documents', require('./routes/documents'));
 app.use('/api/import-submissions', require('./routes/importSubmissions'));
+app.use('/api/ducting-types', require('./routes/ductingTypes'));
 app.use('/pr', require('./routes/verify'));
 
 // Explicit Master Item Excel Template Download Routes (100% Binary Safe)
 const { serveTemplateDownload } = require('./services/templateService');
 app.get('/Flow_Force_New_SKU_Input_Template.xlsx', serveTemplateDownload);
 app.get('/api/template', serveTemplateDownload);
+app.get('/api/master-items/template', serveTemplateDownload);
 app.get('/template', serveTemplateDownload);
 
 // Serve Static Frontend Assets (no-cache for real-time frontend updates)
@@ -197,10 +199,20 @@ app.use(express.static(path.join(__dirname, '..'), {
   }
 }));
 
+// Explicit 404 for unhandled API, PR, and health routes — guaranteed JSON, NEVER index.html!
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/') || req.path.startsWith('/pr/')) {
+    return res.status(404).json({
+      error: 'Not Found',
+      message: `Endpoint '${req.method} ${req.path}' does not exist.`,
+      path: req.path
+    });
+  }
+  next();
+});
+
 // Fallback for Single Page App
 app.get('*', (req, res, next) => {
-  if (req.path.startsWith('/api/') || req.path.startsWith('/pr/') || req.path === '/health') return next();
-
   // Guard: Never serve index.html for document/binary extensions!
   // Prevents corrupted downloads where HTML error/app pages get saved as .xlsx or .pdf
   if (/\.(xlsx|xls|csv|pdf|png|jpe?g|webp|svg|ico|json|txt|map)$/i.test(req.path)) {
@@ -259,6 +271,22 @@ const runStartupMigrations = async () => {
       CREATE INDEX IF NOT EXISTS idx_documents_pr_item ON documents(purchase_request_item_id);
       CREATE INDEX IF NOT EXISTS idx_documents_type ON documents(document_type);
       CREATE INDEX IF NOT EXISTS idx_pr_items_drawing ON pr_items(drawing_document_id);
+
+      -- Master Ducting Types & Engineering Drawing Configuration
+      CREATE TABLE IF NOT EXISTS ducting_types (
+        id SERIAL PRIMARY KEY,
+        type_name VARCHAR(100) UNIQUE NOT NULL,
+        master_drawing_document_id INTEGER REFERENCES documents(id) ON DELETE SET NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+      INSERT INTO ducting_types (type_name) VALUES
+        ('Straight Duct'),
+        ('Y-Duct'),
+        ('Elbow'),
+        ('Twin Duct')
+      ON CONFLICT (type_name) DO NOTHING;
+      CREATE INDEX IF NOT EXISTS idx_ducting_types_drawing ON ducting_types(master_drawing_document_id);
 
       CREATE TABLE IF NOT EXISTS activity_logs (
         id SERIAL PRIMARY KEY,
@@ -332,6 +360,8 @@ const runStartupMigrations = async () => {
       CREATE INDEX IF NOT EXISTS idx_import_sub_items_sub ON import_submission_items(submission_id);
 
       ALTER TABLE import_submission_items ADD COLUMN IF NOT EXISTS assigned_master_sku VARCHAR(50);
+      ALTER TABLE import_submissions ADD COLUMN IF NOT EXISTS material_family VARCHAR(100);
+      ALTER TABLE import_submissions ADD COLUMN IF NOT EXISTS template_version VARCHAR(50);
     `);
     console.log('✅ [DB] Verified schema (Status, Supply Type, Remarks, Ducting Specs, Import Submissions)');
 

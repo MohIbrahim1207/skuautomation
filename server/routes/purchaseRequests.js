@@ -352,6 +352,21 @@ router.post('/', async (req, res) => {
       const drw = item.drawingAttachment || item.engineeringDrawing || null;
       let drawingDocId = item.drawingDocumentId || item.documentId || (drw ? (drw.documentId || drw.id) : null);
 
+      // If ducting item and no drawingDocId provided, automatically load master drawing for this ducting type
+      if (isDucting && !drawingDocId && ductType) {
+        const normDuctType = ductType.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const masterRes = await client.query(
+          `SELECT master_drawing_document_id FROM ducting_types 
+           WHERE LOWER(REPLACE(type_name, ' ', '')) = $1 
+              OR LOWER(REPLACE(type_name, '-', '')) = $1 
+              OR LOWER(type_name) = LOWER($2)`,
+          [normDuctType, ductType]
+        );
+        if (masterRes.rowCount > 0 && masterRes.rows[0].master_drawing_document_id) {
+          drawingDocId = masterRes.rows[0].master_drawing_document_id;
+        }
+      }
+
       if (!drawingDocId && drw && drw.dataUrl) {
         try {
           const isPdf = (drw.type && drw.type.includes('pdf')) || String(drw.name || drw.fileName).toLowerCase().endsWith('.pdf');
@@ -421,12 +436,20 @@ router.post('/', async (req, res) => {
       }
 
       if (drawingDocId) {
-        await client.query(
-          `UPDATE documents
-           SET purchase_request_id = $1, purchase_request_item_id = $2, project_id = COALESCE(project_id, $3)
-           WHERE id = $4`,
-          [prId, prItemId, projectId, drawingDocId]
+        const isMasterRes = await client.query(
+          `SELECT 1 FROM ducting_types WHERE master_drawing_document_id = $1`,
+          [drawingDocId]
         );
+        const isMaster = isMasterRes.rowCount > 0;
+
+        if (!isMaster) {
+          await client.query(
+            `UPDATE documents
+             SET purchase_request_id = $1, purchase_request_item_id = $2, project_id = COALESCE(project_id, $3)
+             WHERE id = $4`,
+            [prId, prItemId, projectId, drawingDocId]
+          );
+        }
         await client.query(
           `UPDATE pr_items SET drawing_document_id = $1 WHERE id = $2`,
           [drawingDocId, prItemId]

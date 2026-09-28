@@ -215,9 +215,36 @@ router.get('/:id/view', async (req, res) => {
     if (result.rowCount === 0) return res.status(404).json({ error: 'Document not found.' });
     const doc = result.rows[0];
 
-    // Authorization: Employee can view their own documents; Admins can access all
+    // Authorization: Admin has full access; Employee can view own documents, master drawings, and unattached templates
+    let isAllowed = (req.user.role === 'ADMIN');
     const ownerId = doc.created_by_user_id || doc.uploaded_by_user_id;
-    if (req.user.role !== 'ADMIN' && ownerId && ownerId !== req.user.id) {
+    if (!isAllowed && ownerId && ownerId === req.user.id) {
+      isAllowed = true;
+    }
+    if (!isAllowed) {
+      const masterCheck = await query(
+        `SELECT 1 FROM ducting_types WHERE master_drawing_document_id = $1
+         UNION
+         SELECT 1 FROM documents WHERE id = $1 AND document_type = 'ENGINEERING_DRAWING' AND purchase_request_id IS NULL`,
+        [id]
+      );
+      if (masterCheck.rowCount > 0) {
+        isAllowed = true;
+      }
+    }
+    if (!isAllowed) {
+      const prCheck = await query(
+        `SELECT 1 FROM pr_items pi
+         JOIN purchase_requests pr ON pr.id = pi.purchase_request_id
+         WHERE (pi.drawing_document_id = $1 OR pi.id = $2) AND pr.created_by_user_id = $3`,
+        [id, doc.purchase_request_item_id || -1, req.user.id]
+      );
+      if (prCheck.rowCount > 0) {
+        isAllowed = true;
+      }
+    }
+
+    if (!isAllowed) {
       return res.status(403).json({ error: 'Access Denied — You cannot access another employee’s documents.' });
     }
 
@@ -275,9 +302,36 @@ router.get('/:id/download', async (req, res) => {
     if (result.rowCount === 0) return res.status(404).json({ error: 'Document not found.' });
     const doc = result.rows[0];
 
-    // Authorization: Employee can only download documents for their own PRs; Admins can access all
+    // Authorization: Admin has full access; Employee can download own PR documents, master drawings, and unattached templates
+    let isAllowed = (req.user.role === 'ADMIN');
     const ownerId = doc.created_by_user_id || doc.uploaded_by_user_id;
-    if (req.user.role !== 'ADMIN' && ownerId && ownerId !== req.user.id) {
+    if (!isAllowed && ownerId && ownerId === req.user.id) {
+      isAllowed = true;
+    }
+    if (!isAllowed) {
+      const masterCheck = await query(
+        `SELECT 1 FROM ducting_types WHERE master_drawing_document_id = $1
+         UNION
+         SELECT 1 FROM documents WHERE id = $1 AND document_type = 'ENGINEERING_DRAWING' AND purchase_request_id IS NULL`,
+        [id]
+      );
+      if (masterCheck.rowCount > 0) {
+        isAllowed = true;
+      }
+    }
+    if (!isAllowed) {
+      const prCheck = await query(
+        `SELECT 1 FROM pr_items pi
+         JOIN purchase_requests pr ON pr.id = pi.purchase_request_id
+         WHERE (pi.drawing_document_id = $1 OR pi.id = $2) AND pr.created_by_user_id = $3`,
+        [id, doc.purchase_request_item_id || -1, req.user.id]
+      );
+      if (prCheck.rowCount > 0) {
+        isAllowed = true;
+      }
+    }
+
+    if (!isAllowed) {
       return res.status(403).json({ error: 'Access Denied — You cannot access another employee’s documents.' });
     }
 

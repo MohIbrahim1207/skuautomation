@@ -146,6 +146,24 @@ CREATE INDEX IF NOT EXISTS idx_documents_project ON documents(project_id);
 CREATE INDEX IF NOT EXISTS idx_documents_pr_item ON documents(purchase_request_item_id);
 CREATE INDEX IF NOT EXISTS idx_documents_type ON documents(document_type);
 
+-- 7a. MASTER DUCTING TYPES TABLE (Reusable Master Engineering Drawing Configuration)
+CREATE TABLE IF NOT EXISTS ducting_types (
+  id SERIAL PRIMARY KEY,
+  type_name VARCHAR(100) UNIQUE NOT NULL,
+  master_drawing_document_id INTEGER REFERENCES documents(id) ON DELETE SET NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO ducting_types (type_name) VALUES
+  ('Straight Duct'),
+  ('Y-Duct'),
+  ('Elbow'),
+  ('Twin Duct')
+ON CONFLICT (type_name) DO NOTHING;
+
+CREATE INDEX IF NOT EXISTS idx_ducting_types_drawing ON ducting_types(master_drawing_document_id);
+
 -- 7b. ACTIVITY LOGS TABLE (Enterprise Activity & Document Audit Logging)
 CREATE TABLE IF NOT EXISTS activity_logs (
   id SERIAL PRIMARY KEY,

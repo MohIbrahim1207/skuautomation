@@ -1589,6 +1589,59 @@
       this.bindEvents();
     },
 
+    selectedFamily: 'raw-materials',
+    detectedFamily: null,
+    familyConfig: {
+      'raw-materials': {
+        name: 'Raw Materials',
+        category: 'Raw Materials',
+        filename: 'Flow_Force_Raw_Materials_Template.xlsx',
+        columnsNotice: '21 Columns (A, B, C, D, L1, L2, Grade, Supply Type)'
+      },
+      'fasteners': {
+        name: 'Fasteners',
+        category: 'Fasteners',
+        filename: 'Flow_Force_Fasteners_Template.xlsx',
+        columnsNotice: '14 Columns (Product Name, Sub-Category, Grade, Size, Standard, UOM, Price)'
+      },
+      'piping-materials': {
+        name: 'Piping Materials',
+        category: 'Piping Materials',
+        filename: 'Flow_Force_Piping_Materials_Template.xlsx',
+        columnsNotice: '14 Columns (Pipes, Fittings, Material/Grade, Schedule, Standard, UOM, Price)'
+      },
+      'bought-out-items': {
+        name: 'Bought Out Items',
+        category: 'Bought Out Items',
+        filename: 'Flow_Force_Bought_Out_Items_Template.xlsx',
+        columnsNotice: '13 Columns (Valves, Cylinders, Manufacturer, Part Number, Standard, Price)'
+      },
+      'electrical-materials': {
+        name: 'Electrical Materials',
+        category: 'Electrical Materials',
+        filename: 'Flow_Force_Electrical_Materials_Template.xlsx',
+        columnsNotice: '13 Columns (Cable Trays, Sensors, Manufacturer, Standard, UOM, Price)'
+      },
+      'ducting': {
+        name: 'Ducting',
+        category: 'Ducting',
+        filename: 'Flow_Force_Ducting_Template.xlsx',
+        columnsNotice: '13 Columns (Straight, Elbows, Transitions, Material/Grade, Dimensions, Price)'
+      },
+      'flat-bar': {
+        name: 'Flat Bar',
+        category: 'Flat Bar',
+        filename: 'Flow_Force_Flat_Bar_Template.xlsx',
+        columnsNotice: '18 Columns (Width A, Thickness B, Length L1, Grade, Supply Type, PID)'
+      },
+      'cut-paint-materials': {
+        name: 'Cut/Paint Materials',
+        category: 'Cut/Paint Materials',
+        filename: 'Flow_Force_Cut_Paint_Materials_Template.xlsx',
+        columnsNotice: '15 Columns (Marine Paint, Primer, Specification, DFT, UOM, Price)'
+      }
+    },
+
     async openModal() {
       if (!window.PermissionService || !window.PermissionService.can('CAN_IMPORT_EXCEL')) {
         UI.showAccessDeniedModal('Access Denied — Import Excel permission required.');
@@ -1604,8 +1657,22 @@
       this.parsedItems = [];
       this.sheetBreakdown = {};
       this.validationErrorsCount = 0;
+      this.selectedFamily = 'raw-materials';
+      this.detectedFamily = null;
 
       // Reset DOM fields
+      const selFamily = document.getElementById('selImportTemplateFamily');
+      if (selFamily) selFamily.value = 'raw-materials';
+      const btnDownload = document.getElementById('btnDownloadImportTemplate');
+      const lblFilename = document.getElementById('lblTemplateFilename');
+      const lblColumns = document.getElementById('lblTemplateColumns');
+      if (btnDownload) {
+        btnDownload.href = '/api/import-submissions/template?family=raw-materials';
+        btnDownload.setAttribute('download', 'Flow_Force_Raw_Materials_Template.xlsx');
+      }
+      if (lblFilename) lblFilename.textContent = 'Flow_Force_Raw_Materials_Template.xlsx';
+      if (lblColumns) lblColumns.textContent = '21 Columns (A, B, C, D, L1, L2, Grade, Supply Type)';
+
       const fileInput = document.getElementById('importFileInput');
       if (fileInput) fileInput.value = '';
       const fileInfoCard = document.getElementById('importFileInfoCard');
@@ -1674,6 +1741,25 @@
     },
 
     bindEvents() {
+      // Step 1: Material Family selector & dynamic template download link
+      const selFamily = document.getElementById('selImportTemplateFamily');
+      const btnDownload = document.getElementById('btnDownloadImportTemplate');
+      const lblFilename = document.getElementById('lblTemplateFilename');
+      const lblColumns = document.getElementById('lblTemplateColumns');
+
+      if (selFamily) {
+        selFamily.addEventListener('change', () => {
+          this.selectedFamily = selFamily.value;
+          const conf = this.familyConfig[this.selectedFamily] || this.familyConfig['raw-materials'];
+          if (btnDownload) {
+            btnDownload.href = `/api/import-submissions/template?family=${encodeURIComponent(this.selectedFamily)}`;
+            btnDownload.setAttribute('download', conf.filename);
+          }
+          if (lblFilename) lblFilename.textContent = conf.filename;
+          if (lblColumns) lblColumns.textContent = conf.columnsNotice;
+        });
+      }
+
       // Step 1: Dropzone & File browsing
       const dropzone = document.getElementById('importDropzone');
       const fileInput = document.getElementById('importFileInput');
@@ -1763,28 +1849,90 @@
             alert('SheetJS library is loading, please try again in a moment.');
             return;
           }
+
+          // Safety check: Verify ZIP PK magic bytes for .xlsx files
+          if (lower.endsWith('.xlsx')) {
+            if (data.length < 4 || data[0] !== 0x50 || data[1] !== 0x4B || data[2] !== 0x03 || data[3] !== 0x04) {
+              const textSample = new TextDecoder().decode(data.slice(0, 80));
+              if (textSample.includes('<!DOCTYPE') || textSample.includes('<html')) {
+                alert('Uploaded file is an HTML web page or error document, not a valid Excel (.xlsx) file. Please download the official Excel template above.');
+                return;
+              }
+              alert('Corrupted or invalid Excel file: Missing OpenXML ZIP signature.');
+              return;
+            }
+          }
+
           this.workbook = XLSX.read(data, { type: 'array', cellDates: true });
-
           const allSheetNames = this.workbook.SheetNames || [];
-          const standardKeywords = ['new sku input', 'fastener', 'piping'];
 
-          // Filter out "Instructions", empty "Sheet1", and identify supported sheets
+          // 1. Detect Template Family from "Instructions" sheet metadata
+          let detectedFamily = null;
+          const instrSheetName = allSheetNames.find(n => n.trim().toLowerCase() === 'instructions' || n.trim().toLowerCase().includes('instruction'));
+          if (instrSheetName && this.workbook.Sheets[instrSheetName]) {
+            const instrWs = this.workbook.Sheets[instrSheetName];
+            const instrRows = XLSX.utils.sheet_to_json(instrWs, { header: 1, defval: '' });
+            const meta = {};
+            for (const row of instrRows) {
+              const cell = String(row[0] || '').trim();
+              const kvMatch = cell.match(/^(family_slug|family_name|category|version)=(.+)$/i);
+              if (kvMatch) meta[kvMatch[1].toLowerCase()] = kvMatch[2].trim();
+              const famMatch = cell.match(/^Material Family:\s*(.+)$/i);
+              if (famMatch) meta['family_name'] = famMatch[1].trim();
+              const catMatch = cell.match(/^Category:\s*(.+)$/i);
+              if (catMatch) meta['category'] = catMatch[1].trim();
+              const verMatch = cell.match(/^Template Version:\s*(.+)$/i);
+              if (verMatch) meta['version'] = verMatch[1].trim();
+            }
+            if (meta.family_slug || meta.family_name) {
+              const matchedConf = meta.family_slug ? this.familyConfig[meta.family_slug] : null;
+              detectedFamily = {
+                familySlug: meta.family_slug || (matchedConf ? meta.family_slug : 'raw-materials'),
+                familyName: meta.family_name || (matchedConf ? matchedConf.name : 'Raw Materials'),
+                category: meta.category || (matchedConf ? matchedConf.category : 'Raw Materials'),
+                version: meta.version || '1.0'
+              };
+            }
+          }
+
+          // 2. Fallback detection from sheet names or filename
+          if (!detectedFamily) {
+            for (const [slug, conf] of Object.entries(this.familyConfig)) {
+              const slugClean = slug.replace(/-/g, '_');
+              const nameLower = conf.name.toLowerCase();
+              if (allSheetNames.some(n => n.trim().toLowerCase() === nameLower) ||
+                  lower.includes(slugClean) ||
+                  lower.includes(nameLower.replace(/[^a-z0-9]/g, ''))) {
+                detectedFamily = {
+                  familySlug: slug,
+                  familyName: conf.name,
+                  category: conf.category,
+                  version: '1.0'
+                };
+                break;
+              }
+            }
+          }
+
+          this.detectedFamily = detectedFamily;
+          if (detectedFamily && detectedFamily.familySlug) {
+            this.selectedFamily = detectedFamily.familySlug;
+            const selFamily = document.getElementById('selImportTemplateFamily');
+            if (selFamily) selFamily.value = detectedFamily.familySlug;
+            const conf = this.familyConfig[detectedFamily.familySlug];
+            const lblFilename = document.getElementById('lblTemplateFilename');
+            const lblColumns = document.getElementById('lblTemplateColumns');
+            if (conf && lblFilename) lblFilename.textContent = conf.filename;
+            if (conf && lblColumns) lblColumns.textContent = conf.columnsNotice;
+          }
+
+          // 3. Filter out "Instructions", empty "Sheet1", and identify supported data sheets
           let supported = allSheetNames.filter(name => {
             const l = name.trim().toLowerCase();
-            if (l.includes('instructions')) return false;
+            if (l === 'instructions' || l.includes('instruction')) return false;
             if (allSheetNames.length > 1 && (l === 'sheet1' || l === 'sheet 1')) return false;
-            return standardKeywords.some(kw => l.includes(kw));
+            return true;
           });
-
-          // Fallback: If no standard keywords matched, include all non-instruction sheets
-          if (supported.length === 0) {
-            supported = allSheetNames.filter(name => {
-              const l = name.trim().toLowerCase();
-              if (l.includes('instructions')) return false;
-              if (allSheetNames.length > 1 && (l === 'sheet1' || l === 'sheet 1')) return false;
-              return true;
-            });
-          }
 
           // Filter out completely empty sheets
           supported = supported.filter(name => {
@@ -1806,6 +1954,7 @@
             fileName: file.name,
             sizeBytes: file.size,
             allSheets: allSheetNames,
+            detectedFamily: this.detectedFamily,
             supportedSheets: this.supportedSheets
           });
 
@@ -1821,7 +1970,8 @@
           if (fileNameText) fileNameText.textContent = file.name;
           if (fileMetaText) {
             const kb = (file.size / 1024).toFixed(1);
-            fileMetaText.textContent = `${kb} KB • ${this.supportedSheets.length} supported sheet(s) detected: ${this.supportedSheets.join(', ')}`;
+            const famStr = this.detectedFamily ? ` • Family: ${this.detectedFamily.familyName} (${this.detectedFamily.category})` : '';
+            fileMetaText.textContent = `${kb} KB • ${this.supportedSheets.length} sheet(s) detected: ${this.supportedSheets.join(', ')}${famStr}`;
           }
 
           this.renderSheetSelector();
@@ -1953,13 +2103,34 @@
           
           let category = getVal(row, ['Category']);
           if (!category) {
-            if (sheetName.toLowerCase().includes('piping')) category = 'Piping & Fittings';
-            else if (sheetName.toLowerCase().includes('fastener')) category = 'Fasteners';
-            else category = 'Raw Materials';
-          } else if (category.toLowerCase() === 'piping') {
-            category = 'Piping & Fittings';
-          } else if (category.toLowerCase() === 'fastener' || category.toLowerCase() === 'fasteners') {
-            category = 'Fasteners';
+            if (this.detectedFamily && this.detectedFamily.category) {
+              category = this.detectedFamily.category;
+            } else if (sheetName.toLowerCase().includes('piping')) {
+              category = 'Piping Materials';
+            } else if (sheetName.toLowerCase().includes('fastener')) {
+              category = 'Fasteners';
+            } else if (sheetName.toLowerCase().includes('bought')) {
+              category = 'Bought Out Items';
+            } else if (sheetName.toLowerCase().includes('electrical')) {
+              category = 'Electrical Materials';
+            } else if (sheetName.toLowerCase().includes('duct')) {
+              category = 'Ducting';
+            } else if (sheetName.toLowerCase().includes('flat bar')) {
+              category = 'Flat Bar';
+            } else if (sheetName.toLowerCase().includes('paint') || sheetName.toLowerCase().includes('cut')) {
+              category = 'Cut/Paint Materials';
+            } else {
+              category = (this.familyConfig[this.selectedFamily] && this.familyConfig[this.selectedFamily].category) || 'Raw Materials';
+            }
+          } else {
+            const catLower = category.toLowerCase();
+            if (catLower.includes('piping')) category = 'Piping Materials';
+            else if (catLower.includes('fastener')) category = 'Fasteners';
+            else if (catLower.includes('bought')) category = 'Bought Out Items';
+            else if (catLower.includes('electrical')) category = 'Electrical Materials';
+            else if (catLower.includes('duct')) category = 'Ducting';
+            else if (catLower.includes('flat bar')) category = 'Flat Bar';
+            else if (catLower.includes('paint') || catLower.includes('cut')) category = 'Cut/Paint Materials';
           }
 
           const subCategory = getVal(row, ['Subcategory', 'Sub Category', 'Sub-Category']);
@@ -2014,7 +2185,11 @@
           if (!productName || productName.trim() === '') {
             validationErrors.push('Missing Product Name');
           }
-          if (!material || material.trim() === '') {
+
+          const isMaterialOptional = (this.detectedFamily && (this.detectedFamily.familySlug === 'bought-out-items' || this.detectedFamily.familySlug === 'electrical-materials')) ||
+                                     this.selectedFamily === 'bought-out-items' || this.selectedFamily === 'electrical-materials' ||
+                                     category === 'Bought Out Items' || category === 'Electrical Materials';
+          if (!isMaterialOptional && (!material || material.trim() === '')) {
             validationWarnings.push('Missing Material / Grade');
           }
 
@@ -2114,6 +2289,13 @@
       const errorNotice = document.getElementById('importPreviewErrorNotice');
 
       if (rowCountEl) rowCountEl.textContent = this.parsedItems.length;
+
+      const famNameEl = document.getElementById('previewFamilyNameText');
+      const catTextEl = document.getElementById('previewCategoryText');
+      const activeFamilyName = this.detectedFamily ? this.detectedFamily.familyName : (this.familyConfig[this.selectedFamily]?.name || 'Raw Materials');
+      const activeCategory = this.detectedFamily ? this.detectedFamily.category : (this.familyConfig[this.selectedFamily]?.category || 'Raw Materials');
+      if (famNameEl) famNameEl.textContent = activeFamilyName;
+      if (catTextEl) catTextEl.textContent = activeCategory;
 
       if (breakdownEl && this.sheetBreakdown) {
         breakdownEl.innerHTML = Object.entries(this.sheetBreakdown).map(([sheet, count]) => {
@@ -2241,6 +2423,14 @@
           .join(', ');
         confirmSheetName.textContent = breakdownStr || (this.supportedSheets ? this.supportedSheets.join(', ') : 'All Worksheets');
       }
+
+      const activeFamilyName = this.detectedFamily ? this.detectedFamily.familyName : (this.familyConfig[this.selectedFamily]?.name || 'Raw Materials');
+      const activeCategory = this.detectedFamily ? this.detectedFamily.category : (this.familyConfig[this.selectedFamily]?.category || 'Raw Materials');
+      const confirmMaterialFamily = document.getElementById('confirmMaterialFamily');
+      if (confirmMaterialFamily) {
+        confirmMaterialFamily.textContent = `${activeFamilyName} (${activeCategory})`;
+      }
+
       if (confirmImportUser) confirmImportUser.textContent = currentUser ? `${currentUser.fullName || currentUser.username} (${currentUser.role})` : 'System User';
 
       if (isAdmin) {
@@ -2275,6 +2465,8 @@
         const payload = {
           fileName: this.file ? this.file.name : 'Upload.xlsx',
           sheetName: this.supportedSheets ? this.supportedSheets.join(', ') : 'Multi-Sheet Import',
+          materialFamily: this.detectedFamily ? this.detectedFamily.familySlug : this.selectedFamily,
+          templateVersion: this.detectedFamily ? this.detectedFamily.version : '1.0',
           items: this.parsedItems
         };
 
@@ -2422,7 +2614,7 @@
       this.showStep1();
     },
 
-    selectType(type) {
+    async selectType(type) {
       this.state.selectedType = type;
       this.state.currentStep = 2;
       this.state.dimensions = {};
@@ -2440,6 +2632,35 @@
       if (s2) s2.style.display = 'flex';
 
       this.render();
+
+      // Automatically fetch master drawing for this ducting type
+      try {
+        const token = (window.AuthService && typeof window.AuthService.getToken === 'function') ? window.AuthService.getToken() : '';
+        const resp = await fetch(`/api/ducting-types/${encodeURIComponent(type)}/drawing`, {
+          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          if (data.hasDrawing && data.drawing && this.state.selectedType === type) {
+            this.state.uploadedDrawing = {
+              name: data.drawing.fileName,
+              fileName: data.drawing.fileName,
+              size: data.drawing.fileSize || data.drawing.fileSizeBytes || 0,
+              type: data.drawing.mimeType || 'application/pdf',
+              mimeType: data.drawing.mimeType || 'application/pdf',
+              documentId: data.drawing.documentId || data.drawing.id,
+              id: data.drawing.documentId || data.drawing.id,
+              revision: data.drawing.revision || 0,
+              viewUrl: data.drawing.viewUrl,
+              downloadUrl: data.drawing.downloadUrl,
+              isMasterDrawing: true
+            };
+            this.renderSketch(type);
+          }
+        }
+      } catch (err) {
+        console.warn('[DuctingWorkflow] Notice loading master drawing:', err.message);
+      }
 
       // Focus first input field without scrolling past the sketch
       setTimeout(() => {
@@ -2858,7 +3079,7 @@
         `;
       }
 
-      // Check if user uploaded a custom drawing
+      // Check if ducting type has an automatically attached master drawing
       if (this.state.uploadedDrawing) {
         const up = this.state.uploadedDrawing;
         const isPdf = (up.type && up.type.includes('pdf')) || (up.mimeType && up.mimeType.includes('pdf')) || String(up.name || '').toLowerCase().endsWith('.pdf');
@@ -2880,20 +3101,30 @@
         const previewSrc = up.blobUrl || secureViewUrl || up.dataUrl || '';
 
         container.innerHTML = `
-          <div style="background: #f8fafc; border: 2px dashed #0284c7; border-radius: 8px; padding: 0.85rem; text-align: center;">
-            <div style="display: flex; align-items: center; justify-content: space-between; background: #ffffff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 0.5rem 0.75rem; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem;">
-              <div style="display: flex; align-items: center; gap: 0.6rem; text-align: left;">
-                <span style="font-size: 1.5rem;">${isPdf ? '📄' : '🖼️'}</span>
+          <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 0.85rem; text-align: center;">
+            <!-- Automatic Master Drawing Banner -->
+            <div style="display: flex; align-items: center; justify-content: space-between; background: #f0fdf4; border: 1px solid #86efac; border-radius: 6px; padding: 0.65rem 0.85rem; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem;">
+              <div style="display: flex; align-items: center; gap: 0.65rem; text-align: left;">
+                <span style="font-size: 1.6rem;">${isPdf ? '📄' : '🖼️'}</span>
                 <div>
-                  <div style="font-weight: 700; font-size: 0.88rem; color: #0284c7; word-break: break-all;">${escapeHtml(up.name)}</div>
-                  <div style="font-size: 0.75rem; color: var(--text-muted);">${(up.size / 1024).toFixed(1)} KB • ${formatLabel} • Custom Engineering Drawing Attached</div>
+                  <div style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.78rem; font-weight: 700; color: #166534;">
+                    <span>✓</span> Drawing automatically attached
+                  </div>
+                  <div style="font-weight: 700; font-size: 0.88rem; color: #0f172a; word-break: break-all; margin-top: 1px;">
+                    ${escapeHtml(up.name)}
+                  </div>
+                  <div style="font-size: 0.74rem; color: #475569;">
+                    ${(up.size / 1024).toFixed(1)} KB • ${formatLabel} • Master Drawing (${escapeHtml(type)})
+                  </div>
                 </div>
               </div>
               <div style="display: flex; gap: 0.4rem; align-items: center;">
-                <button type="button" class="btn btn-secondary btn-sm" onclick="DuctingWorkflowController.openFullDrawing()" style="font-size: 0.75rem; padding: 0.25rem 0.6rem; border-color: #0284c7; color: #0284c7; font-weight: 600;">Open Full Drawing</button>
-                <button type="button" class="btn btn-secondary btn-sm" onclick="DuctingWorkflowController.downloadUploadedDrawing()" style="font-size: 0.75rem; padding: 0.25rem 0.6rem; font-weight: 600;">Download</button>
-                <button type="button" class="btn btn-secondary btn-sm" onclick="DuctingWorkflowController.triggerSketchUpload()" style="font-size: 0.75rem; padding: 0.25rem 0.6rem;">Change</button>
-                <button type="button" class="btn btn-secondary btn-sm" onclick="DuctingWorkflowController.resetUploadedSketch()" style="font-size: 0.75rem; padding: 0.25rem 0.6rem; color: #ef4444;">Remove</button>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="DuctingWorkflowController.openFullDrawing()" style="font-size: 0.78rem; padding: 0.3rem 0.75rem; border-color: #0284c7; color: #0284c7; font-weight: 600;">
+                  View Drawing
+                </button>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="DuctingWorkflowController.downloadUploadedDrawing()" style="font-size: 0.78rem; padding: 0.3rem 0.75rem; font-weight: 600;">
+                  Download
+                </button>
               </div>
             </div>
 
@@ -2903,7 +3134,7 @@
               <!-- Loading State Overlay -->
               <div id="ductingPreviewLoading" style="position: absolute; inset: 0; background: rgba(255, 255, 255, 0.95); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 10; gap: 0.6rem;">
                 <div class="ducting-spinner"></div>
-                <div style="font-size: 0.88rem; font-weight: 600; color: #0284c7;">Loading engineering drawing...</div>
+                <div style="font-size: 0.88rem; font-weight: 600; color: #0284c7;">Loading master drawing...</div>
               </div>
 
               <!-- Error State Overlay -->
@@ -2912,7 +3143,7 @@
                 <div style="font-weight: 700; font-size: 1rem; color: #b91c1c; margin-bottom: 0.35rem;">Unable to preview drawing.</div>
                 <div style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 0.85rem;">Filename: <strong style="font-family: var(--font-mono); color: var(--text-main);">${escapeHtml(up.name)}</strong></div>
                 <div style="display: flex; gap: 0.5rem; justify-content: center;">
-                  <button type="button" class="btn btn-secondary btn-sm" onclick="DuctingWorkflowController.openFullDrawing()" style="font-size: 0.8rem; padding: 0.35rem 0.75rem; border-color: #0284c7; color: #0284c7; font-weight: 600;">Open Full Drawing</button>
+                  <button type="button" class="btn btn-secondary btn-sm" onclick="DuctingWorkflowController.openFullDrawing()" style="font-size: 0.8rem; padding: 0.35rem 0.75rem; border-color: #0284c7; color: #0284c7; font-weight: 600;">View Drawing</button>
                   <button type="button" class="btn btn-secondary btn-sm" onclick="DuctingWorkflowController.downloadUploadedDrawing()" style="font-size: 0.8rem; padding: 0.35rem 0.75rem; font-weight: 600;">Download</button>
                 </div>
               </div>
@@ -2921,7 +3152,7 @@
                 <iframe
                   id="ductingPdfPreviewFrame"
                   src="${previewSrc}#page=1&view=FitH"
-                  title="Engineering Drawing Preview"
+                  title="Master Engineering Drawing Preview"
                   style="width: 100%; height: 100%; min-height: 470px; border: none; background: #ffffff; display: block;"
                   onload="DuctingWorkflowController.handlePreviewLoaded()"
                   onerror="DuctingWorkflowController.handlePreviewError()"
@@ -2930,7 +3161,7 @@
                 <img
                   id="ductingImgPreview"
                   src="${previewSrc}"
-                  alt="Engineering Drawing Preview"
+                  alt="Master Engineering Drawing Preview"
                   style="max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; display: block; margin: 0 auto; background: #ffffff;"
                   onload="DuctingWorkflowController.handlePreviewLoaded()"
                   onerror="DuctingWorkflowController.handlePreviewError()"
@@ -2941,11 +3172,11 @@
             <!-- Bottom Preview Controls Bar -->
             <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.6rem; padding: 0.4rem 0.75rem; background: #f1f5f9; border-radius: 6px; font-size: 0.75rem;">
               <div style="color: #64748b; font-size: 0.75rem;">
-                🔍 <em>${isPdf ? 'Visualizing page 1 of uploaded PDF drawing' : 'Visualizing uploaded drawing specification'}</em>
+                🔍 <em>${isPdf ? 'Visualizing page 1 of master PDF drawing' : 'Visualizing master drawing specification'}</em>
               </div>
               <div style="display: flex; gap: 0.5rem;">
                 <button type="button" class="btn btn-secondary btn-sm" onclick="DuctingWorkflowController.openFullDrawing()" style="font-size: 0.75rem; padding: 0.2rem 0.6rem; border-color: #0284c7; color: #0284c7; font-weight: 600;">
-                  Open Full Drawing
+                  View Drawing
                 </button>
                 <button type="button" class="btn btn-secondary btn-sm" onclick="DuctingWorkflowController.downloadUploadedDrawing()" style="font-size: 0.75rem; padding: 0.2rem 0.6rem; font-weight: 600;">
                   Download
@@ -2974,29 +3205,12 @@
             <div class="sketch-variable-pills" style="margin-top: 0.65rem;">
               ${variableBadges}
             </div>
-            <div style="text-align: center; margin-top: 0.35rem; font-size: 0.75rem; color: #64748b;">
-              💡 <em>Click any parameter label above to edit that dimension, or upload your fabrication drawing.</em>
+            <div style="text-align: center; margin-top: 0.45rem; font-size: 0.78rem; color: #64748b; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 6px; padding: 0.4rem;">
+              💡 <em>Click any parameter label above to edit that dimension. Master drawings can be configured by Admin in Settings.</em>
             </div>
           </div>
         `;
       }
-
-      // Drag and drop event listeners on sketch box
-      container.ondragover = (e) => {
-        e.preventDefault();
-        container.classList.add('drag-over');
-      };
-      container.ondragleave = (e) => {
-        e.preventDefault();
-        container.classList.remove('drag-over');
-      };
-      container.ondrop = (e) => {
-        e.preventDefault();
-        container.classList.remove('drag-over');
-        if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]) {
-          this.handleDroppedFile(e.dataTransfer.files[0]);
-        }
-      };
     },
 
     renderDimensionFields(type) {
@@ -3400,6 +3614,266 @@
   };
 
   window.DuctingWorkflowController = DuctingWorkflowController;
+
+  // =========================================================================
+  // MASTER DUCTING DRAWING CONFIGURATION CONTROLLER (ADMIN / ENGINEERING)
+  // =========================================================================
+  const DuctingConfigController = {
+    types: [],
+    selectedTypeForUpload: null,
+
+    async loadTypes() {
+      const container = document.getElementById('ductingConfigContainer');
+      if (!container) return;
+
+      container.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 1.5rem; color: #64748b;">Loading master ducting configurations...</div>';
+
+      try {
+        const token = (window.AuthService && typeof window.AuthService.getToken === 'function') ? window.AuthService.getToken() : '';
+        const resp = await fetch('/api/ducting-types', {
+          headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+        });
+        if (!resp.ok) throw new Error('Failed to load ducting types');
+        const data = await resp.json();
+        this.types = data.types || [];
+        this.render();
+      } catch (err) {
+        console.error('[DuctingConfig] Error loading types:', err);
+        container.innerHTML = `<div style="grid-column: 1/-1; color: #ef4444; padding: 1rem;">Failed to load ducting types: ${escapeHtml(err.message)}</div>`;
+      }
+    },
+
+    render() {
+      const container = document.getElementById('ductingConfigContainer');
+      if (!container) return;
+
+      if (!this.types || this.types.length === 0) {
+        container.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: #64748b; padding: 1.5rem;">No ducting types found in system.</div>';
+        return;
+      }
+
+      const typeIcons = {
+        'Straight Duct': '📏',
+        'Y-Duct': '🔀',
+        'Elbow': '↩️',
+        'Twin Duct': '♊'
+      };
+
+      const isAdmin = (window.AuthService && window.AuthService.getUser && window.AuthService.getUser().role === 'ADMIN');
+
+      container.innerHTML = this.types.map(t => {
+        const icon = typeIcons[t.typeName] || '💨';
+        const hasDrw = Boolean(t.hasDrawing && t.drawing);
+        const drw = t.drawing || {};
+        const safeName = drw.fileName || 'Master Drawing';
+        const isPdf = (drw.mimeType && drw.mimeType.includes('pdf')) || safeName.toLowerCase().endsWith('.pdf');
+        const formatLabel = isPdf ? 'PDF' : 'IMAGE';
+        const sizeStr = drw.fileSize ? `${(drw.fileSize / 1024).toFixed(1)} KB` : '';
+        const revStr = drw.revision !== undefined && drw.revision !== null ? `Rev ${drw.revision}` : 'Rev 0';
+        const dateStr = drw.uploadedAt ? new Date(drw.uploadedAt).toLocaleDateString() : '';
+
+        return `
+          <div class="ducting-config-card" style="background: #ffffff; border: 1px solid var(--border-color); border-radius: 8px; padding: 1.25rem; display: flex; flex-direction: column; justify-content: space-between; box-shadow: 0 1px 3px rgba(0,0,0,0.05); transition: box-shadow 0.2s;">
+            <div>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                  <span style="font-size: 1.5rem;">${icon}</span>
+                  <h4 style="margin: 0; font-size: 1.05rem; font-weight: 700; color: var(--text-main);">${escapeHtml(t.typeName)}</h4>
+                </div>
+                ${hasDrw ? `
+                  <span class="badge" style="background: #dcfce7; color: #15803d; font-size: 0.72rem; font-weight: 700; padding: 0.25rem 0.55rem; border-radius: 9999px;">
+                    ✓ Configured
+                  </span>
+                ` : `
+                  <span class="badge" style="background: #f1f5f9; color: #64748b; font-size: 0.72rem; font-weight: 600; padding: 0.25rem 0.55rem; border-radius: 9999px;">
+                    No Drawing
+                  </span>
+                `}
+              </div>
+
+              ${hasDrw ? `
+                <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 0.75rem; margin-bottom: 1rem;">
+                  <div style="font-size: 0.7rem; font-weight: 700; color: #64748b; text-transform: uppercase; margin-bottom: 4px;">Current Master Drawing</div>
+                  <div style="font-weight: 600; font-size: 0.85rem; color: #0284c7; word-break: break-all; margin-bottom: 4px;" title="${escapeHtml(safeName)}">
+                    ${escapeHtml(safeName)}
+                  </div>
+                  <div style="font-size: 0.75rem; color: #64748b; display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                    <span style="font-weight: 600; color: #0369a1;">${revStr}</span>
+                    <span>•</span>
+                    <span>${formatLabel}</span>
+                    ${sizeStr ? `<span>•</span><span>${sizeStr}</span>` : ''}
+                    ${dateStr ? `<span>•</span><span>${dateStr}</span>` : ''}
+                  </div>
+                </div>
+              ` : `
+                <div style="background: #fafaf9; border: 1px dashed #d6d3d1; border-radius: 6px; padding: 1.25rem; margin-bottom: 1rem; text-align: center; color: #78716c; font-size: 0.82rem;">
+                  No master drawing uploaded yet. Upload an engineering drawing once to automatically attach it to all future ${escapeHtml(t.typeName)} PRs.
+                </div>
+              `}
+            </div>
+
+            <div style="display: flex; gap: 0.4rem; flex-wrap: wrap; border-top: 1px solid #f1f5f9; margin-top: 0.5rem; padding-top: 0.75rem;">
+              ${hasDrw ? `
+                <button type="button" class="btn btn-secondary btn-sm" onclick="DuctingConfigController.viewDrawing('${escapeHtml(t.typeName)}')" style="font-size: 0.75rem; padding: 0.3rem 0.6rem; color: #0284c7; border-color: #0284c7; font-weight: 600;">
+                  👁️ View
+                </button>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="DuctingConfigController.downloadDrawing('${escapeHtml(t.typeName)}')" style="font-size: 0.75rem; padding: 0.3rem 0.6rem; font-weight: 600;">
+                  ⬇️ Download
+                </button>
+                ${isAdmin ? `
+                  <button type="button" class="btn btn-secondary btn-sm" onclick="DuctingConfigController.triggerUpload('${escapeHtml(t.typeName)}')" style="font-size: 0.75rem; padding: 0.3rem 0.6rem;">
+                    🔄 Replace
+                  </button>
+                  <button type="button" class="btn btn-secondary btn-sm" onclick="DuctingConfigController.removeDrawing('${escapeHtml(t.typeName)}')" style="font-size: 0.75rem; padding: 0.3rem 0.6rem; color: #ef4444;">
+                    🗑️ Remove
+                  </button>
+                ` : ''}
+              ` : `
+                ${isAdmin ? `
+                  <button type="button" class="btn btn-primary btn-sm" onclick="DuctingConfigController.triggerUpload('${escapeHtml(t.typeName)}')" style="font-size: 0.8rem; padding: 0.35rem 0.85rem; width: 100%; justify-content: center;">
+                    📁 Upload Drawing
+                  </button>
+                ` : `
+                  <span style="font-size: 0.75rem; color: #94a3b8;">Admin permission required to upload</span>
+                `}
+              `}
+            </div>
+          </div>
+        `;
+      }).join('');
+    },
+
+    triggerUpload(typeName) {
+      this.selectedTypeForUpload = typeName;
+      const fileInput = document.getElementById('inputMasterDrawingUpload');
+      if (fileInput) {
+        fileInput.value = '';
+        fileInput.click();
+      }
+    },
+
+    async handleFileSelected(event) {
+      const file = event.target.files && event.target.files[0];
+      if (!file || !this.selectedTypeForUpload) return;
+
+      const typeName = this.selectedTypeForUpload;
+      const validTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/svg+xml', 'application/pdf'];
+      const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+      const isImg = file.type.startsWith('image/') || /\.(png|jpe?g|webp|svg)$/i.test(file.name);
+
+      if (!isPdf && !isImg) {
+        alert('Unsupported file format. Please upload a PDF or image drawing.');
+        return;
+      }
+
+      if (file.size > 15 * 1024 * 1024) {
+        alert('File size exceeds 15 MB limit.');
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        const dataUrl = e.target.result;
+        try {
+          if (window.UI && window.UI.showToast) {
+            window.UI.showToast('Uploading master drawing...', 'info');
+          }
+          const token = (window.AuthService && typeof window.AuthService.getToken === 'function') ? window.AuthService.getToken() : '';
+          const resp = await fetch(`/api/ducting-types/${encodeURIComponent(typeName)}/drawing`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+              fileName: file.name,
+              mimeType: file.type || (isPdf ? 'application/pdf' : 'image/png'),
+              dataUrl: dataUrl
+            })
+          });
+
+          if (!resp.ok) {
+            const errData = await resp.json().catch(() => ({}));
+            throw new Error(errData.error || `HTTP ${resp.status}`);
+          }
+
+          if (window.UI && window.UI.showToast) {
+            window.UI.showToast(`Master drawing for ${typeName} updated successfully!`, 'success');
+          }
+          await this.loadTypes();
+        } catch (err) {
+          console.error('[DuctingConfig] Upload error:', err);
+          alert(`Failed to upload master drawing: ${err.message}`);
+        }
+      };
+
+      reader.readAsDataURL(file);
+    },
+
+    async viewDrawing(typeName) {
+      const t = this.types.find(item => item.typeName === typeName);
+      if (!t || !t.drawing || !t.drawing.documentId) {
+        alert('No drawing found for this ducting type.');
+        return;
+      }
+      if (window.DocumentViewer) {
+        window.DocumentViewer.open(t.drawing);
+      } else if (window.UI && window.UI.viewDrawingDocument) {
+        window.UI.viewDrawingDocument(t.drawing.documentId);
+      }
+    },
+
+    async downloadDrawing(typeName) {
+      const t = this.types.find(item => item.typeName === typeName);
+      if (!t || !t.drawing || !t.drawing.documentId) {
+        alert('No drawing found for this ducting type.');
+        return;
+      }
+      const fileName = t.drawing.fileName || `${typeName}_Drawing.pdf`;
+      if (window.UI && window.UI.downloadDrawingDocument) {
+        window.UI.downloadDrawingDocument(t.drawing.documentId, fileName);
+      } else {
+        const token = (window.AuthService && typeof window.AuthService.getToken === 'function') ? window.AuthService.getToken() : '';
+        const a = document.createElement('a');
+        a.href = `/api/documents/${t.drawing.documentId}/download?token=${encodeURIComponent(token)}`;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }
+    },
+
+    async removeDrawing(typeName) {
+      if (!confirm(`Are you sure you want to remove the master drawing for ${typeName}?\n\nNote: Existing PRs referencing previous versions will NOT be affected.`)) {
+        return;
+      }
+
+      try {
+        const token = (window.AuthService && typeof window.AuthService.getToken === 'function') ? window.AuthService.getToken() : '';
+        const resp = await fetch(`/api/ducting-types/${encodeURIComponent(typeName)}/drawing`, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        });
+
+        if (!resp.ok) {
+          const errData = await resp.json().catch(() => ({}));
+          throw new Error(errData.error || `HTTP ${resp.status}`);
+        }
+
+        if (window.UI && window.UI.showToast) {
+          window.UI.showToast(`Master drawing for ${typeName} removed.`, 'info');
+        }
+        await this.loadTypes();
+      } catch (err) {
+        console.error('[DuctingConfig] Delete error:', err);
+        alert(`Failed to remove master drawing: ${err.message}`);
+      }
+    }
+  };
+
+  window.DuctingConfigController = DuctingConfigController;
 
   // =========================================================================
   // DOCUMENT VIEWER CONTROLLER (FULL PDF & ENGINEERING DRAWING VIEWER)
@@ -8018,6 +8492,10 @@
       if (nextNumInput) nextNumInput.value = cfg.skuNextNumber;
       if (driverSelect) driverSelect.value = cfg.storageDriver;
       if (apiUrlInput) apiUrlInput.value = cfg.googleAppsScriptUrl || '';
+
+      if (window.DuctingConfigController) {
+        window.DuctingConfigController.loadTypes();
+      }
     },
 
     handleSaveSettings() {
@@ -8104,7 +8582,10 @@
             <tr>
               <td style="color:var(--text-dim); font-family:var(--font-mono);">${idx + 1}</td>
               <td><span style="font-family:var(--font-mono); font-weight:700; color:var(--text-main);">${escapeHtml(sub.import_id)}</span></td>
-              <td style="font-weight:600; color:var(--text-main);">${escapeHtml(sub.file_name)}</td>
+              <td>
+                <div style="font-weight:600; color:var(--text-main);">${escapeHtml(sub.file_name)}</div>
+                ${sub.material_family ? `<span class="badge" style="background:#e0f2fe; color:#0369a1; border:1px solid #bae6fd; font-size:0.7rem; font-weight:600; margin-top:2px;">📁 ${escapeHtml(sub.material_family)}</span>` : ''}
+              </td>
               <td>${escapeHtml(sub.uploaded_by_full_name || sub.uploaded_by_username)}</td>
               <td style="font-family:var(--font-mono); font-size:0.8rem; color:var(--text-dim);">${escapeHtml(sub.uploaded_by_username)}</td>
               <td style="font-size:0.82rem; color:var(--text-muted);">${formatDateDisplay(sub.created_at)}</td>
@@ -8174,7 +8655,10 @@
             <tr>
               <td style="color:var(--text-dim); font-family:var(--font-mono);">${idx + 1}</td>
               <td><span style="font-family:var(--font-mono); font-weight:700; color:var(--text-main);">${escapeHtml(sub.import_id)}</span></td>
-              <td style="font-weight:600; color:var(--text-main);">${escapeHtml(sub.file_name)}</td>
+              <td>
+                <div style="font-weight:600; color:var(--text-main);">${escapeHtml(sub.file_name)}</div>
+                ${sub.material_family ? `<span class="badge" style="background:#e0f2fe; color:#0369a1; border:1px solid #bae6fd; font-size:0.7rem; font-weight:600; margin-top:2px;">📁 ${escapeHtml(sub.material_family)}</span>` : ''}
+              </td>
               <td style="font-size:0.82rem; color:var(--text-muted);">${formatDateDisplay(sub.created_at)}</td>
               <td style="text-align:center; font-weight:700;">${sub.total_rows}</td>
               <td style="text-align:center;">${statusBadge}</td>
@@ -8230,7 +8714,8 @@
 
         if (importIdEl) importIdEl.textContent = sub.import_id;
         if (fileAndUserEl) {
-          fileAndUserEl.textContent = `Workbook: ${sub.file_name} • Submitted by: ${sub.uploaded_by_full_name || sub.uploaded_by_username} on ${formatDateDisplay(sub.created_at)}`;
+          const famStr = sub.material_family ? ` • Family: ${sub.material_family}` : '';
+          fileAndUserEl.textContent = `Workbook: ${sub.file_name}${famStr} • Submitted by: ${sub.uploaded_by_full_name || sub.uploaded_by_username} on ${formatDateDisplay(sub.created_at)}`;
         }
         if (itemCountEl) itemCountEl.textContent = items.length;
 

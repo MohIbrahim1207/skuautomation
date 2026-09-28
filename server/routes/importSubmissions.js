@@ -8,7 +8,13 @@ const express = require('express');
 const router = express.Router();
 const { query, pool } = require('../db/pool');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
-const { serveTemplateDownload } = require('../services/templateService');
+const {
+  serveFamilyTemplateDownload,
+  listTemplateFamilies,
+  detectTemplateFamily,
+  getFamilyBySlug,
+  TEMPLATE_VERSION
+} = require('../services/templateService');
 
 // Helper: Format Import ID (e.g. IMP-0001)
 function formatImportId(seq) {
@@ -16,11 +22,19 @@ function formatImportId(seq) {
 }
 
 /**
- * GET /api/import-submissions/template
- * Download the standard Flow Force New SKU Input Excel template.
- * Validated binary XLSX stream with correct MIME & attachment headers.
+ * GET /api/import-submissions/template?family=fasteners
+ * Download a family-specific Excel import template.
+ * PUBLIC — NO AUTHENTICATION REQUIRED (browser <a download> cannot send JWT).
+ * Defaults to family=raw-materials if no family query param.
  */
-router.get('/template', serveTemplateDownload);
+router.get('/template', serveFamilyTemplateDownload);
+
+/**
+ * GET /api/import-submissions/template-families
+ * List all available material families with download URLs.
+ * PUBLIC — used by the UI to populate the family selector.
+ */
+router.get('/template-families', listTemplateFamilies);
 
 /**
  * POST /api/import-submissions
@@ -30,10 +44,16 @@ router.get('/template', serveTemplateDownload);
  * NEVER writes directly to master_items.
  */
 router.post('/', authenticateToken, async (req, res) => {
-  const { fileName, items } = req.body;
+  const { fileName, items, materialFamily, templateVersion } = req.body;
 
   if (!items || !Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: 'No items provided for import.' });
+  }
+
+  // Determine target family & category
+  let familyDef = null;
+  if (materialFamily) {
+    familyDef = getFamilyBySlug(materialFamily);
   }
 
   const client = await pool.connect();
@@ -64,15 +84,19 @@ router.post('/', authenticateToken, async (req, res) => {
         uploaded_by_user_id,
         uploaded_by_username,
         status,
-        total_rows
-      ) VALUES ($1, $2, $3, $4, 'PENDING_REVIEW', $5)
+        total_rows,
+        material_family,
+        template_version
+      ) VALUES ($1, $2, $3, $4, 'PENDING_REVIEW', $5, $6, $7)
       RETURNING *
     `, [
       importId,
       fileName || 'Import.xlsx',
       req.user.id,
       req.user.username,
-      items.length
+      items.length,
+      familyDef ? familyDef.name : (materialFamily || null),
+      templateVersion || TEMPLATE_VERSION || '1.0'
     ]);
 
     const submission = subInsertRes.rows[0];
@@ -90,7 +114,10 @@ router.post('/', authenticateToken, async (req, res) => {
       if (!it.productName || String(it.productName).trim() === '') {
         errors.push('Missing Product Name');
       }
-      if (!it.material || String(it.material).trim() === '') {
+
+      // Material is required for metals, but optional for bought-out/electrical
+      const isMaterialOptional = materialFamily === 'bought-out-items' || materialFamily === 'electrical-materials';
+      if (!isMaterialOptional && (!it.material || String(it.material).trim() === '')) {
         errors.push('Missing Material / Grade');
       }
       if (it.unitPrice !== undefined && it.unitPrice !== null && String(it.unitPrice).trim() !== '') {
@@ -177,7 +204,7 @@ router.post('/', authenticateToken, async (req, res) => {
         rawSku || '',
         it.productName ? String(it.productName).trim() : '',
         it.itemDescription ? String(it.itemDescription).trim() : '',
-        it.category || 'Raw Materials',
+        it.category || (familyDef ? familyDef.category : 'Raw Materials'),
         it.subCategory ? String(it.subCategory).trim() : '',
         it.material ? String(it.material).trim() : '',
         it.size ? String(it.size).trim() : '',
@@ -220,6 +247,10 @@ router.post('/', authenticateToken, async (req, res) => {
         created_at: submission.created_at,
         totalRows: submission.total_rows,
         total_rows: submission.total_rows,
+        materialFamily: submission.material_family,
+        material_family: submission.material_family,
+        templateVersion: submission.template_version,
+        template_version: submission.template_version,
         status: submission.status
       }
     });
@@ -249,6 +280,8 @@ router.get('/', authenticateToken, async (req, res) => {
         s.uploaded_by_username,
         s.status,
         s.total_rows,
+        s.material_family,
+        s.template_version,
         s.approved_by_user_id,
         s.approved_by_username,
         s.approved_at,
@@ -279,6 +312,10 @@ router.get('/', authenticateToken, async (req, res) => {
       import_id: r.import_id,
       fileName: r.file_name,
       file_name: r.file_name,
+      materialFamily: r.material_family,
+      material_family: r.material_family,
+      templateVersion: r.template_version,
+      template_version: r.template_version,
       uploadedByUserId: r.uploaded_by_user_id,
       uploaded_by_user_id: r.uploaded_by_user_id,
       uploadedByUsername: r.uploaded_by_username,
@@ -366,6 +403,10 @@ router.get('/:id', authenticateToken, async (req, res) => {
         status: sub.status,
         totalRows: sub.total_rows,
         total_rows: sub.total_rows,
+        materialFamily: sub.material_family,
+        material_family: sub.material_family,
+        templateVersion: sub.template_version,
+        template_version: sub.template_version,
         approvedByUserId: sub.approved_by_user_id,
         approved_by_user_id: sub.approved_by_user_id,
         approvedByUsername: sub.approved_by_username,
@@ -647,7 +688,8 @@ router.post('/:id/approve', authenticateToken, requireAdmin, async (req, res) =>
       startSku,
       endSku,
       rowsImported: insertedMasterItems.length,
-      count: insertedMasterItems.length
+      count: insertedMasterItems.length,
+      approvedItems: insertedMasterItems
     });
   } catch (err) {
     await client.query('ROLLBACK');
