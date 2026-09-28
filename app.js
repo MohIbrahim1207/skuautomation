@@ -949,6 +949,50 @@
         const isDucting = (item.category || '').toLowerCase() === 'ducting' || !!item.ductingType || item.purchaseType === 'PROJECT-SPECIFIC DUCTING';
         const isFastener = !isDucting && ((item.category || '').toLowerCase() === 'fasteners' || /fastener|bolt|screw|nut|stud/i.test(`${item.productName || ''} ${item.itemDescription || ''} ${item.category || ''}`));
 
+        const drw = item.drawingAttachment || item.engineeringDrawing;
+        let drwCardHtml = '';
+        if (drw) {
+          const drwName = drw.name || drw.fileName || 'Engineering Drawing';
+          const drwType = ((drw.type && drw.type.includes('pdf')) || (drw.mimeType && drw.mimeType.includes('pdf')) || String(drwName).toLowerCase().endsWith('.pdf')) ? 'PDF' : 'IMAGE';
+          const isPdf = drwType === 'PDF';
+          const sz = drw.size || drw.fileSize || drw.fileSizeBytes;
+          const drwSizeStr = sz ? `${(sz / 1024).toFixed(1)} KB` : '';
+          const token = (window.AuthService && typeof window.AuthService.getToken === 'function') ? window.AuthService.getToken() : '';
+          const docId = drw.documentId || drw.id;
+          const thumbSrc = drw.blobUrl || drw.dataUrl || (docId ? `/api/documents/${docId}/view?token=${encodeURIComponent(token)}` : (drw.viewUrl ? `${drw.viewUrl}?token=${encodeURIComponent(token)}` : ''));
+
+          drwCardHtml = `
+            <div class="pr-card-drawing-section" style="margin-top:8px; padding:8px 10px; background:#f8fafc; border:1px solid #cbd5e1; border-left:3px solid #0284c7; border-radius:6px; max-width:260px;">
+              <div style="font-size:0.68rem; font-weight:800; color:#0369a1; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">
+                ENGINEERING DRAWING
+              </div>
+              ${thumbSrc ? (isPdf ? `
+                <div style="width: 100%; height: 95px; border: 1px solid #e2e8f0; border-radius: 4px; overflow: hidden; background: #fff; margin-bottom: 6px; position: relative;">
+                  <iframe src="${thumbSrc}#page=1&view=FitH&toolbar=0&navpanes=0" style="width: 100%; height: 100%; border: none; pointer-events: none;" tabindex="-1"></iframe>
+                </div>
+              ` : `
+                <div style="width: 100%; height: 95px; border: 1px solid #e2e8f0; border-radius: 4px; overflow: hidden; background: #fff; margin-bottom: 6px; display: flex; align-items: center; justify-content: center;">
+                  <img src="${thumbSrc}" alt="Drawing Thumbnail" style="max-width: 100%; max-height: 100%; object-fit: contain;">
+                </div>
+              `) : ''}
+              <div style="font-size:0.75rem; font-weight:600; color:#0f172a; margin-bottom:2px;">
+                Filename:
+              </div>
+              <div style="font-size:0.72rem; font-family:var(--font-mono); color:#0284c7; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-bottom:6px;" title="${escapeHtml(drwName)}">
+                ${escapeHtml(drwName)}
+              </div>
+              <div style="display:flex; gap:6px;">
+                <button type="button" class="btn btn-secondary btn-sm" onclick="DuctingWorkflowController.viewDrawing(${idx})" style="padding:2px 8px; font-size:0.7rem; border-color:#0284c7; color:#0284c7; font-weight:600;">
+                  View
+                </button>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="DuctingWorkflowController.downloadDrawing(${idx})" style="padding:2px 8px; font-size:0.7rem; font-weight:600;">
+                  Download
+                </button>
+              </div>
+            </div>
+          `;
+        }
+
         return `
           <tr data-cart-idx="${idx}" data-sku="${escapeHtml(item.sku || '')}">
             <td style="color:var(--text-dim); font-family:var(--font-mono);">${idx + 1}</td>
@@ -956,6 +1000,7 @@
             <td>
               <div style="font-weight:600; color:var(--text-main);">${escapeHtml(item.productName || '—')}</div>
               <div style="font-size:0.75rem; color:var(--text-muted); white-space:pre-wrap; max-width:240px;">${escapeHtml(item.itemDescription || '')}</div>
+              ${drwCardHtml}
             </td>
             <td>${escapeHtml(item.materialGrade || '-')}</td>
             <td style="font-family:var(--font-mono); font-size:0.8rem; color:var(--text-main);">${escapeHtml(origDimDisplay)}</td>
@@ -2442,34 +2487,165 @@
         return;
       }
 
+      // Revoke prior blob URL to avoid browser memory leaks
+      if (this.state.uploadedDrawing && this.state.uploadedDrawing.blobUrl) {
+        try { URL.revokeObjectURL(this.state.uploadedDrawing.blobUrl); } catch (e) {}
+      }
+
+      const blobUrl = URL.createObjectURL(file);
+      const mimeType = file.type || (isPdf ? 'application/pdf' : 'image/png');
+
+      this.state.uploadedDrawing = {
+        name: file.name,
+        fileName: file.name,
+        size: file.size,
+        type: mimeType,
+        mimeType: mimeType,
+        blobUrl: blobUrl,
+        dataUrl: '',
+        documentId: null,
+        id: null,
+        viewUrl: null,
+        downloadUrl: null,
+        uploadedAt: new Date().toISOString()
+      };
+
+      const resetBtn = document.getElementById('btnDuctingResetSketch');
+      if (resetBtn) resetBtn.style.display = 'inline-flex';
+
+      // Instantly render visual preview in modal with zero network lag
+      this.renderSketch(this.state.selectedType);
+      if (window.UI && window.UI.showToast) {
+        window.UI.showToast(`Drawing "${file.name}" attached successfully!`, 'success');
+      }
+
+      // Background FileReader to acquire dataUrl and pre-upload to backend storage
       const reader = new FileReader();
-      reader.onload = (e) => {
-        this.state.uploadedDrawing = {
-          name: file.name,
-          size: file.size,
-          type: file.type || (isPdf ? 'application/pdf' : 'image/png'),
-          dataUrl: e.target.result,
-          uploadedAt: new Date().toISOString()
-        };
+      reader.onload = async (e) => {
+        const dataUrl = e.target.result;
+        if (this.state.uploadedDrawing && this.state.uploadedDrawing.name === file.name) {
+          this.state.uploadedDrawing.dataUrl = dataUrl;
+        }
 
-        const resetBtn = document.getElementById('btnDuctingResetSketch');
-        if (resetBtn) resetBtn.style.display = 'inline-flex';
-
-        this.renderSketch(this.state.selectedType);
-        if (window.UI && window.UI.showToast) {
-          window.UI.showToast(`Drawing "${file.name}" attached successfully!`, 'success');
+        const token = window.AuthService ? window.AuthService.getToken() : '';
+        if (token) {
+          try {
+            const resp = await fetch('/api/documents/upload-drawing', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+              },
+              body: JSON.stringify({
+                fileName: file.name,
+                mimeType: mimeType,
+                dataUrl: dataUrl
+              })
+            });
+            if (resp.ok) {
+              const resData = await resp.json();
+              if (resData.document && resData.document.id && this.state.uploadedDrawing && this.state.uploadedDrawing.name === file.name) {
+                this.state.uploadedDrawing.documentId = resData.document.id;
+                this.state.uploadedDrawing.id = resData.document.id;
+                this.state.uploadedDrawing.viewUrl = resData.document.viewUrl;
+                this.state.uploadedDrawing.downloadUrl = resData.document.downloadUrl;
+              }
+            }
+          } catch (uploadErr) {
+            console.warn('[DuctingWorkflow] Pre-upload notice:', uploadErr.message);
+          }
         }
       };
 
-      if (isPdf) {
-        // Read as data URL for preview/storage
-        reader.readAsDataURL(file);
+      reader.readAsDataURL(file);
+    },
+
+    handlePreviewLoaded() {
+      const loader = document.getElementById('ductingPreviewLoading');
+      if (loader) loader.style.display = 'none';
+    },
+
+    handlePreviewError() {
+      const loader = document.getElementById('ductingPreviewLoading');
+      if (loader) loader.style.display = 'none';
+      const errBox = document.getElementById('ductingPreviewError');
+      if (errBox) errBox.style.display = 'flex';
+    },
+
+    openFullDrawing() {
+      const up = this.state.uploadedDrawing;
+      if (!up) return;
+      if (up.documentId || up.id) {
+        if (window.UI && window.UI.viewDrawingDocument) {
+          window.UI.viewDrawingDocument(up.documentId || up.id);
+          return;
+        }
+      }
+      const previewUrl = up.blobUrl || up.dataUrl;
+      if (previewUrl) {
+        window.open(previewUrl, '_blank');
       } else {
-        reader.readAsDataURL(file);
+        alert('Drawing preview is not available.');
+      }
+    },
+
+    downloadUploadedDrawing() {
+      const up = this.state.uploadedDrawing;
+      if (!up) return;
+      const fileName = up.name || up.fileName || 'Engineering_Drawing';
+      if (up.documentId || up.id) {
+        if (window.UI && window.UI.downloadDrawingDocument) {
+          window.UI.downloadDrawingDocument(up.documentId || up.id, fileName);
+          return;
+        }
+      }
+      const dlUrl = up.blobUrl || up.dataUrl;
+      if (dlUrl) {
+        const a = document.createElement('a');
+        a.href = dlUrl;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      } else {
+        alert('Download is not available.');
+      }
+    },
+
+    viewDrawing(idx) {
+      const it = (typeof PRCart !== 'undefined' && PRCart.items) ? PRCart.items[idx] : null;
+      if (!it) return;
+      const drw = it.drawingAttachment || it.engineeringDrawing;
+      if (!drw) return;
+      if (drw.documentId || drw.id) {
+        window.UI.viewDrawingDocument(drw.documentId || drw.id);
+      } else if (drw.blobUrl || drw.dataUrl) {
+        window.open(drw.blobUrl || drw.dataUrl, '_blank');
+      }
+    },
+
+    downloadDrawing(idx) {
+      const it = (typeof PRCart !== 'undefined' && PRCart.items) ? PRCart.items[idx] : null;
+      if (!it) return;
+      const drw = it.drawingAttachment || it.engineeringDrawing;
+      if (!drw) return;
+      const fileName = drw.name || drw.fileName || 'Engineering_Drawing';
+      if (drw.documentId || drw.id) {
+        window.UI.downloadDrawingDocument(drw.documentId || drw.id, fileName);
+      } else if (drw.blobUrl || drw.dataUrl) {
+        const a = document.createElement('a');
+        a.href = drw.blobUrl || drw.dataUrl;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
       }
     },
 
     resetUploadedSketch() {
+      if (this.state.uploadedDrawing && this.state.uploadedDrawing.blobUrl) {
+        try { URL.revokeObjectURL(this.state.uploadedDrawing.blobUrl); } catch (e) {}
+      }
       this.state.uploadedDrawing = null;
       const fileInput = document.getElementById('ductingSketchFileInput');
       if (fileInput) fileInput.value = '';
@@ -2681,38 +2857,108 @@
       // Check if user uploaded a custom drawing
       if (this.state.uploadedDrawing) {
         const up = this.state.uploadedDrawing;
-        const isPdf = up.type && up.type.includes('pdf');
+        const isPdf = (up.type && up.type.includes('pdf')) || (up.mimeType && up.mimeType.includes('pdf')) || String(up.name || '').toLowerCase().endsWith('.pdf');
+        
+        let formatLabel = 'PDF';
+        if (!isPdf) {
+          if (up.type && up.type.includes('png')) formatLabel = 'PNG';
+          else if (up.type && (up.type.includes('jpeg') || up.type.includes('jpg'))) formatLabel = 'JPG';
+          else if (up.type && up.type.includes('webp')) formatLabel = 'WEBP';
+          else if (up.type && up.type.includes('svg')) formatLabel = 'SVG';
+          else {
+            const ext = (up.name || '').split('.').pop().toUpperCase();
+            formatLabel = ext || 'IMAGE';
+          }
+        }
+
+        const token = (window.AuthService && typeof window.AuthService.getToken === 'function') ? window.AuthService.getToken() : '';
+        const secureViewUrl = (up.documentId || up.id) ? `/api/documents/${up.documentId || up.id}/view?token=${encodeURIComponent(token)}` : (up.viewUrl ? `${up.viewUrl}?token=${encodeURIComponent(token)}` : null);
+        const previewSrc = up.blobUrl || secureViewUrl || up.dataUrl || '';
+
         container.innerHTML = `
           <div style="background: #f8fafc; border: 2px dashed #0284c7; border-radius: 8px; padding: 0.85rem; text-align: center;">
-            <div style="display: flex; align-items: center; justify-content: space-between; background: #ffffff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 0.5rem 0.75rem; margin-bottom: 0.75rem;">
+            <div style="display: flex; align-items: center; justify-content: space-between; background: #ffffff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 0.5rem 0.75rem; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem;">
               <div style="display: flex; align-items: center; gap: 0.6rem; text-align: left;">
                 <span style="font-size: 1.5rem;">${isPdf ? '📄' : '🖼️'}</span>
                 <div>
-                  <div style="font-weight: 700; font-size: 0.88rem; color: #0284c7;">${escapeHtml(up.name)}</div>
-                  <div style="font-size: 0.75rem; color: var(--text-muted);">${(up.size / 1024).toFixed(1)} KB • Custom Engineering Drawing Attached</div>
+                  <div style="font-weight: 700; font-size: 0.88rem; color: #0284c7; word-break: break-all;">${escapeHtml(up.name)}</div>
+                  <div style="font-size: 0.75rem; color: var(--text-muted);">${(up.size / 1024).toFixed(1)} KB • ${formatLabel} • Custom Engineering Drawing Attached</div>
                 </div>
               </div>
-              <div style="display: flex; gap: 0.4rem;">
+              <div style="display: flex; gap: 0.4rem; align-items: center;">
+                <button type="button" class="btn btn-secondary btn-sm" onclick="DuctingWorkflowController.openFullDrawing()" style="font-size: 0.75rem; padding: 0.25rem 0.6rem; border-color: #0284c7; color: #0284c7; font-weight: 600;">Open Full Drawing</button>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="DuctingWorkflowController.downloadUploadedDrawing()" style="font-size: 0.75rem; padding: 0.25rem 0.6rem; font-weight: 600;">Download</button>
                 <button type="button" class="btn btn-secondary btn-sm" onclick="DuctingWorkflowController.triggerSketchUpload()" style="font-size: 0.75rem; padding: 0.25rem 0.6rem;">Change</button>
                 <button type="button" class="btn btn-secondary btn-sm" onclick="DuctingWorkflowController.resetUploadedSketch()" style="font-size: 0.75rem; padding: 0.25rem 0.6rem; color: #ef4444;">Remove</button>
               </div>
             </div>
-            ${isPdf ? `
-              <div style="padding: 1.25rem; background: #ffffff; border-radius: 6px; border: 1px solid var(--border-color);">
-                <div style="font-size: 2.2rem; margin-bottom: 0.25rem;">📑</div>
-                <div style="font-weight: 700; font-size: 0.95rem; color: var(--text-main);">PDF Engineering Specification Attached</div>
-                <div style="font-size: 0.78rem; color: var(--text-muted); margin-top: 0.25rem;">The attached PDF will be linked to the Purchase Request requisition item.</div>
+
+            <!-- Engineering Drawing Visual Preview Box -->
+            <div class="ducting-drawing-preview-area" style="position: relative; width: 100%; height: 480px; min-height: 420px; max-height: 520px; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; overflow: auto; display: flex; align-items: center; justify-content: center; box-shadow: inset 0 0 4px rgba(0,0,0,0.05);">
+              
+              <!-- Loading State Overlay -->
+              <div id="ductingPreviewLoading" style="position: absolute; inset: 0; background: rgba(255, 255, 255, 0.95); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 10; gap: 0.6rem;">
+                <div class="ducting-spinner"></div>
+                <div style="font-size: 0.88rem; font-weight: 600; color: #0284c7;">Loading engineering drawing...</div>
               </div>
-            ` : `
-              <div style="background: #ffffff; border: 1px solid var(--border-color); border-radius: 6px; padding: 0.5rem; max-height: 200px; display: flex; align-items: center; justify-content: center; overflow: hidden;">
-                <img src="${up.dataUrl}" alt="Uploaded Engineering Drawing" style="max-height: 180px; max-width: 100%; object-fit: contain; display: block;" />
+
+              <!-- Error State Overlay -->
+              <div id="ductingPreviewError" style="position: absolute; inset: 0; background: #ffffff; display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 12; padding: 1.5rem; text-align: center;">
+                <div style="font-size: 2.2rem; margin-bottom: 0.5rem; color: #ef4444;">⚠️</div>
+                <div style="font-weight: 700; font-size: 1rem; color: #b91c1c; margin-bottom: 0.35rem;">Unable to preview drawing.</div>
+                <div style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 0.85rem;">Filename: <strong style="font-family: var(--font-mono); color: var(--text-main);">${escapeHtml(up.name)}</strong></div>
+                <div style="display: flex; gap: 0.5rem; justify-content: center;">
+                  <button type="button" class="btn btn-secondary btn-sm" onclick="DuctingWorkflowController.openFullDrawing()" style="font-size: 0.8rem; padding: 0.35rem 0.75rem; border-color: #0284c7; color: #0284c7; font-weight: 600;">Open Full Drawing</button>
+                  <button type="button" class="btn btn-secondary btn-sm" onclick="DuctingWorkflowController.downloadUploadedDrawing()" style="font-size: 0.8rem; padding: 0.35rem 0.75rem; font-weight: 600;">Download</button>
+                </div>
               </div>
-            `}
+
+              ${isPdf ? `
+                <iframe
+                  id="ductingPdfPreviewFrame"
+                  src="${previewSrc}#page=1&view=FitH"
+                  title="Engineering Drawing Preview"
+                  style="width: 100%; height: 100%; min-height: 470px; border: none; background: #ffffff; display: block;"
+                  onload="DuctingWorkflowController.handlePreviewLoaded()"
+                  onerror="DuctingWorkflowController.handlePreviewError()"
+                ></iframe>
+              ` : `
+                <img
+                  id="ductingImgPreview"
+                  src="${previewSrc}"
+                  alt="Engineering Drawing Preview"
+                  style="max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; display: block; margin: 0 auto; background: #ffffff;"
+                  onload="DuctingWorkflowController.handlePreviewLoaded()"
+                  onerror="DuctingWorkflowController.handlePreviewError()"
+                />
+              `}
+            </div>
+
+            <!-- Bottom Preview Controls Bar -->
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.6rem; padding: 0.4rem 0.75rem; background: #f1f5f9; border-radius: 6px; font-size: 0.75rem;">
+              <div style="color: #64748b; font-size: 0.75rem;">
+                🔍 <em>${isPdf ? 'Visualizing page 1 of uploaded PDF drawing' : 'Visualizing uploaded drawing specification'}</em>
+              </div>
+              <div style="display: flex; gap: 0.5rem;">
+                <button type="button" class="btn btn-secondary btn-sm" onclick="DuctingWorkflowController.openFullDrawing()" style="font-size: 0.75rem; padding: 0.2rem 0.6rem; border-color: #0284c7; color: #0284c7; font-weight: 600;">
+                  Open Full Drawing
+                </button>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="DuctingWorkflowController.downloadUploadedDrawing()" style="font-size: 0.75rem; padding: 0.2rem 0.6rem; font-weight: 600;">
+                  Download
+                </button>
+              </div>
+            </div>
+
             <div class="sketch-variable-pills" style="margin-top: 0.65rem;">
               ${variableBadges}
             </div>
           </div>
         `;
+
+        setTimeout(() => {
+          const loader = document.getElementById('ductingPreviewLoading');
+          if (loader) loader.style.display = 'none';
+        }, 700);
       } else {
         // Default engineering schematic SVG diagram
         const svgContent = this.getSketchSvg(type);
@@ -3069,10 +3315,17 @@
 
       // Drawing attachment details if user uploaded one
       const drawingAttachment = this.state.uploadedDrawing ? {
-        name: this.state.uploadedDrawing.name,
+        documentId: this.state.uploadedDrawing.documentId || this.state.uploadedDrawing.id || null,
+        id: this.state.uploadedDrawing.documentId || this.state.uploadedDrawing.id || null,
+        name: this.state.uploadedDrawing.name || this.state.uploadedDrawing.fileName,
+        fileName: this.state.uploadedDrawing.name || this.state.uploadedDrawing.fileName,
         size: this.state.uploadedDrawing.size,
         type: this.state.uploadedDrawing.type,
-        dataUrl: this.state.uploadedDrawing.dataUrl
+        mimeType: this.state.uploadedDrawing.type,
+        blobUrl: this.state.uploadedDrawing.blobUrl || null,
+        dataUrl: this.state.uploadedDrawing.dataUrl,
+        viewUrl: this.state.uploadedDrawing.viewUrl || null,
+        downloadUrl: this.state.uploadedDrawing.downloadUrl || null
       } : null;
 
       if (drawingAttachment) {
@@ -3649,6 +3902,33 @@
       if (btnPrintVoucher) {
         btnPrintVoucher.addEventListener('click', () => {
           window.print();
+        });
+      }
+
+      // Download Voucher PDF Button
+      const btnDownloadVoucherPdf = document.getElementById('btnDownloadVoucherPdf');
+      if (btnDownloadVoucherPdf) {
+        btnDownloadVoucherPdf.addEventListener('click', async () => {
+          if (!this.selectedPRForVoucher) return;
+          const pr = this.selectedPRForVoucher;
+          const prId = pr.id;
+          const token = window.AuthService ? window.AuthService.getToken() : '';
+          try {
+            const resp = await fetch(`/api/purchase-requests/${prId}`, {
+              headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (resp.ok) {
+              const data = await resp.json();
+              const pdfDoc = (data.documents || []).find(d => d.documentType === 'PR_PDF' || d.document_type === 'PR_PDF');
+              if (pdfDoc) {
+                this.downloadDocument(pdfDoc.id, pdfDoc.fileName || pdfDoc.file_name);
+                return;
+              }
+            }
+            alert('PDF is being prepared. Please try again in a moment.');
+          } catch (e) {
+            alert('Error downloading PDF: ' + e.message);
+          }
         });
       }
     },
@@ -6632,6 +6912,57 @@
                       }
                       const cutDisplay = isCut ? (rawCut ? (/\b(mm|in|ft|m|cm)\b/i.test(rawCut) ? rawCut : `${rawCut} mm`) : '—') : '—';
 
+                      const drw = it.engineeringDrawing || it.drawingAttachment;
+                      let drwCardHtml = '';
+                      if (drw) {
+                        const drwName = drw.fileName || drw.originalFilename || drw.name || 'Engineering Drawing';
+                        const drwType = ((drw.mimeType && drw.mimeType.includes('pdf')) || String(drwName).toLowerCase().endsWith('.pdf')) ? 'PDF' : 'IMAGE';
+                        const isPdf = drwType === 'PDF';
+                        const sz = drw.fileSize || drw.fileSizeBytes || drw.size;
+                        const drwSizeStr = sz ? `${(sz / 1024).toFixed(1)} KB` : '';
+                        const docId = drw.id || drw.documentId;
+                        const token = (window.AuthService && typeof window.AuthService.getToken === 'function') ? window.AuthService.getToken() : '';
+                        const thumbSrc = docId ? `/api/documents/${docId}/view?token=${encodeURIComponent(token)}` : (drw.viewUrl ? `${drw.viewUrl}?token=${encodeURIComponent(token)}` : (drw.blobUrl || drw.dataUrl || ''));
+
+                        drwCardHtml = `
+                          <div class="pr-card-drawing-section" style="margin-top:10px; padding:10px 14px; background:#f0f9ff; border:1px solid #bae6fd; border-left:4px solid #0284c7; border-radius:6px; max-width:320px;">
+                            <div style="font-size:0.72rem; font-weight:800; color:#0369a1; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;">
+                              ENGINEERING DRAWING
+                            </div>
+                            ${thumbSrc ? (isPdf ? `
+                              <div style="width: 100%; height: 110px; border: 1px solid #bfdbfe; border-radius: 4px; overflow: hidden; background: #fff; margin-bottom: 8px; position: relative;">
+                                <iframe src="${thumbSrc}#page=1&view=FitH&toolbar=0&navpanes=0" style="width: 100%; height: 100%; border: none; pointer-events: none;" tabindex="-1"></iframe>
+                              </div>
+                            ` : `
+                              <div style="width: 100%; height: 110px; border: 1px solid #bfdbfe; border-radius: 4px; overflow: hidden; background: #fff; margin-bottom: 8px; display: flex; align-items: center; justify-content: center;">
+                                <img src="${thumbSrc}" alt="Drawing Thumbnail" style="max-width: 100%; max-height: 100%; object-fit: contain;">
+                              </div>
+                            `) : ''}
+                            <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
+                              <div style="display:flex; align-items:center; gap:8px;">
+                                <span style="font-size:1.3rem;">${isPdf ? '📄' : '🖼️'}</span>
+                                <div>
+                                  <div style="font-size:0.78rem; font-weight:700; color:#0f172a;">
+                                    Filename: <span style="font-family:var(--font-mono); font-weight:600;">${escapeHtml(drwName)}</span>
+                                  </div>
+                                  <div style="font-size:0.72rem; color:#64748b; margin-top:1px;">
+                                    Type: <strong>${drwType}</strong> ${drwSizeStr ? ` &bull; Size: <strong>${drwSizeStr}</strong>` : ''}
+                                  </div>
+                                </div>
+                              </div>
+                              <div style="display:flex; gap:6px;">
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="UI.viewDrawingDocument(${docId})" style="padding:3px 10px; font-size:0.72rem; border-color:#0284c7; color:#0284c7; font-weight:600;">
+                                  View
+                                </button>
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="UI.downloadDrawingDocument(${docId}, '${escapeHtml(drwName)}')" style="padding:3px 10px; font-size:0.72rem; font-weight:600;">
+                                  Download
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        `;
+                      }
+
                       return `
                         <tr>
                           <td style="color:var(--text-dim); font-family:var(--font-mono);">${idx + 1}</td>
@@ -6641,6 +6972,7 @@
                             <div style="font-size:0.78rem; color:var(--text-muted); white-space:pre-wrap; margin-top:3px; line-height:1.45;">${escapeHtml(it.itemDescription || '')}</div>
                             <div style="font-size:0.75rem; color:#64748b; margin-top:3px;"><span style="font-weight:600;">Original:</span> <span style="font-family:var(--font-mono);">${escapeHtml(origDims)}</span></div>
                             ${it.remarks ? `<div style="font-size:0.75rem; color:#0284c7; background:#f0f9ff; padding:2px 6px; border-radius:4px; border:1px solid #bae6fd; margin-top:4px; display:inline-block;"><strong>Remarks:</strong> ${escapeHtml(it.remarks)}</div>` : ''}
+                            ${drwCardHtml}
                           </td>
                           <td>${escapeHtml(it.materialGrade || it.material || '-')}</td>
                           <td style="font-family:var(--font-mono); font-weight:600; color:#334155;">${escapeHtml(origDims)}</td>
@@ -6767,8 +7099,8 @@
                   📄 Download PDF (${escapeHtml(pdfDoc.fileName)})
                 </button>
               ` : ''}
-              <button type="button" class="btn btn-secondary btn-sm" onclick="window.print()">
-                🖨️ Print View
+              <button type="button" class="btn btn-secondary btn-sm" id="btnModalOpenVoucher">
+                🖨️ Official Document / Print View
               </button>
             </div>
 
@@ -6786,6 +7118,12 @@
               </button>
             </div>
           `;
+
+          // Bind official print voucher button
+          document.getElementById('btnModalOpenVoucher')?.addEventListener('click', () => {
+            this.closeModal('modalViewPrDetails');
+            this.openVoucherModal(pr);
+          });
 
           // Bind download buttons
           if (excelDoc) {
@@ -6942,20 +7280,46 @@
       }
     },
 
+    viewDrawingDocument(docId) {
+      if (!docId) {
+        alert('Drawing document ID is missing.');
+        return;
+      }
+      const token = window.AuthService ? window.AuthService.getToken() : '';
+      if (!token) {
+        alert('Authentication required to view document.');
+        return;
+      }
+      window.open(`/api/documents/${docId}/view?token=${encodeURIComponent(token)}`, '_blank');
+    },
+
+    async downloadDrawingDocument(docId, fileName) {
+      if (!docId) {
+        alert('Drawing document ID is missing.');
+        return;
+      }
+      await this.downloadDocument(docId, fileName);
+    },
+
     openVoucherModal(pr) {
       this.selectedPRForVoucher = pr;
       const modal = document.getElementById('modalPrVoucher');
       const container = document.getElementById('prVoucherContainer');
       if (!modal || !container) return;
 
-      const d = new Date(pr.createdAt);
+      const prNum = pr.prNumber || pr.pr_number || 'PR-2026-XXXX';
+      const revNum = pr.revision !== undefined && pr.revision !== null ? pr.revision : 0;
+      const revStr = String(revNum).padStart(2, '0');
+
+      const d = pr.createdAt || pr.created_at ? new Date(pr.createdAt || pr.created_at) : new Date();
       const reqDateFormatted = `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+      const needDateFormatted = pr.requiredDate || pr.required_date || '—';
 
       // Update PR Voucher Header Meta
       const elVoucherNum = document.getElementById('prVoucherDisplayNumber');
-      const elVoucherDate = document.getElementById('prVoucherDisplayDate');
-      if (elVoucherNum) elVoucherNum.textContent = pr.prNumber;
-      if (elVoucherDate) elVoucherDate.textContent = reqDateFormatted;
+      const elVoucherRev = document.getElementById('prVoucherDisplayRev');
+      if (elVoucherNum) elVoucherNum.textContent = prNum;
+      if (elVoucherRev) elVoucherRev.textContent = `Rev ${revStr}`;
 
       const items = (pr.items && pr.items.length > 0) ? pr.items : [{
         sku: pr.sku,
@@ -6974,48 +7338,51 @@
         weight: pr.weightKg || pr.totalWeightKg,
         unitPrice: pr.unitPrice,
         estimatedTotalCost: pr.totalCost || (pr.unitPrice * pr.quantity),
-        remarks: pr.remarks || ''
+        remarks: pr.remarks || '',
+        ductingType: pr.ductingType || pr.ducting_type || null
       }];
 
       const grandTotal = items.reduce((sum, it) => sum + (parseFloat(it.estimatedTotalCost || (it.unitPrice * it.quantity)) || 0), 0);
+      const ductingItems = items.filter(it => it.ductingType || it.ducting_type);
+      const statusColor = pr.status === 'APPROVED' ? '#059669' : (pr.status === 'REJECTED' ? '#e11d48' : '#d97706');
 
       container.innerHTML = `
-        <!-- SECTION 1: PROJECT / REQUEST INFORMATION -->
+        <!-- SECTION 1: PROJECT & REQUISITION INFORMATION -->
         <div class="pr-doc-section">
           <div class="pr-doc-section-title">
-            <span>PROJECT / REQUEST INFORMATION</span>
-            <span style="font-size:0.85rem; font-weight:800; color:#0284c7; font-family:var(--font-mono);">${escapeHtml(pr.prNumber)}</span>
+            <span>PROJECT &amp; REQUISITION INFORMATION</span>
+            <span style="font-size:0.85rem; font-weight:800; color:#0284c7; font-family:var(--font-mono);">${escapeHtml(prNum)} &bull; Rev ${revStr}</span>
           </div>
 
           <div style="display:grid; grid-template-columns: repeat(2, 1fr); gap: 0.75rem 1.5rem; background:#f8fafc; padding: 14px 18px; border:1px solid #e2e8f0; border-radius:var(--radius-md); font-size:0.88rem;">
-            <div><strong style="color:#64748b; font-size:0.75rem; text-transform:uppercase;">PR Number:</strong> <div style="font-weight:700; color:#0284c7; font-family:var(--font-mono);">${escapeHtml(pr.prNumber)}</div></div>
+            <div><strong style="color:#64748b; font-size:0.75rem; text-transform:uppercase;">PR Number:</strong> <div style="font-weight:700; color:#0284c7; font-family:var(--font-mono); font-size:1rem;">${escapeHtml(prNum)}</div></div>
             <div><strong style="color:#64748b; font-size:0.75rem; text-transform:uppercase;">Request Date:</strong> <div style="font-weight:700; color:#0f172a;">${reqDateFormatted}</div></div>
-            <div><strong style="color:#64748b; font-size:0.75rem; text-transform:uppercase;">Project / PID:</strong> <div style="font-weight:700; color:#0f172a;">${escapeHtml(pr.projectId || pr.projectCode || '-')}</div></div>
-            <div><strong style="color:#64748b; font-size:0.75rem; text-transform:uppercase;">Department:</strong> <div style="font-weight:700; color:#0f172a;">${escapeHtml(pr.department)}</div></div>
-            <div><strong style="color:#64748b; font-size:0.75rem; text-transform:uppercase;">Requested By:</strong> <div style="font-weight:700; color:#0f172a;">${escapeHtml(pr.requestedBy || pr.requesterName || '-')}</div></div>
-            <div><strong style="color:#64748b; font-size:0.75rem; text-transform:uppercase;">Required Date:</strong> <div style="font-weight:700; color:#0f172a;">${escapeHtml(pr.requiredDate)}</div></div>
-            <div style="grid-column: span 2;"><strong style="color:#64748b; font-size:0.75rem; text-transform:uppercase;">Urgency:</strong> <span style="font-weight:700; color:${(pr.urgency && pr.urgency.includes('Critical')) ? '#e11d48' : ((pr.urgency && pr.urgency.includes('Urgent')) ? '#d97706' : '#0284c7')}">${escapeHtml(pr.urgency || 'Standard')}</span></div>
+            <div><strong style="color:#64748b; font-size:0.75rem; text-transform:uppercase;">Project / PID:</strong> <div style="font-weight:700; color:#0f172a;">${escapeHtml(pr.projectCode || pr.project_code || pr.projectId || '-')} ${pr.projectName ? `&bull; ${escapeHtml(pr.projectName)}` : ''}</div></div>
+            <div><strong style="color:#64748b; font-size:0.75rem; text-transform:uppercase;">Department:</strong> <div style="font-weight:700; color:#0f172a;">${escapeHtml(pr.department || 'Engineering')}</div></div>
+            <div><strong style="color:#64748b; font-size:0.75rem; text-transform:uppercase;">Requested By:</strong> <div style="font-weight:700; color:#0f172a;">${escapeHtml(pr.requesterName || pr.requestedBy || '-')}</div></div>
+            <div><strong style="color:#64748b; font-size:0.75rem; text-transform:uppercase;">Required Date:</strong> <div style="font-weight:700; color:#0f172a;">${escapeHtml(needDateFormatted)}</div></div>
+            <div><strong style="color:#64748b; font-size:0.75rem; text-transform:uppercase;">Job Location:</strong> <div style="font-weight:700; color:#0f172a;">${escapeHtml(pr.jobLocation || pr.job_location || '—')}</div></div>
+            <div><strong style="color:#64748b; font-size:0.75rem; text-transform:uppercase;">Status &amp; Urgency:</strong> <div><span style="font-weight:800; color:${statusColor};">${escapeHtml(pr.status || 'PENDING')}</span> <span style="color:#64748b;">| ${escapeHtml(pr.urgency || 'Standard')} | Rev ${revStr}</span></div></div>
           </div>
         </div>
 
-        <!-- SECTION 2: ITEM DETAILS -->
+        <!-- SECTION 2: ITEM SPECIFICATIONS & QUANTITIES -->
         <div class="pr-doc-section">
           <div class="pr-doc-section-title">
-            <span>ITEM DETAILS (${items.length} Materials)</span>
-            <span class="pr-source-truth-tag">🔒 Master Item (Single Source of Truth)</span>
+            <span>ITEM SPECIFICATIONS &amp; QUANTITIES (${items.length} Materials)</span>
+            <span class="pr-source-truth-tag">🔒 Master Item Registry Standard</span>
           </div>
 
           <div class="table-responsive" style="margin-top:8px;">
             <table class="data-table" style="font-size:0.85rem; width:100%;">
               <thead>
                 <tr>
-                  <th style="width:35px;">#</th>
-                  <th style="width:95px;">SKU</th>
-                  <th>Product Name &amp; Description</th>
-                  <th>Material / Grade</th>
-                  <th>Original Dimensions</th>
-                  <th style="min-width:115px;">Supply Type</th>
-                  <th style="min-width:135px;">Required Cut Size</th>
+                  <th style="width:35px; text-align:center;">#</th>
+                  <th style="width:90px;">SKU</th>
+                  <th>Product Name &amp; Specifications</th>
+                  <th>Material / Dimensions</th>
+                  <th style="min-width:110px;">Supply Type</th>
+                  <th style="min-width:130px;">Required Cut Size</th>
                   <th>Unit</th>
                   <th style="text-align:right;">Quantity</th>
                   <th style="text-align:right;">Unit Price (IDR)</th>
@@ -7027,11 +7394,12 @@
                   const p = (it.unitPrice !== undefined && it.unitPrice !== null && it.unitPrice !== '' && !isNaN(Number(it.unitPrice))) ? Number(it.unitPrice) : null;
                   const q = parseFloat(it.quantity) || 1;
                   const tot = (p !== null) ? (parseFloat(it.estimatedTotalCost) || (p * q)) : null;
-                  const formattedUnitPrice = (p !== null) ? `IDR ${p.toLocaleString('id-ID')} / ${escapeHtml(it.unit || 'Unit')}` : '—';
+                  const formattedUnitPrice = (p !== null) ? `IDR ${p.toLocaleString('id-ID')}` : '—';
                   const totStr = (tot !== null) ? `IDR ${tot.toLocaleString('id-ID')}` : '—';
 
-                  const isFastener = (it.category || '').toLowerCase() === 'fasteners' || /fastener|bolt|screw|nut|stud/i.test(`${it.productName || it.product_name || ''} ${it.itemDescription || it.item_description || ''} ${it.category || ''}`);
-                  const isCut = !isFastener && (it.supplyType === 'Cut Size' || it.supply_type === 'Cut Size' || it.purchaseType === 'PROJECT-SPECIFIC CUT SIZE' || it.purchase_type === 'PROJECT-SPECIFIC CUT SIZE');
+                  const isDucting = Boolean(it.ductingType || it.ducting_type);
+                  const isFastener = !isDucting && ((it.category || '').toLowerCase() === 'fasteners' || /fastener|bolt|screw|nut|stud/i.test(`${it.productName || it.product_name || ''} ${it.itemDescription || it.item_description || ''}`));
+                  const isCut = !isDucting && !isFastener && (it.supplyType === 'Cut Size' || it.supply_type === 'Cut Size' || it.purchaseType === 'PROJECT-SPECIFIC CUT SIZE');
                   const origDims = it.originalDimensions || it.sizeDimensions || it.size_dimensions || it.size || '—';
                   let rawCut = it.requiredCutSize || it.required_cut_size || '';
                   if (!rawCut && (it.cutLength || it.cut_length)) {
@@ -7043,35 +7411,45 @@
 
                   return `
                     <tr>
-                      <td style="color:var(--text-dim); font-family:var(--font-mono);">${idx + 1}</td>
-                      <td><span class="sku-badge">${escapeHtml(it.sku)}</span></td>
+                      <td style="color:var(--text-dim); font-family:var(--font-mono); text-align:center;">${idx + 1}</td>
+                      <td><span class="sku-badge">${escapeHtml(it.sku || (isDucting ? 'DUCTING' : '—'))}</span></td>
                       <td>
-                        <div style="font-weight:600; color:var(--text-main);">${escapeHtml(it.productName || '—')}</div>
-                        <div style="font-size:0.78rem; color:var(--text-muted); white-space:pre-wrap; margin-top:3px; line-height:1.45;">${escapeHtml(it.itemDescription || '')}</div>
-                        <div style="font-size:0.75rem; color:#64748b; margin-top:3px;"><span style="font-weight:600;">Original:</span> <span style="font-family:var(--font-mono);">${escapeHtml(origDims)}</span></div>
-                        ${it.remarks ? `<div style="font-size:0.75rem; color:#0284c7; background:#f0f9ff; padding:2px 6px; border-radius:4px; border:1px solid #bae6fd; margin-top:3px; display:inline-block;"><strong>Remarks:</strong> ${escapeHtml(it.remarks)}</div>` : ''}
+                        <div style="font-weight:600; color:var(--text-main);">${escapeHtml(it.productName || it.product_name || '—')}</div>
+                        ${it.itemDescription || it.item_description ? `
+                          <div style="font-size:0.78rem; color:var(--text-muted); white-space:pre-wrap; margin-top:3px; line-height:1.45;">${escapeHtml(it.itemDescription || it.item_description || '')}</div>
+                        ` : ''}
+                        ${it.specification ? `
+                          <div style="font-size:0.75rem; color:#64748b; font-style:italic; margin-top:2px;">Spec: ${escapeHtml(it.specification)}</div>
+                        ` : ''}
+                        ${it.remarks ? `
+                          <div style="font-size:0.72rem; color:#0284c7; background:#f0f9ff; padding:2px 6px; border-radius:4px; border:1px solid #bae6fd; margin-top:3px; display:inline-block;"><strong>Remarks:</strong> ${escapeHtml(it.remarks)}</div>
+                        ` : ''}
                       </td>
-                      <td>${escapeHtml(it.materialGrade || it.material || '-')}</td>
-                      <td style="font-family:var(--font-mono); font-weight:600; color:#334155;">${escapeHtml(origDims)}</td>
                       <td>
-                        ${isFastener ? `
-                          <span style="color:var(--text-muted); font-size:0.88rem;">—</span>
+                        <div style="font-weight:600; color:#334155;">${escapeHtml(it.materialGrade || it.material || '-')}</div>
+                        <div style="font-size:0.75rem; color:#64748b; font-family:var(--font-mono);">${escapeHtml(origDims)}</div>
+                      </td>
+                      <td>
+                        ${isDucting ? `
+                          <span style="font-weight:700; font-size:0.75rem; color:#0284c7; background:#f0f9ff; padding:3px 8px; border-radius:4px; border:1px solid #bae6fd; display:inline-block;">DUCTING SPEC</span>
+                        ` : (isFastener ? `
+                          <span style="color:var(--text-muted); font-size:0.85rem;">—</span>
                         ` : `
-                          <span class="supply-badge ${isCut ? 'cut-size' : 'full-size'}" style="font-weight:700; font-size:0.75rem; letter-spacing:0.5px; padding:3px 8px; border-radius:4px; display:inline-block;">
+                          <span class="supply-badge ${isCut ? 'cut-size' : 'full-size'}" style="font-weight:700; font-size:0.75rem; padding:3px 8px; border-radius:4px; display:inline-block;">
                             ${isCut ? '✂️ CUT SIZE' : 'FULL SIZE'}
                           </span>
-                        `}
+                        `)}
                       </td>
                       <td>
                         ${(!isFastener && isCut) ? `
-                          <span style="font-family:var(--font-mono); font-weight:700; color:#c2410c; background:#fff7ed; padding:3px 8px; border-radius:4px; border:1px solid #fed7aa; display:inline-block; font-size:0.82rem;">
+                          <span style="font-family:var(--font-mono); font-weight:700; color:#c2410c; background:#fff7ed; padding:3px 8px; border-radius:4px; border:1px solid #fed7aa; display:inline-block; font-size:0.8rem;">
                             ${escapeHtml(cutDisplay)}
                           </span>
                         ` : `
-                          <span style="color:var(--text-muted); font-size:0.88rem;">—</span>
+                          <span style="color:var(--text-muted); font-size:0.85rem;">—</span>
                         `}
                       </td>
-                      <td><span class="unit-badge">${escapeHtml(it.unit || 'Sheet')}</span></td>
+                      <td><span class="unit-badge">${escapeHtml(it.unit || (isDucting ? 'Pcs' : 'Sheet'))}</span></td>
                       <td style="text-align:right; font-weight:700; font-family:var(--font-mono);">${q}</td>
                       <td style="text-align:right; font-weight:600; font-family:var(--font-mono);">${formattedUnitPrice}</td>
                       <td style="text-align:right; font-weight:700; color:#059669; font-family:var(--font-mono);">${totStr}</td>
@@ -7081,8 +7459,8 @@
               </tbody>
               <tfoot>
                 <tr style="background:#f1f5f9; font-weight:700;">
-                  <td colspan="10" style="text-align:right; text-transform:uppercase; font-size:0.8rem; letter-spacing:0.5px;">Grand Estimated Cost:</td>
-                  <td style="text-align:right; font-size:0.95rem; color:#059669; font-family:var(--font-mono);">
+                  <td colspan="9" style="text-align:right; text-transform:uppercase; font-size:0.8rem; letter-spacing:0.5px;">Estimated Grand Total (IDR):</td>
+                  <td style="text-align:right; font-size:1rem; color:#059669; font-family:var(--font-mono);">
                     ${grandTotal > 0 ? `IDR ${Number(grandTotal).toLocaleString('id-ID')}` : '—'}
                   </td>
                 </tr>
@@ -7091,49 +7469,182 @@
           </div>
         </div>
 
-        <!-- SECTION 3: REASON / REQUIREMENT -->
+        ${ductingItems.length > 0 ? `
+          <!-- SECTION 3: ENGINEERING & DUCTING SPECIFICATIONS -->
+          <div class="pr-doc-section">
+            <div class="pr-doc-section-title">
+              <span>ENGINEERING &amp; DUCTING SPECIFICATIONS</span>
+            </div>
+
+            <div style="display:flex; flex-direction:column; gap:0.75rem;">
+              ${ductingItems.map((dItem, dIdx) => {
+                const dims = [];
+                if (dItem.dimA || dItem.dim_a) dims.push(`Ø A: ${dItem.dimA || dItem.dim_a} mm`);
+                if (dItem.dimB || dItem.dim_b) dims.push(`Ø B: ${dItem.dimB || dItem.dim_b} mm`);
+                if (dItem.dimC || dItem.dim_c) dims.push(`Ø C: ${dItem.dimC || dItem.dim_c} mm`);
+                if (dItem.angleD || dItem.angle_d) dims.push(`Angle D: ${dItem.angleD || dItem.angle_d}°`);
+                if (dItem.angleB || dItem.angle_b) dims.push(`Angle B: ${dItem.angleB || dItem.angle_b}°`);
+                if (dItem.radius) dims.push(`Radius: ${dItem.radius} mm`);
+                if (dItem.l1 || dItem.dim_l1) dims.push(`L1: ${dItem.l1 || dItem.dim_l1} mm`);
+                if (dItem.l2 || dItem.dim_l2) dims.push(`L2: ${dItem.l2 || dItem.dim_l2} mm`);
+                if (dItem.thickness) dims.push(`Thickness: ${dItem.thickness} mm`);
+
+                const drw = dItem.engineeringDrawing || dItem.drawingAttachment;
+                const dName = drw ? (drw.fileName || drw.originalFilename || drw.name || 'Engineering Drawing') : '';
+                const isPdf = drw ? (((drw.mimeType && drw.mimeType.includes('pdf')) || String(dName).toLowerCase().endsWith('.pdf'))) : false;
+                const dSize = drw ? (drw.fileSize || drw.fileSizeBytes || drw.size) : null;
+                const dSizeStr = dSize ? `${(dSize / 1024).toFixed(1)} KB` : '';
+                const token = window.AuthService ? window.AuthService.getToken() : '';
+                const viewUrl = drw ? (drw.viewUrl ? `${drw.viewUrl}?token=${encodeURIComponent(token)}` : (drw.dataUrl || '')) : '';
+
+                return `
+                  <div style="background:#f0f9ff; border:1px solid #bae6fd; border-radius:var(--radius-md); padding:10px 14px; font-size:0.85rem;">
+                    <div style="font-weight:700; color:#0369a1; margin-bottom:4px;">
+                      Item #${dIdx + 1}: ${escapeHtml(dItem.productName || dItem.product_name || 'Ducting')} (${escapeHtml(dItem.ductingType || dItem.ducting_type || 'Custom')})
+                    </div>
+                    <div style="color:#0f172a; font-family:var(--font-mono); font-size:0.8rem;">
+                      ${dims.join(' &nbsp;|&nbsp; ')}
+                    </div>
+                    ${drw ? `
+                      <div style="margin-top:8px; padding:10px 12px; background:#ffffff; border:1px solid #0284c7; border-left:4px solid #0284c7; border-radius:6px;">
+                        <div style="font-size:0.72rem; font-weight:800; color:#0369a1; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px;">
+                          ENGINEERING DRAWING
+                        </div>
+                        <div style="font-size:0.82rem; font-weight:700; color:#0f172a;">
+                          Filename: <span style="font-family:var(--font-mono);">${escapeHtml(dName)}</span>
+                        </div>
+                        <div style="font-size:0.75rem; color:#64748b; margin-top:2px;">
+                          Type: <strong>${isPdf ? 'PDF' : 'IMAGE'}</strong> ${dSizeStr ? ` &bull; Size: <strong>${dSizeStr}</strong>` : ''}
+                        </div>
+                        ${!isPdf && viewUrl ? `
+                          <div style="margin-top:8px; text-align:center;">
+                            <img src="${viewUrl}" alt="Engineering Drawing" style="max-height:220px; max-width:100%; border:1px solid #cbd5e1; border-radius:4px; object-fit:contain;">
+                          </div>
+                        ` : (isPdf ? `
+                          <div style="margin-top:6px; font-size:0.74rem; color:#0284c7; font-style:italic;">
+                            📄 Complete original vector engineering drawing specification is appended to the official PR PDF document.
+                          </div>
+                        ` : '')}
+                      </div>
+                    ` : ''}
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        ` : ''}
+
+        <!-- SECTION 4: REQUISITION REASON & REMARKS -->
         <div class="pr-doc-section">
           <div class="pr-doc-section-title">
-            <span>REASON / REQUIREMENT</span>
+            <span>REQUISITION REASON &amp; REMARKS</span>
           </div>
 
           <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:var(--radius-md); padding:14px 18px; font-size:0.88rem;">
             <div style="margin-bottom:0.75rem;">
               <strong style="color:#64748b; font-size:0.75rem; text-transform:uppercase; display:block; margin-bottom:2px;">Reason for Purchase:</strong>
-              <div style="color:#0f172a; font-weight:600;">${escapeHtml(pr.reasonForPurchase)}</div>
+              <div style="color:#0f172a; font-weight:600; white-space:pre-wrap;">${escapeHtml(pr.reasonForPurchase || pr.reason_for_purchase || '(No reason specified)')}</div>
             </div>
-            ${pr.remarks ? `
+            ${(pr.remarks) ? `
               <div style="border-top:1px dashed #e2e8f0; padding-top:0.75rem;">
                 <strong style="color:#64748b; font-size:0.75rem; text-transform:uppercase; display:block; margin-bottom:2px;">Remarks / Purchasing Notes:</strong>
-                <div style="color:#475569;">${escapeHtml(pr.remarks)}</div>
+                <div style="color:#475569; white-space:pre-wrap;">${escapeHtml(pr.remarks)}</div>
               </div>
             ` : ''}
           </div>
         </div>
 
-        <!-- Formal Approval Signature Blocks -->
-        <div style="margin-top:2rem; padding-top:1.5rem; border-top:1px solid #e2e8f0; display:flex; justify-content:space-between; font-size:0.8rem; color:#64748b;">
+        <!-- SECTION 5: APPROVAL & DIGITAL VERIFICATION -->
+        <div style="margin-top:2rem; padding:1.25rem 1.5rem; background:#ffffff; border:1px solid #cbd5e1; border-radius:var(--radius-md); display:grid; grid-template-columns: 1fr 1fr auto; gap:1.5rem; align-items:center;">
+          <!-- Requisitioned By -->
           <div>
-            <div>Requisitioned By:</div>
-            <div style="width:170px; border-top:1px solid #94a3b8; margin-top:40px; text-align:center; padding-top:4px; font-weight:700; color:#0f172a;">
-              ${escapeHtml(pr.requestedBy)}<br>
-              <span style="font-size:0.7rem; color:#94a3b8; font-weight:400;">${escapeHtml(pr.department)}</span>
+            <div style="font-size:0.72rem; font-weight:700; color:#64748b; text-transform:uppercase; letter-spacing:0.5px;">Requisitioned By:</div>
+            <div style="font-weight:700; color:#0f172a; margin-top:4px;">${escapeHtml(pr.requesterName || pr.requestedBy || 'Requester')}</div>
+            <div style="font-size:0.75rem; color:#64748b;">Dept: ${escapeHtml(pr.department || 'Engineering')}</div>
+            <div style="font-size:0.75rem; color:#64748b;">Date: ${reqDateFormatted}</div>
+            <div style="margin-top:14px; border-top:1px solid #94a3b8; width:160px; padding-top:3px; font-size:0.7rem; color:#64748b;">Signature / Verification</div>
+          </div>
+
+          <!-- Management / Approval -->
+          <div>
+            <div style="font-size:0.72rem; font-weight:700; color:#64748b; text-transform:uppercase; letter-spacing:0.5px;">Management / Approval:</div>
+            ${pr.status === 'APPROVED' ? `
+              <div style="font-weight:800; color:#059669; margin-top:4px; font-size:0.92rem;">✓ OFFICIALLY APPROVED</div>
+              <div style="font-size:0.78rem; font-weight:600; color:#0f172a;">${escapeHtml(pr.approverName || 'System Administrator')}</div>
+              <div style="font-size:0.75rem; color:#64748b;">Approval Date: ${pr.approvedAt ? new Date(pr.approvedAt).toLocaleDateString('en-GB') : reqDateFormatted}</div>
+              <div style="margin-top:10px; font-size:0.7rem; color:#059669; font-weight:600;">[ Digitally Signed &amp; Approved ]</div>
+            ` : (pr.status === 'REJECTED' ? `
+              <div style="font-weight:800; color:#e11d48; margin-top:4px; font-size:0.92rem;">✕ REJECTED</div>
+              <div style="font-size:0.75rem; color:#64748b;">${escapeHtml(pr.rejectionReason || 'Rejected by Admin')}</div>
+            ` : `
+              <div style="font-weight:800; color:#d97706; margin-top:4px; font-size:0.92rem;">⏳ PENDING APPROVAL</div>
+              <div style="font-size:0.75rem; color:#64748b;">Awaiting Administrative Review</div>
+              <div style="margin-top:14px; border-top:1px solid #94a3b8; width:160px; padding-top:3px; font-size:0.7rem; color:#64748b;">Signature / Authorization</div>
+            `)}
+          </div>
+
+          <!-- QR Verification Badge -->
+          <div style="text-align:center; padding-left:1rem; border-left:1px solid #e2e8f0;">
+            <a href="/pr/${encodeURIComponent(prNum)}/verify" target="_blank" title="Scan to Verify Document" style="display:inline-block; text-decoration:none;">
+              <img src="/pr/${encodeURIComponent(prNum)}/qr" alt="QR Code" style="width:72px; height:72px; display:block; margin:0 auto; border:1px solid #cbd5e1; border-radius:6px; padding:2px; background:#fff;">
+              <div style="font-size:0.65rem; font-weight:700; color:#0284c7; margin-top:4px; text-transform:uppercase; letter-spacing:0.5px;">Scan to Verify</div>
+            </a>
+          </div>
+        </div>
+
+        ${items.some(it => it.engineeringDrawing || it.drawingAttachment) ? `
+          <!-- OFFICIAL ENGINEERING DRAWING APPENDIX FOR PRINT VIEW -->
+          <div class="pr-doc-section pr-print-drawing-appendix" style="margin-top:2.5rem; page-break-before:always; border-top:2px solid #0284c7; padding-top:1.5rem;">
+            <div class="pr-doc-section-title">
+              <span>OFFICIAL ENGINEERING DRAWING APPENDIX</span>
+              <span style="font-size:0.85rem; font-weight:800; color:#0284c7; font-family:var(--font-mono);">${escapeHtml(prNum)}</span>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:1.5rem; margin-top:1rem;">
+              ${items.filter(it => it.engineeringDrawing || it.drawingAttachment).map((it, drwIdx) => {
+                const drw = it.engineeringDrawing || it.drawingAttachment;
+                const dName = drw.fileName || drw.originalFilename || drw.name || 'Engineering Drawing';
+                const isPdf = ((drw.mimeType && drw.mimeType.includes('pdf')) || String(dName).toLowerCase().endsWith('.pdf'));
+                const token = window.AuthService ? window.AuthService.getToken() : '';
+                const viewUrl = drw.viewUrl ? `${drw.viewUrl}?token=${encodeURIComponent(token)}` : (drw.dataUrl || '');
+                const dSize = drw.fileSize || drw.fileSizeBytes || drw.size;
+                const dSizeStr = dSize ? `${(dSize / 1024).toFixed(1)} KB` : '';
+
+                return `
+                  <div style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:6px; padding:16px;">
+                    <div style="font-size:0.9rem; font-weight:700; color:#0369a1; margin-bottom:8px;">
+                      Appendix #${drwIdx + 1}: ${escapeHtml(it.productName || it.product_name || 'Ducting Item')} (${escapeHtml(it.ductingType || it.ducting_type || 'Custom')})
+                    </div>
+                    <div style="display:grid; grid-template-columns: repeat(2, 1fr); gap:6px 12px; font-size:0.82rem; margin-bottom:12px; background:#fff; padding:10px 14px; border:1px solid #e2e8f0; border-radius:4px;">
+                      <div><strong>Drawing File:</strong> <span style="font-family:var(--font-mono);">${escapeHtml(dName)}</span></div>
+                      <div><strong>Format:</strong> ${isPdf ? 'Vector PDF' : 'Image'}</div>
+                      <div><strong>File Size:</strong> ${dSizeStr || '—'}</div>
+                      <div><strong>PR Item:</strong> ${escapeHtml(it.productName || it.product_name || 'Ducting')}</div>
+                    </div>
+                    ${!isPdf && viewUrl ? `
+                      <div style="text-align:center; padding:12px; background:#fff; border:1px solid #e2e8f0; border-radius:4px;">
+                        <img src="${viewUrl}" alt="${escapeHtml(dName)}" style="max-width:100%; max-height:480px; object-fit:contain;">
+                      </div>
+                    ` : (isPdf && viewUrl ? `
+                      <div style="text-align:center; padding:8px; background:#fff; border:1px solid #e2e8f0; border-radius:4px;">
+                        <iframe src="${viewUrl}#page=1&view=FitH" title="${escapeHtml(dName)}" style="width:100%; height:550px; border:none; background:#ffffff;"></iframe>
+                      </div>
+                    ` : `
+                      <div style="padding:16px; background:#f0f9ff; border:1px solid #bae6fd; border-radius:4px; font-size:0.85rem; color:#0369a1;">
+                        <div style="font-weight:700; font-size:0.9rem; margin-bottom:4px;">📄 Vector Engineering Drawing Specification (${escapeHtml(dName)})</div>
+                        <div>This technical specification is preserved in full vector resolution and appended directly into the generated official PR PDF document.</div>
+                      </div>
+                    `)}
+                  </div>
+                `;
+              }).join('')}
             </div>
           </div>
-          <div>
-            <div>Engineering Verification:</div>
-            <div style="width:170px; border-top:1px solid #94a3b8; margin-top:40px; text-align:center; padding-top:4px; font-weight:700; color:#0f172a;">
-              Lead Materials Engineer<br>
-              <span style="font-size:0.7rem; color:#059669; font-weight:600;">Specification Verified</span>
-            </div>
-          </div>
-          <div>
-            <div>Purchasing Approval:</div>
-            <div style="width:170px; border-top:1px solid #94a3b8; margin-top:40px; text-align:center; padding-top:4px; font-weight:700; color:#0f172a;">
-              Procurement Manager<br>
-              <span style="font-size:0.7rem; color:#0284c7; font-weight:600;">Pending Order</span>
-            </div>
-          </div>
+        ` : ''}
+
+        <!-- DOCUMENT CONTROL FOOTER -->
+        <div style="margin-top:1.5rem; padding-top:0.75rem; border-top:1px solid #e2e8f0; display:flex; justify-content:space-between; font-size:0.72rem; color:#64748b; font-family:var(--font-mono);">
+          <div>Document: ${escapeHtml(prNum)} &bull; Revision: Rev ${revStr} &bull; Status: ${escapeHtml(pr.status || 'PENDING')}</div>
+          <div>PT. Flow Force Indonesia &bull; ISO Procurement Standard</div>
         </div>
       `;
 

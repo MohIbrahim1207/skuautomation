@@ -117,10 +117,16 @@ CREATE TABLE IF NOT EXISTS documents (
   id SERIAL PRIMARY KEY,
   project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
   purchase_request_id INTEGER REFERENCES purchase_requests(id) ON DELETE CASCADE,
-  document_type VARCHAR(50) NOT NULL CHECK (document_type IN ('PR_EXCEL', 'PR_PDF')),
+  purchase_request_item_id INTEGER REFERENCES pr_items(id) ON DELETE CASCADE,
+  document_type VARCHAR(50) NOT NULL CHECK (document_type IN ('PR_EXCEL', 'PR_PDF', 'ENGINEERING_DRAWING')),
   file_name VARCHAR(255) NOT NULL,
+  original_file_name VARCHAR(255),
   file_path_or_storage_key TEXT NOT NULL,
   uploaded_by_user_id VARCHAR(36) REFERENCES users(id) ON DELETE SET NULL,
+  revision INTEGER NOT NULL DEFAULT 0,
+  sha256_checksum VARCHAR(64),
+  file_size_bytes BIGINT,
+  mime_type VARCHAR(100),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -133,9 +139,33 @@ CREATE INDEX IF NOT EXISTS idx_pr_status ON purchase_requests(status);
 CREATE INDEX IF NOT EXISTS idx_pr_creator ON purchase_requests(created_by_user_id);
 CREATE INDEX IF NOT EXISTS idx_pr_project ON purchase_requests(project_id);
 CREATE INDEX IF NOT EXISTS idx_pr_items_pr ON pr_items(purchase_request_id);
+CREATE INDEX IF NOT EXISTS idx_pr_items_drawing ON pr_items(drawing_document_id);
 CREATE INDEX IF NOT EXISTS idx_pr_history_pr ON pr_approval_history(purchase_request_id);
 CREATE INDEX IF NOT EXISTS idx_documents_pr ON documents(purchase_request_id);
 CREATE INDEX IF NOT EXISTS idx_documents_project ON documents(project_id);
+CREATE INDEX IF NOT EXISTS idx_documents_pr_item ON documents(purchase_request_item_id);
+CREATE INDEX IF NOT EXISTS idx_documents_type ON documents(document_type);
+
+-- 7b. ACTIVITY LOGS TABLE (Enterprise Activity & Document Audit Logging)
+CREATE TABLE IF NOT EXISTS activity_logs (
+  id SERIAL PRIMARY KEY,
+  entity_type VARCHAR(50) NOT NULL,
+  entity_id VARCHAR(100),
+  action VARCHAR(50) NOT NULL,
+  performed_by_user_id VARCHAR(36) REFERENCES users(id) ON DELETE SET NULL,
+  performed_by_username VARCHAR(100),
+  metadata JSONB,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_activity_logs_entity ON activity_logs(entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_activity_logs_action ON activity_logs(action);
+
+-- 7c. DOCUMENT VERSIONING & CHECKSUM EXTENSIONS
+ALTER TABLE purchase_requests ADD COLUMN IF NOT EXISTS revision INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS revision INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS sha256_checksum VARCHAR(64);
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS file_size_bytes BIGINT;
 
 -- 9. IDEMPOTENT MIGRATIONS FOR MASTER_ITEMS
 ALTER TABLE master_items ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'Available';

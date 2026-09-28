@@ -1,17 +1,26 @@
 /**
  * =========================================================================
  * PR DOCUMENT GENERATOR - EXCEL (.xlsx) & PDF (.pdf)
- * Flow Force White Enterprise Document Standard
+ * Flow Force Enterprise Grade Document Standard
  * =========================================================================
  */
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const XLSX = require('xlsx');
 const PDFDocument = require('pdfkit');
+const QRCode = require('qrcode');
 const { query } = require('../db/pool');
+const { logActivity } = require('./activityLogger');
 require('dotenv').config();
 
 const BASE_STORAGE_DIR = process.env.STORAGE_DIR || './storage';
+
+function getDocumentStorageDir() {
+  return path.isAbsolute(BASE_STORAGE_DIR)
+    ? BASE_STORAGE_DIR
+    : path.resolve(process.cwd(), BASE_STORAGE_DIR);
+}
 
 /**
  * Ensures project folder hierarchy exists:
@@ -19,9 +28,7 @@ const BASE_STORAGE_DIR = process.env.STORAGE_DIR || './storage';
  */
 function ensureStorageDirectory(projectCode) {
   const cleanCode = (projectCode || 'GENERAL').replace(/[^a-zA-Z0-9_-]/g, '_');
-  const baseStorage = path.isAbsolute(BASE_STORAGE_DIR)
-    ? BASE_STORAGE_DIR
-    : path.resolve(process.cwd(), BASE_STORAGE_DIR);
+  const baseStorage = getDocumentStorageDir();
   const dir = path.join(baseStorage, 'projects', cleanCode, 'purchase-requests');
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });
@@ -39,7 +46,7 @@ function formatIdr(amount) {
 
 /**
  * Generates both Excel (.xlsx) and PDF (.pdf) documents for a Purchase Request,
- * stores them in the project library, and registers them in the database.
+ * stores them in the project library, calculates SHA-256 checksums, and registers them in the database.
  */
 async function generatePrDocuments(prId) {
   // 1. Fetch complete PR data with project, requester, approver, and items
@@ -62,18 +69,36 @@ async function generatePrDocuments(prId) {
   const pr = prRes.rows[0];
 
   const itemsRes = await query(
-    `SELECT * FROM pr_items WHERE purchase_request_id = $1 ORDER BY id ASC`,
+    `SELECT it.*,
+            doc.id AS drawing_id,
+            doc.file_name AS drawing_file_name,
+            doc.original_file_name AS drawing_orig_file_name,
+            doc.file_path_or_storage_key AS drawing_storage_key,
+            doc.mime_type AS drawing_mime_type,
+            doc.file_size_bytes AS drawing_file_size
+     FROM pr_items it
+     LEFT JOIN documents doc ON (doc.id = it.drawing_document_id OR (doc.purchase_request_item_id = it.id AND doc.document_type = 'ENGINEERING_DRAWING'))
+     WHERE it.purchase_request_id = $1
+     ORDER BY it.id ASC`,
     [prId]
   );
   const items = itemsRes.rows;
 
   const { dir, cleanCode } = ensureStorageDirectory(pr.project_code);
 
-  const excelFileName = `${pr.pr_number}.xlsx`;
-  const pdfFileName = `${pr.pr_number}.pdf`;
+  const revNum = pr.revision !== undefined && pr.revision !== null ? pr.revision : 0;
+  const revStr = String(revNum).padStart(2, '0');
 
-  const excelFilePath = path.join(dir, excelFileName);
+  // Professional file naming with revision support: PR-2026-0001_Rev-00.pdf
+  const pdfFileName = `${pr.pr_number}_Rev-${revStr}.pdf`;
+  const excelFileName = `${pr.pr_number}_Rev-${revStr}.xlsx`;
+  const legacyPdfFileName = `${pr.pr_number}.pdf`;
+  const legacyExcelFileName = `${pr.pr_number}.xlsx`;
+
   const pdfFilePath = path.join(dir, pdfFileName);
+  const excelFilePath = path.join(dir, excelFileName);
+  const legacyPdfFilePath = path.join(dir, legacyPdfFileName);
+  const legacyExcelFilePath = path.join(dir, legacyExcelFileName);
 
   // Relative storage keys for portable database storage
   const excelStorageKey = path.relative(process.cwd(), excelFilePath).replace(/\\/g, '/');
@@ -81,27 +106,102 @@ async function generatePrDocuments(prId) {
 
   // 2. Generate Excel (.xlsx) using SheetJS
   generateExcelFile(pr, items, excelFilePath);
+  try { fs.copyFileSync(excelFilePath, legacyExcelFilePath); } catch (e) {}
 
   // 3. Generate PDF (.pdf) using PDFKit
-  await generatePdfFile(pr, items, pdfFilePath);
+  const pdfBuffer = await generatePdfFile(pr, items, pdfFilePath);
+  try { fs.copyFileSync(pdfFilePath, legacyPdfFilePath); } catch (e) {}
 
-  // 4. Save metadata into documents table (Allowed document types: PR_EXCEL, PR_PDF)
-  // Delete existing records if regenerated
-  await query(`DELETE FROM documents WHERE purchase_request_id = $1`, [prId]);
+  // 4. Calculate SHA-256 Checksum and file size
+  const sha256Checksum = crypto.createHash('sha256').update(pdfBuffer).digest('hex');
+  const fileSizeBytes = pdfBuffer.length;
 
-  await query(
-    `INSERT INTO documents (project_id, purchase_request_id, document_type, file_name, file_path_or_storage_key, uploaded_by_user_id)
-     VALUES ($1, $2, 'PR_EXCEL', $3, $4, $5)`,
-    [pr.project_id, prId, excelFileName, excelStorageKey, pr.created_by_user_id]
+  // 5. Save metadata into documents table (Preserve historical versions, update idempotently)
+  const existingPdfDoc = await query(
+    `SELECT id FROM documents WHERE purchase_request_id = $1 AND document_type = 'PR_PDF' AND revision = $2`,
+    [prId, revNum]
   );
+  let pdfDocId;
+  if (existingPdfDoc.rowCount > 0) {
+    pdfDocId = existingPdfDoc.rows[0].id;
+    await query(
+      `UPDATE documents 
+       SET file_name = $1, file_path_or_storage_key = $2, sha256_checksum = $3, file_size_bytes = $4
+       WHERE id = $5`,
+      [pdfFileName, pdfStorageKey, sha256Checksum, fileSizeBytes, pdfDocId]
+    );
+  } else {
+    const ins = await query(
+      `INSERT INTO documents (project_id, purchase_request_id, document_type, file_name, file_path_or_storage_key, uploaded_by_user_id, revision, sha256_checksum, file_size_bytes)
+       VALUES ($1, $2, 'PR_PDF', $3, $4, $5, $6, $7, $8) RETURNING id`,
+      [pr.project_id, prId, pdfFileName, pdfStorageKey, pr.created_by_user_id, revNum, sha256Checksum, fileSizeBytes]
+    );
+    pdfDocId = ins.rows[0].id;
+  }
 
-  await query(
-    `INSERT INTO documents (project_id, purchase_request_id, document_type, file_name, file_path_or_storage_key, uploaded_by_user_id)
-     VALUES ($1, $2, 'PR_PDF', $3, $4, $5)`,
-    [pr.project_id, prId, pdfFileName, pdfStorageKey, pr.created_by_user_id]
+  // Also manage Excel document record
+  const existingXlsDoc = await query(
+    `SELECT id FROM documents WHERE purchase_request_id = $1 AND document_type = 'PR_EXCEL' AND revision = $2`,
+    [prId, revNum]
   );
+  if (existingXlsDoc.rowCount > 0) {
+    await query(
+      `UPDATE documents 
+       SET file_name = $1, file_path_or_storage_key = $2
+       WHERE id = $3`,
+      [excelFileName, excelStorageKey, existingXlsDoc.rows[0].id]
+    );
+  } else {
+    await query(
+      `INSERT INTO documents (project_id, purchase_request_id, document_type, file_name, file_path_or_storage_key, uploaded_by_user_id, revision)
+       VALUES ($1, $2, 'PR_EXCEL', $3, $4, $5, $6)`,
+      [pr.project_id, prId, excelFileName, excelStorageKey, pr.created_by_user_id, revNum]
+    );
+  }
 
-  return { excelFilePath, pdfFilePath, excelFileName, pdfFileName };
+  // 6. Record Activity Log: DOCUMENT_GENERATED
+  await logActivity({
+    entityType: 'PURCHASE_REQUEST',
+    entityId: pr.pr_number,
+    action: 'DOCUMENT_GENERATED',
+    userId: pr.created_by_user_id,
+    username: pr.requester_username,
+    metadata: {
+      prNumber: pr.pr_number,
+      documentId: pdfDocId,
+      revision: revNum,
+      revisionString: `Rev ${revStr}`,
+      fileType: 'PR_PDF',
+      fileName: pdfFileName,
+      sha256Checksum,
+      fileSizeBytes
+    }
+  });
+  const result = {
+    excelFilePath,
+    pdfFilePath,
+    excelFileName,
+    pdfFileName,
+    sha256Checksum,
+    revision: revNum,
+    pdfDoc: {
+      id: pdfDocId,
+      fileName: pdfFileName,
+      filePath: pdfStorageKey,
+      absolutePath: pdfFilePath,
+      sha256Checksum,
+      revision: revNum,
+      fileSizeBytes
+    },
+    excelDoc: {
+      fileName: excelFileName,
+      filePath: excelStorageKey,
+      absolutePath: excelFilePath,
+      revision: revNum
+    }
+  };
+
+  return result;
 }
 
 /**
@@ -126,11 +226,14 @@ function generateExcelFile(pr, items, filePath) {
   const needDate = pr.required_date ? new Date(pr.required_date).toLocaleDateString('en-GB') : '-';
   const appDate = pr.approved_at ? new Date(pr.approved_at).toLocaleDateString('en-GB') : '-';
   const rejDate = pr.rejected_at ? new Date(pr.rejected_at).toLocaleDateString('en-GB') : '-';
+  const revStr = String(pr.revision || 0).padStart(2, '0');
 
   const rows = [
-    ['FLOW FORCE'],
-    ['PURCHASE REQUEST DOCUMENT'],
-    ['Bulk Material Handling & Processing Equipment Specialists'],
+    ['PT. FLOW FORCE INDONESIA'],
+    ['Kawasan Industri Delta Silicon 5, Jl. Kenari 1 Blok G1 No. 23D, Cikarang, Bekasi, Indonesia'],
+    ['Phone: +62 21 2961 7055 | Email: flowforce@flow-force.com | www.flow-force.com'],
+    [],
+    ['PURCHASE REQUISITION', '', '', '', '', '', '', `Revision: Rev ${revStr}`],
     [],
     ['PROJECT / REQUEST INFORMATION', '', '', ''],
     ['PR Number:', pr.pr_number || pr.prNumber, 'Status:', pr.status],
@@ -138,54 +241,80 @@ function generateExcelFile(pr, items, filePath) {
     ['Project Name:', pr.project_name || pr.projectName || '-', 'Request Date:', reqDate],
     ['Created By:', pr.requester_name || pr.requestedBy || '-', 'Username:', pr.requester_username || '-'],
     ['Department:', pr.department || '-', 'Required Date:', needDate],
-    ['Urgency:', pr.urgency || 'Standard'],
+    ['Urgency:', pr.urgency || 'Standard', 'Revision:', `Rev ${revStr}`],
     [],
-    ['ITEM DETAILS', '', '', '', '', '', '', '', '', '', '', '', ''],
-    ['#', 'SKU', 'Product Name', 'Item Description', 'Material / Grade', 'Original Dimensions', 'Supply Type', 'Required Cut Size', 'Remarks', 'Unit', 'Quantity', 'Unit Price (IDR)', 'Estimated Total Cost (IDR)']
+    [
+      '#',
+      'SKU',
+      'Product Name',
+      'Item Description',
+      'Specification',
+      'Material / Grade',
+      'Original Dimensions',
+      'Supply Type',
+      'Required Cut Size',
+      'Unit',
+      'Quantity',
+      'Unit Price (IDR)',
+      'Estimated Total (IDR)',
+      'Remarks',
+      'Ducting Type',
+      'Ducting Dimensions'
+    ]
   ];
 
-  let allHaveCost = true;
   let grandTotal = 0;
+  let allHaveCost = true;
+
   items.forEach((it, idx) => {
     const rawPrice = (it.unit_price !== undefined && it.unit_price !== null) ? it.unit_price : it.unitPrice;
+    const rawCost = (it.estimated_total_cost !== undefined && it.estimated_total_cost !== null) ? it.estimated_total_cost : it.estimatedTotalCost;
     const hasPrice = rawPrice !== null && rawPrice !== undefined && rawPrice !== '' && !isNaN(Number(rawPrice)) && Number(rawPrice) >= 0;
-    const rawEstTotal = (it.estimated_total_cost !== undefined && it.estimated_total_cost !== null) ? it.estimated_total_cost : it.estimatedTotalCost;
-    const cost = hasPrice ? (parseFloat(rawEstTotal) || (parseFloat(it.quantity) * parseFloat(rawPrice))) : null;
+    const cost = hasPrice ? (parseFloat(rawCost) || (parseFloat(it.quantity) * parseFloat(rawPrice))) : null;
     if (cost !== null) {
       grandTotal += cost;
     } else {
       allHaveCost = false;
     }
 
-    const isFastener = (it.category || '').toLowerCase() === 'fasteners' || /fastener|bolt|screw|nut|stud/i.test(`${it.product_name || it.productName || ''} ${it.item_description || it.itemDescription || ''} ${it.category || ''}`);
-    const isCut = !isFastener && (it.supply_type === 'Cut Size' || it.supplyType === 'Cut Size' || it.purchase_type === 'PROJECT-SPECIFIC CUT SIZE' || it.purchaseType === 'PROJECT-SPECIFIC CUT SIZE');
-    const origDims = it.size_dimensions || it.originalDimensions || it.size || '-';
-    let cutDims = '—';
+    const isCut = (it.supply_type === 'Cut Size' || it.supplyType === 'Cut Size' || it.purchase_type === 'PROJECT-SPECIFIC CUT SIZE');
+    let cutSizeText = '—';
     if (isCut) {
       const cLen = it.cut_length || it.cutLength;
       const cWid = it.cut_width || it.cutWidth;
       const rawCut = it.required_cut_size || it.requiredCutSize;
-      if (rawCut) {
-        cutDims = rawCut;
-      } else if (cLen) {
-        cutDims = cWid ? `${cLen} × ${cWid} mm` : `${cLen} mm`;
-      }
+      if (rawCut) cutSizeText = rawCut;
+      else if (cLen) cutSizeText = cWid ? `${cLen} × ${cWid} mm` : `${cLen} mm`;
     }
+
+    const ductDims = [];
+    if (it.dim_a) ductDims.push(`Ø A: ${it.dim_a} mm`);
+    if (it.dim_b) ductDims.push(`Ø B: ${it.dim_b} mm`);
+    if (it.dim_c) ductDims.push(`Ø C: ${it.dim_c} mm`);
+    if (it.angle_d) ductDims.push(`Angle D: ${it.angle_d}°`);
+    if (it.angle_b) ductDims.push(`Angle B: ${it.angle_b}°`);
+    if (it.radius) ductDims.push(`Radius: ${it.radius} mm`);
+    if (it.dim_l1) ductDims.push(`L1: ${it.dim_l1} mm`);
+    if (it.dim_l2) ductDims.push(`L2: ${it.dim_l2} mm`);
+    if (it.thickness) ductDims.push(`Thickness: ${it.thickness} mm`);
 
     rows.push([
       idx + 1,
-      it.sku || '—',
+      it.sku || (it.ducting_type ? 'DUCTING' : '—'),
       it.product_name || it.productName || '-',
-      it.item_description || it.itemDescription || '-',
+      it.item_description || it.itemDescription || '',
+      it.specification || '',
       it.material_grade || it.material || it.materialGrade || '-',
-      origDims,
-      isFastener ? '—' : (isCut ? 'CUT SIZE' : 'FULL SIZE'),
-      isFastener ? '—' : cutDims,
-      it.remarks || '',
-      it.unit || 'Sheet',
+      it.size_dimensions || it.originalDimensions || it.size || '-',
+      it.ducting_type ? 'PROJECT-SPECIFIC DUCTING' : (isCut ? 'CUT SIZE' : 'FULL SIZE'),
+      cutSizeText,
+      it.unit || (it.ducting_type ? 'Pcs' : 'Sheet'),
       it.quantity,
-      hasPrice ? formatIdr(rawPrice) : 'Not Available',
-      cost !== null ? formatIdr(cost) : '—'
+      hasPrice ? Number(rawPrice) : '—',
+      cost !== null ? cost : '—',
+      it.remarks || '',
+      it.ducting_type || '',
+      ductDims.join(', ')
     ]);
   });
 
@@ -193,100 +322,295 @@ function generateExcelFile(pr, items, filePath) {
   rows.push([
     '', '', '', '', '', '', '', '', '', '',
     'GRAND TOTAL (IDR):',
-    allHaveCost ? formatIdr(grandTotal) : '—'
+    allHaveCost ? grandTotal : '—'
   ]);
 
   rows.push([]);
-  rows.push(['REASON / REQUIREMENT', '', '', '']);
-  rows.push(['Reason for Purchase:', pr.reason_for_purchase || pr.reasonForPurchase || '-']);
-  rows.push(['General Remarks:', pr.remarks || '-']);
+  rows.push(['REASON FOR PURCHASE:', pr.reason_for_purchase || pr.reasonForPurchase || '']);
+  rows.push(['REMARKS:', pr.remarks || '']);
 
+  rows.push([]);
+  rows.push(['APPROVAL RECORD', '', '', '']);
+  rows.push(['Requested By:', pr.requester_name || pr.requestedBy || '-', 'Date:', reqDate]);
   if (pr.status === 'APPROVED') {
-    rows.push([]);
-    rows.push(['APPROVAL RECORD', '', '', '']);
-    rows.push(['Approved By:', pr.approver_name || '-', 'Date Approved:', appDate]);
-    if (pr.approval_notes) rows.push(['Notes:', pr.approval_notes]);
+    rows.push(['Approved By:', pr.approver_name || 'Admin', 'Approval Date:', appDate]);
   } else if (pr.status === 'REJECTED') {
-    rows.push([]);
-    rows.push(['REJECTION RECORD', '', '', '']);
-    rows.push(['Rejected By:', pr.rejecter_name || '-', 'Date Rejected:', rejDate]);
-    if (pr.rejection_reason) rows.push(['Reason:', pr.rejection_reason]);
+    rows.push(['Rejected By:', pr.rejecter_name || 'Admin', 'Rejection Date:', rejDate]);
+    rows.push(['Rejection Reason:', pr.rejection_reason || '-']);
+  } else {
+    rows.push(['Approval Status:', 'Pending Administrative Review']);
   }
 
   const ws = XLSX.utils.aoa_to_sheet(rows);
 
-  // Column widths
   ws['!cols'] = [
-    { wch: 4 },  // #
-    { wch: 10 }, // SKU
-    { wch: 28 }, // Product Name
-    { wch: 35 }, // Item Description
-    { wch: 18 }, // Material / Grade
-    { wch: 20 }, // Original Dimensions
-    { wch: 14 }, // Supply Type
-    { wch: 22 }, // Required Cut Size
-    { wch: 25 }, // Remarks
+    { wch: 5 },  // #
+    { wch: 14 }, // SKU
+    { wch: 30 }, // Product Name
+    { wch: 45 }, // Description
+    { wch: 20 }, // Specification
+    { wch: 18 }, // Material
+    { wch: 22 }, // Dimensions
+    { wch: 15 }, // Supply Type
+    { wch: 20 }, // Required Cut
     { wch: 10 }, // Unit
-    { wch: 10 }, // Quantity
-    { wch: 20 }, // Unit Price (IDR)
-    { wch: 24 }  // Estimated Total Cost (IDR)
+    { wch: 12 }, // Quantity
+    { wch: 18 }, // Unit Price
+    { wch: 20 }, // Total Cost
+    { wch: 25 }, // Remarks
+    { wch: 18 }, // Ducting Type
+    { wch: 30 }  // Ducting Dimensions
   ];
 
-  XLSX.utils.book_append_sheet(wb, ws, 'Purchase Request');
+  XLSX.utils.book_append_sheet(wb, ws, 'Purchase Requisition');
+
   if (filePath) {
     XLSX.writeFile(wb, filePath);
-    return filePath;
   }
   return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
 }
 
 /**
  * Internal helper: Build PDF Document (PDFKit)
- * Clean Flow Force White Enterprise Design
+ * Flow Force Enterprise Grade Corporate Document
  */
-function generatePdfFile(pr, items, filePath) {
+async function generatePdfFile(pr, items, filePath) {
+  if (pr && pr.pr && Array.isArray(pr.items) && !items) {
+    items = pr.items;
+    pr = pr.pr;
+  } else if (!Array.isArray(items) && pr && Array.isArray(pr.items)) {
+    if (typeof items === 'string') {
+      filePath = items;
+    }
+    items = pr.items;
+  }
+  items = items || [];
+  pr = pr || {};
+
+  const revNum = pr.revision !== undefined && pr.revision !== null ? pr.revision : 0;
+  const revStr = String(revNum).padStart(2, '0');
+
+  // Build verification URL for QR code
+  const baseUrl = process.env.APP_BASE_URL || process.env.BASE_URL || 'http://localhost:3000';
+  const verifyUrl = `${baseUrl}/pr/${encodeURIComponent(pr.pr_number || pr.prNumber)}/verify`;
+  let qrBuffer = null;
+  try {
+    qrBuffer = await QRCode.toBuffer(verifyUrl, { width: 90, margin: 0 });
+  } catch (qrErr) {
+    console.warn('[DocumentGenerator] Failed to generate QR code:', qrErr.message);
+  }
+
   return new Promise((resolve, reject) => {
     try {
-      if (pr && pr.pr && Array.isArray(pr.items) && !items) {
-        items = pr.items;
-        pr = pr.pr;
-      } else if (!Array.isArray(items) && pr && Array.isArray(pr.items)) {
-        if (typeof items === 'string') {
-          filePath = items;
-        }
-        items = pr.items;
-      }
-      items = items || [];
-      pr = pr || {};
-
       const doc = new PDFDocument({
         size: 'A4',
         margin: 36,
-        compress: false,
+        bufferPages: true,
+        autoFirstPage: true,
         info: {
-          Title: `Purchase Request ${pr.pr_number || pr.prNumber}`,
-          Author: 'Flow Force System',
-          Subject: 'Purchase Request Document'
+          Title: `Purchase Requisition ${pr.pr_number || pr.prNumber} Rev ${revStr}`,
+          Author: 'PT. Flow Force Indonesia',
+          Subject: `Purchase Requisition ${pr.pr_number || pr.prNumber}`
         }
       });
 
-      let writeStream;
       const buffers = [];
-      if (filePath) {
-        writeStream = fs.createWriteStream(filePath);
-        doc.pipe(writeStream);
-      } else {
-        doc.on('data', b => buffers.push(b));
-      }
+      doc.on('data', b => buffers.push(b));
+      doc.on('end', async () => {
+        try {
+          let finalBuffer = Buffer.concat(buffers);
 
-      doc.on('end', () => {
-        if (filePath) {
-          resolve(filePath);
-        } else {
-          resolve(Buffer.concat(buffers));
+          // Append Engineering Drawings Appendix using pdf-lib if any items have drawings
+          const hasAnyDrawings = items.some(it => it.drawing_storage_key || it.drawingDocumentId || it.drawing_document_id);
+
+          if (hasAnyDrawings) {
+            try {
+              const { PDFDocument: PDFLibDoc, rgb, StandardFonts } = require('pdf-lib');
+              const mainPdf = await PDFLibDoc.load(finalBuffer);
+              const fontBold = await mainPdf.embedFont(StandardFonts.HelveticaBold);
+              const fontRegular = await mainPdf.embedFont(StandardFonts.Helvetica);
+
+              for (let i = 0; i < items.length; i++) {
+                const item = items[i];
+                let storageKey = item.drawing_storage_key;
+                let fileName = item.drawing_orig_file_name || item.drawing_file_name;
+                let mimeType = item.drawing_mime_type;
+
+                if (!storageKey && (item.drawing_document_id || item.drawingDocumentId)) {
+                  const dId = item.drawing_document_id || item.drawingDocumentId;
+                  const dRes = await query('SELECT * FROM documents WHERE id = $1', [dId]);
+                  if (dRes.rowCount > 0) {
+                    storageKey = dRes.rows[0].file_path_or_storage_key;
+                    fileName = dRes.rows[0].original_file_name || dRes.rows[0].file_name;
+                    mimeType = dRes.rows[0].mime_type;
+                  }
+                }
+
+                if (!storageKey) continue;
+
+                const { resolveStoragePath } = require('../routes/documents');
+                const physicalPath = resolveStoragePath ? resolveStoragePath(storageKey) : path.resolve(process.cwd(), storageKey);
+
+                if (!physicalPath || !fs.existsSync(physicalPath)) {
+                  console.warn(`[DocumentGenerator] Drawing file not found at ${physicalPath} for item ${item.id}`);
+                  continue;
+                }
+
+                const fileBytes = fs.readFileSync(physicalPath);
+                const isPdf = (mimeType && mimeType.includes('pdf')) || String(fileName || physicalPath).toLowerCase().endsWith('.pdf');
+                const isImg = (mimeType && mimeType.startsWith('image/')) || /\.(png|jpe?g|webp|svg)$/i.test(fileName || physicalPath);
+
+                if (isPdf) {
+                  // Add Appendix Header Page
+                  const appendixPage = mainPdf.addPage([595.28, 841.89]); // A4
+                  const { width, height } = appendixPage.getSize();
+
+                  // Header banner
+                  appendixPage.drawRectangle({
+                    x: 36,
+                    y: height - 60,
+                    width: width - 72,
+                    height: 24,
+                    color: rgb(0.008, 0.518, 0.78) // #0284c7
+                  });
+
+                  appendixPage.drawText('ENGINEERING DRAWING APPENDIX', {
+                    x: 48,
+                    y: height - 52,
+                    size: 11,
+                    font: fontBold,
+                    color: rgb(1, 1, 1)
+                  });
+
+                  // Info Box
+                  appendixPage.drawRectangle({
+                    x: 36,
+                    y: height - 195,
+                    width: width - 72,
+                    height: 125,
+                    borderColor: rgb(0.8, 0.835, 0.882),
+                    borderWidth: 1,
+                    color: rgb(0.973, 0.98, 0.988)
+                  });
+
+                  appendixPage.drawText(`PR Number: ${pr.pr_number || pr.prNumber || '-'}`, {
+                    x: 50,
+                    y: height - 90,
+                    size: 9.5,
+                    font: fontBold,
+                    color: rgb(0.06, 0.09, 0.16)
+                  });
+
+                  appendixPage.drawText(`Item: #${i + 1} — ${item.product_name || item.productName || 'Ducting'}`, {
+                    x: 50,
+                    y: height - 110,
+                    size: 9,
+                    font: fontBold,
+                    color: rgb(0.06, 0.09, 0.16)
+                  });
+
+                  appendixPage.drawText(`Ducting Type: ${item.ducting_type || item.ductingType || 'Straight Duct'}`, {
+                    x: 50,
+                    y: height - 130,
+                    size: 8.5,
+                    font: fontRegular,
+                    color: rgb(0.28, 0.33, 0.41)
+                  });
+
+                  appendixPage.drawText(`Drawing: ${fileName || path.basename(physicalPath)}`, {
+                    x: 50,
+                    y: height - 150,
+                    size: 8.5,
+                    font: fontBold,
+                    color: rgb(0.008, 0.518, 0.78)
+                  });
+
+                  appendixPage.drawText('Note: The complete original drawing specification is appended immediately below preserving 100% vector fidelity.', {
+                    x: 50,
+                    y: height - 175,
+                    size: 8,
+                    font: fontRegular,
+                    color: rgb(0.39, 0.45, 0.55)
+                  });
+
+                  // Load and append original PDF pages
+                  const drwPdf = await PDFLibDoc.load(fileBytes);
+                  const copiedPages = await mainPdf.copyPages(drwPdf, drwPdf.getPageIndices());
+                  copiedPages.forEach(cp => mainPdf.addPage(cp));
+                } else if (isImg) {
+                  // Image Appendix Page
+                  const appendixPage = mainPdf.addPage([595.28, 841.89]); // A4
+                  const { width, height } = appendixPage.getSize();
+
+                  // Header banner
+                  appendixPage.drawRectangle({
+                    x: 36,
+                    y: height - 60,
+                    width: width - 72,
+                    height: 24,
+                    color: rgb(0.008, 0.518, 0.78)
+                  });
+
+                  appendixPage.drawText('ENGINEERING DRAWING APPENDIX', {
+                    x: 48,
+                    y: height - 52,
+                    size: 11,
+                    font: fontBold,
+                    color: rgb(1, 1, 1)
+                  });
+
+                  // Info line
+                  appendixPage.drawText(`PR Number: ${pr.pr_number || pr.prNumber || '-'}  |  Item: #${i + 1}  |  Ducting Type: ${item.ducting_type || item.ductingType || 'Custom'}  |  Drawing: ${fileName || path.basename(physicalPath)}`, {
+                    x: 36,
+                    y: height - 76,
+                    size: 8,
+                    font: fontRegular,
+                    color: rgb(0.28, 0.33, 0.41)
+                  });
+
+                  let embeddedImg = null;
+                  if (/\.png$/i.test(physicalPath) || (mimeType && mimeType.includes('png'))) {
+                    embeddedImg = await mainPdf.embedPng(fileBytes);
+                  } else {
+                    embeddedImg = await mainPdf.embedJpg(fileBytes);
+                  }
+
+                  const maxWidth = width - 72;
+                  const maxHeight = height - 120;
+                  const scale = Math.min(maxWidth / embeddedImg.width, maxHeight / embeddedImg.height, 1);
+                  const imgW = embeddedImg.width * scale;
+                  const imgH = embeddedImg.height * scale;
+                  const imgX = 36 + (maxWidth - imgW) / 2;
+                  const imgY = 36 + (maxHeight - imgH) / 2;
+
+                  appendixPage.drawImage(embeddedImg, {
+                    x: imgX,
+                    y: imgY,
+                    width: imgW,
+                    height: imgH
+                  });
+                }
+              }
+
+              const mergedBytes = await mainPdf.save();
+              finalBuffer = Buffer.from(mergedBytes);
+            } catch (pdfMergeErr) {
+              console.error('[DocumentGenerator] Failed to merge drawing into PDF:', pdfMergeErr);
+            }
+          }
+
+          if (filePath) {
+            try {
+              fs.writeFileSync(filePath, finalBuffer);
+            } catch (writeErr) {
+              return reject(writeErr);
+            }
+          }
+          resolve(finalBuffer);
+        } catch (endErr) {
+          reject(endErr);
         }
       });
-
       doc.on('error', err => reject(err));
 
       const primaryColor = '#0284c7';
@@ -294,227 +618,329 @@ function generatePdfFile(pr, items, filePath) {
       const mutedColor = '#64748b';
       const borderColor = '#cbd5e1';
 
-      // Header: Flow Force Logo & Title
-      doc.fontSize(18).font('Helvetica-Bold').fillColor(primaryColor).text('FLOW FORCE', 36, 36);
-      doc.fontSize(8).font('Helvetica').fillColor('#64748b').text('Bulk Material Handling & Processing Equipment Specialists', 36, 56);
+      const logoPath = path.resolve(__dirname, '../../assets/flow-force-logo.png');
 
-      doc.fontSize(16).font('Helvetica-Bold').fillColor(textColor).text('PURCHASE REQUEST', 340, 36, { align: 'right' });
-      doc.fontSize(9).font('Helvetica').fillColor('#64748b').text(`PR No: ${pr.pr_number}`, 340, 56, { align: 'right' });
+      // =========================================================================
+      // 1. FLOW FORCE OFFICIAL LETTERHEAD
+      // =========================================================================
+      if (fs.existsSync(logoPath)) {
+        doc.image(logoPath, 36, 30, { width: 155 });
+      } else {
+        doc.fontSize(16).font('Helvetica-Bold').fillColor(primaryColor).text('FLOW FORCE', 36, 32);
+        doc.fontSize(7.5).font('Helvetica').fillColor(mutedColor).text('Bulk Material Handling & Processing Equipment Specialists', 36, 52);
+      }
 
-      // Divider
-      doc.moveTo(36, 76).lineTo(559, 76).strokeColor(primaryColor).lineWidth(1.5).stroke();
+      // Company Contact Info (Right aligned, exactly matching official letterhead)
+      doc.fontSize(8.5).font('Helvetica-Bold').fillColor(textColor).text('PT. Flow Force Indonesia', 300, 26, { align: 'right', width: 259 });
+      doc.fontSize(7).font('Helvetica').fillColor('#475569');
+      doc.text('Kawasan Industri Delta Silicon 5', 300, 38, { align: 'right', width: 259 });
+      doc.text('Jl. Kenari 1 Blok G1 No. 23D', 300, 48, { align: 'right', width: 259 });
+      doc.text('Cikarang, Bekasi, Indonesia', 300, 58, { align: 'right', width: 259 });
+      doc.text('Phone : +62 21 2961 7055 | Fax : +62 21 2961 7056', 300, 68, { align: 'right', width: 259 });
+      doc.text('Email : flowforce@flow-force.com | Website : www.flow-force.com', 300, 78, { align: 'right', width: 259 });
 
-      // Section: Request Details Grid
-      let y = 88;
-      const reqDate = pr.created_at ? new Date(pr.created_at).toLocaleDateString('en-GB') : '-';
-      const needDate = pr.required_date ? new Date(pr.required_date).toLocaleDateString('en-GB') : '-';
+      // Clean divider line below letterhead
+      doc.moveTo(36, 92).lineTo(559, 92).strokeColor(primaryColor).lineWidth(1.5).stroke();
 
-      // Left column
-      doc.fontSize(8.5).font('Helvetica-Bold').fillColor(textColor).text('PR Number: ', 36, y, { continued: true })
-         .font('Helvetica').text(pr.pr_number);
-      doc.font('Helvetica-Bold').text('Project / PID: ', 36, y + 14, { continued: true })
-         .font('Helvetica').text(`${pr.project_code || '-'} — ${pr.project_name || '-'}`);
-      doc.font('Helvetica-Bold').text('Job Location: ', 36, y + 28, { continued: true })
-         .font('Helvetica').text(pr.job_location || '-');
-      doc.font('Helvetica-Bold').text('Created By: ', 36, y + 42, { continued: true })
-         .font('Helvetica').text(`${pr.requester_name || '-'} (${pr.requester_username || '-'})`);
+      // =========================================================================
+      // 2. DOCUMENT TITLE & IDENTIFIERS
+      // =========================================================================
+      let y = 99;
+      doc.fontSize(14).font('Helvetica-Bold').fillColor(textColor).text('PURCHASE REQUISITION', 36, y);
+      doc.fontSize(9.5).font('Helvetica-Bold').fillColor(primaryColor).text(`PR No: ${pr.pr_number || pr.prNumber}`, 320, y, { align: 'right', width: 239 });
+      doc.fontSize(8).font('Helvetica-Bold').fillColor(mutedColor).text(`Revision: Rev ${revStr}`, 320, y + 13, { align: 'right', width: 239 });
+
+      y += 28;
+
+      // =========================================================================
+      // 3. STRUCTURED DOCUMENT INFORMATION CARD
+      // =========================================================================
+      const reqDate = pr.created_at ? new Date(pr.created_at).toLocaleDateString('en-GB') : '—';
+      const needDate = pr.required_date ? new Date(pr.required_date).toLocaleDateString('en-GB') : '—';
+      const cardHeight = 60;
+      doc.rect(36, y, 523, cardHeight).fillAndStroke('#f8fafc', '#e2e8f0');
+
+      const colLeftX = 46;
+      const colRightX = 310;
+      const infoY = y + 7;
+
+      doc.fontSize(7.5).font('Helvetica-Bold').fillColor(mutedColor).text('PR NUMBER: ', colLeftX, infoY, { continued: true })
+         .font('Helvetica-Bold').fillColor(primaryColor).text(pr.pr_number || pr.prNumber);
+      doc.font('Helvetica-Bold').fillColor(mutedColor).text('PROJECT / PID: ', colLeftX, infoY + 13, { continued: true })
+         .font('Helvetica').fillColor(textColor).text(`${pr.project_code || '—'} — ${pr.project_name || 'General'}`);
+      doc.font('Helvetica-Bold').fillColor(mutedColor).text('DEPARTMENT: ', colLeftX, infoY + 26, { continued: true })
+         .font('Helvetica').fillColor(textColor).text(pr.department || 'Engineering');
+      doc.font('Helvetica-Bold').fillColor(mutedColor).text('JOB LOCATION: ', colLeftX, infoY + 39, { continued: true })
+         .font('Helvetica').fillColor(textColor).text(pr.job_location || '—');
 
       // Right column
-      const rightX = 340;
-      doc.font('Helvetica-Bold').text('Status: ', rightX, y, { continued: true });
       const statusColor = pr.status === 'APPROVED' ? '#059669' : (pr.status === 'REJECTED' ? '#e11d48' : '#d97706');
-      doc.fillColor(statusColor).text(pr.status).fillColor(textColor);
+      doc.font('Helvetica-Bold').fillColor(mutedColor).text('REQUESTED BY: ', colRightX, infoY, { continued: true })
+         .font('Helvetica').fillColor(textColor).text(`${pr.requester_name || pr.requestedBy || '—'} (${pr.requester_username || '—'})`);
+      doc.font('Helvetica-Bold').fillColor(mutedColor).text('REQUEST DATE: ', colRightX, infoY + 13, { continued: true })
+         .font('Helvetica').fillColor(textColor).text(reqDate);
+      doc.font('Helvetica-Bold').fillColor(mutedColor).text('REQUIRED DATE: ', colRightX, infoY + 26, { continued: true })
+         .font('Helvetica').fillColor(textColor).text(needDate);
+      doc.font('Helvetica-Bold').fillColor(mutedColor).text('STATUS / URGENCY: ', colRightX, infoY + 39, { continued: true })
+         .font('Helvetica-Bold').fillColor(statusColor).text(pr.status || 'PENDING', { continued: true })
+         .font('Helvetica').fillColor(mutedColor).text(` | ${pr.urgency || 'Standard'}`);
 
-      doc.font('Helvetica-Bold').text('Request Date: ', rightX, y + 14, { continued: true })
-         .font('Helvetica').text(reqDate);
-      doc.font('Helvetica-Bold').text('Required Date: ', rightX, y + 28, { continued: true })
-         .font('Helvetica').text(needDate);
-      doc.font('Helvetica-Bold').text('Urgency: ', rightX, y + 42, { continued: true })
-         .font('Helvetica').text(pr.urgency || 'Standard');
+      y += cardHeight + 10;
 
-      y += 62;
+      // =========================================================================
+      // 4. PR ITEM TABLE WITH REPEATING HEADER
+      // =========================================================================
+      function renderTableHeader(curY) {
+        doc.rect(36, curY, 523, 16).fillAndStroke('#f1f5f9', '#cbd5e1');
+        doc.fontSize(7).font('Helvetica-Bold').fillColor('#334155');
+        doc.text('#', 38, curY + 4, { width: 16, align: 'center' });
+        doc.text('SKU', 56, curY + 4, { width: 55 });
+        doc.text('Product Name & Specification', 113, curY + 4, { width: 165 });
+        doc.text('Material / Orig. Size', 280, curY + 4, { width: 80 });
+        doc.text('Supply / Cut Size', 362, curY + 4, { width: 68 });
+        doc.text('Qty / Unit', 432, curY + 4, { width: 40, align: 'center' });
+        doc.text('Unit Price (IDR)', 474, curY + 4, { width: 42, align: 'right' });
+        doc.text('Est. Total (IDR)', 518, curY + 4, { width: 38, align: 'right' });
+        return curY + 16;
+      }
 
-      // Divider
-      doc.moveTo(36, y).lineTo(559, y).strokeColor(borderColor).lineWidth(1).stroke();
-      y += 10;
+      doc.fontSize(8.5).font('Helvetica-Bold').fillColor(primaryColor).text('MATERIAL ITEMS & SPECIFICATIONS', 36, y);
+      y += 13;
+      y = renderTableHeader(y);
 
-      // Section: Item Details
-      doc.fontSize(10).font('Helvetica-Bold').fillColor(primaryColor).text('ITEM SPECIFICATIONS & QUANTITIES', 36, y);
-      y += 16;
-
-      // Table Header: 8 Columns across 523pt total width
-      doc.fontSize(8).font('Helvetica-Bold').fillColor('#334155');
-      doc.text('#', 36, y, { width: 18 });
-      doc.text('SKU', 56, y, { width: 50 });
-      doc.text('Product Name & Description', 108, y, { width: 145 });
-      doc.text('Material & Orig. Size', 256, y, { width: 80 });
-      doc.text('Supply Type & Cut Size', 338, y, { width: 84 });
-      doc.text('Qty / Unit', 424, y, { width: 44 });
-      doc.text('Unit Price', 470, y, { width: 44, align: 'right' });
-      doc.text('Est. Total', 516, y, { width: 43, align: 'right' });
-
-      y += 12;
-      doc.moveTo(36, y).lineTo(559, y).strokeColor(borderColor).stroke();
-      y += 8;
-
-      let allHaveCost = true;
       let grandTotal = 0;
+      let hasPrices = false;
 
       items.forEach((it, idx) => {
         const rawPrice = (it.unit_price !== undefined && it.unit_price !== null) ? it.unit_price : it.unitPrice;
         const rawCost = (it.estimated_total_cost !== undefined && it.estimated_total_cost !== null) ? it.estimated_total_cost : it.estimatedTotalCost;
-        const hasPrice = rawPrice !== null && rawPrice !== undefined && rawPrice !== '' && !isNaN(Number(rawPrice)) && Number(rawPrice) >= 0;
-        const cost = hasPrice ? (parseFloat(rawCost) || (parseFloat(it.quantity) * parseFloat(rawPrice))) : null;
-        if (cost !== null) {
-          grandTotal += cost;
-        } else {
-          allHaveCost = false;
+        const priceNum = (rawPrice !== null && rawPrice !== undefined && rawPrice !== '' && !isNaN(Number(rawPrice))) ? Number(rawPrice) : null;
+        const q = parseFloat(it.quantity) || 1;
+        const costNum = priceNum !== null ? (rawCost !== null && rawCost !== undefined ? Number(rawCost) : (priceNum * q)) : null;
+
+        if (costNum !== null) {
+          grandTotal += costNum;
+          hasPrices = true;
         }
 
-        if (y > 690) {
+        const pName = it.product_name || it.productName || '—';
+        const pDesc = it.item_description || it.itemDescription || '';
+        const pSpec = it.specification || '';
+        const matGrade = it.material_grade || it.material || it.materialGrade || '—';
+        const origDims = it.size_dimensions || it.sizeDimensions || it.size || '—';
+
+        const isDucting = Boolean(it.ducting_type);
+        const isFastener = !isDucting && ((it.category || '').toLowerCase() === 'fasteners' || /fastener|bolt|screw|nut|stud/i.test(`${pName} ${pDesc}`));
+        const isCut = !isDucting && !isFastener && (it.supply_type === 'Cut Size' || it.supplyType === 'Cut Size' || it.purchase_type === 'PROJECT-SPECIFIC CUT SIZE');
+
+        let cutDisplay = '—';
+        if (isCut) {
+          const rawCut = it.required_cut_size || it.requiredCutSize;
+          if (rawCut) cutDisplay = rawCut;
+          else if (it.cut_length) cutDisplay = it.cut_width ? `${it.cut_length} × ${it.cut_width} mm` : `${it.cut_length} mm`;
+        }
+
+        // Measure row height
+        doc.fontSize(7.5).font('Helvetica-Bold');
+        const nameH = doc.heightOfString(pName, { width: 165 });
+        doc.fontSize(6.5).font('Helvetica');
+        const descH = pDesc ? doc.heightOfString(pDesc, { width: 165 }) : 0;
+        const specH = pSpec ? doc.heightOfString(`Spec: ${pSpec}`, { width: 165 }) : 0;
+        const remH = it.remarks ? doc.heightOfString(`Remarks: ${it.remarks}`, { width: 165 }) : 0;
+        const col3H = nameH + (descH ? descH + 2 : 0) + (specH ? specH + 2 : 0) + (remH ? remH + 2 : 0);
+
+        const rowH = Math.max(col3H + 6, 22);
+
+        // Check page overflow
+        if (y + rowH > 730) {
+          doc.addPage();
+          // Top runner on page 2+
+          doc.fontSize(7).font('Helvetica-Bold').fillColor(mutedColor).text(
+            `PT. FLOW FORCE INDONESIA  —  PURCHASE REQUISITION ${pr.pr_number || pr.prNumber} (Rev ${revStr})`,
+            36, 24
+          );
+          y = renderTableHeader(36);
+        }
+
+        const rowStartY = y;
+        // Col 1: #
+        doc.fontSize(7).font('Helvetica').fillColor(mutedColor).text(String(idx + 1), 38, rowStartY + 3, { width: 16, align: 'center' });
+
+        // Col 2: SKU
+        doc.fontSize(7).font('Helvetica-Bold').fillColor(textColor).text(it.sku || (isDucting ? 'DUCTING' : '—'), 56, rowStartY + 3, { width: 55 });
+
+        // Col 3: Product Name & Specs (preserve multiline)
+        doc.fontSize(7.5).font('Helvetica-Bold').fillColor(textColor).text(pName, 113, rowStartY + 3, { width: 165 });
+        let textY = rowStartY + 3 + nameH + 2;
+        if (pDesc) {
+          doc.fontSize(6.5).font('Helvetica').fillColor('#475569').text(pDesc, 113, textY, { width: 165 });
+          textY += descH + 2;
+        }
+        if (pSpec) {
+          doc.fontSize(6).font('Helvetica-Oblique').fillColor(mutedColor).text(`Spec: ${pSpec}`, 113, textY, { width: 165 });
+          textY += specH + 2;
+        }
+        if (it.remarks) {
+          doc.fontSize(6).font('Helvetica-Bold').fillColor(primaryColor).text(`Remarks: ${it.remarks}`, 113, textY, { width: 165 });
+        }
+
+        // Col 4: Material & Orig Size
+        doc.fontSize(7).font('Helvetica-Bold').fillColor(textColor).text(matGrade, 280, rowStartY + 3, { width: 80 });
+        doc.fontSize(6.5).font('Helvetica').fillColor(mutedColor).text(`Size: ${origDims}`, 280, rowStartY + 13, { width: 80 });
+
+        // Col 5: Supply Type
+        if (isDucting) {
+          doc.fontSize(6.5).font('Helvetica-Bold').fillColor(primaryColor).text('DUCTING SPEC', 362, rowStartY + 3, { width: 68 });
+        } else if (isCut) {
+          doc.fontSize(6.5).font('Helvetica-Bold').fillColor('#c2410c').text('CUT SIZE', 362, rowStartY + 3, { width: 68 });
+          doc.fontSize(6).font('Helvetica').fillColor('#9a3412').text(cutDisplay, 362, rowStartY + 12, { width: 68 });
+        } else {
+          doc.fontSize(6.5).font('Helvetica').fillColor('#475569').text('FULL SIZE', 362, rowStartY + 3, { width: 68 });
+        }
+
+        // Col 6: Qty & Unit
+        doc.fontSize(7.5).font('Helvetica-Bold').fillColor(textColor).text(String(q), 432, rowStartY + 3, { width: 40, align: 'center' });
+        doc.fontSize(6.5).font('Helvetica').fillColor(mutedColor).text(it.unit || (isDucting ? 'Pcs' : 'Sheet'), 432, rowStartY + 13, { width: 40, align: 'center' });
+
+        // Col 7: Unit Price (IDR)
+        doc.fontSize(7).font('Helvetica').fillColor(textColor).text(priceNum !== null ? formatIdr(priceNum).replace('IDR ', '') : '—', 474, rowStartY + 3, { width: 42, align: 'right' });
+
+        // Col 8: Total Cost (IDR)
+        doc.fontSize(7.5).font('Helvetica-Bold').fillColor('#059669').text(costNum !== null ? formatIdr(costNum).replace('IDR ', '') : '—', 518, rowStartY + 3, { width: 38, align: 'right' });
+
+        y = rowStartY + rowH;
+        doc.moveTo(36, y).lineTo(559, y).strokeColor('#f1f5f9').lineWidth(0.5).stroke();
+      });
+
+      // =========================================================================
+      // 5. TOTALS
+      // =========================================================================
+      y += 6;
+      doc.rect(290, y, 269, 20).fillAndStroke('#f8fafc', '#e2e8f0');
+      doc.fontSize(8).font('Helvetica-Bold').fillColor('#334155').text('ESTIMATED GRAND TOTAL (IDR):', 295, y + 5, { width: 140, align: 'right' });
+      doc.fontSize(9.5).font('Helvetica-Bold').fillColor('#059669').text(hasPrices ? formatIdr(grandTotal) : '—', 440, y + 4, { width: 114, align: 'right' });
+
+      y += 28;
+
+      // =========================================================================
+      // 6. ENGINEERING / DUCTING SPECIFICATIONS
+      // =========================================================================
+      const ductingItems = items.filter(it => it.ducting_type);
+      if (ductingItems.length > 0) {
+        if (y + 60 > 720) {
           doc.addPage();
           y = 36;
         }
+        doc.fontSize(8.5).font('Helvetica-Bold').fillColor(primaryColor).text('ENGINEERING & DUCTING SPECIFICATIONS', 36, y);
+        y += 12;
 
-        const startY = y;
-        const pName = it.product_name || it.productName || '-';
-        const pDesc = it.item_description || it.itemDescription || '';
-        const matGrade = it.material_grade || it.material || it.materialGrade || '-';
+        ductingItems.forEach((dItem, dIdx) => {
+          const dBoxH = 42;
+          doc.rect(36, y, 523, dBoxH).fillAndStroke('#f0f9ff', '#bae6fd');
+          doc.fontSize(7.5).font('Helvetica-Bold').fillColor('#0369a1')
+             .text(`Item #${dIdx + 1}: ${dItem.product_name || 'Ducting'} (${dItem.ducting_type})`, 44, y + 6);
 
-        const isFastener = (it.category || '').toLowerCase() === 'fasteners' || /fastener|bolt|screw|nut|stud/i.test(`${it.product_name || it.productName || ''} ${it.item_description || it.itemDescription || ''} ${it.category || ''}`);
-        const isCut = !isFastener && (it.supply_type === 'Cut Size' || it.supplyType === 'Cut Size' || it.purchase_type === 'PROJECT-SPECIFIC CUT SIZE' || it.purchaseType === 'PROJECT-SPECIFIC CUT SIZE');
-        const origDims = it.size_dimensions || it.originalDimensions || it.size || '-';
-        let cutDims = '—';
-        if (isCut) {
-          const cLen = it.cut_length || it.cutLength;
-          const cWid = it.cut_width || it.cutWidth;
-          const rawCut = it.required_cut_size || it.requiredCutSize;
-          if (rawCut) {
-            cutDims = rawCut;
-          } else if (cLen) {
-            cutDims = cWid ? `${cLen} × ${cWid} mm` : `${cLen} mm`;
-          }
-        }
+          const dims = [];
+          if (dItem.dim_a) dims.push(`Ø A: ${dItem.dim_a} mm`);
+          if (dItem.dim_b) dims.push(`Ø B: ${dItem.dim_b} mm`);
+          if (dItem.dim_c) dims.push(`Ø C: ${dItem.dim_c} mm`);
+          if (dItem.angle_d) dims.push(`Angle D: ${dItem.angle_d}°`);
+          if (dItem.angle_b) dims.push(`Angle B: ${dItem.angle_b}°`);
+          if (dItem.radius) dims.push(`Radius: ${dItem.radius} mm`);
+          if (dItem.dim_l1 || dItem.l1) dims.push(`L1: ${dItem.dim_l1 || dItem.l1} mm`);
+          if (dItem.dim_l2 || dItem.l2) dims.push(`L2: ${dItem.dim_l2 || dItem.l2} mm`);
+          if (dItem.thickness) dims.push(`Thickness: ${dItem.thickness} mm`);
 
-        // Col 1: #
-        doc.font('Helvetica').fontSize(7.5).fillColor('#64748b').text(String(idx + 1), 36, y, { width: 18 });
+          doc.fontSize(7).font('Helvetica').fillColor(textColor).text(dims.join('  |  '), 44, y + 20, { width: 505 });
+          y += dBoxH + 8;
+        });
+      }
 
-        // Col 2: SKU
-        doc.font('Helvetica-Bold').fontSize(8).fillColor(textColor).text(it.sku || '—', 56, y, { width: 50 });
-
-        // Col 3: Product Name & Description & Item Remarks
-        doc.font('Helvetica-Bold').fontSize(8).fillColor(textColor).text(pName, 108, y, { width: 145 });
-        let descY = y + doc.heightOfString(pName, { width: 145 }) + 2;
-        if (pDesc) {
-          doc.font('Helvetica').fontSize(7).fillColor('#475569').text(pDesc, 108, descY, { width: 145 });
-          descY += doc.heightOfString(pDesc, { width: 145 }) + 2;
-        }
-        if (it.remarks) {
-          const remText = `Remarks: ${it.remarks}`;
-          doc.font('Helvetica-Bold').fontSize(7).fillColor('#0284c7').text(remText, 108, descY, { width: 145 });
-          descY += doc.heightOfString(remText, { width: 145 }) + 2;
-        }
-
-        // Col 4: Material / Grade & Original Dimensions
-        doc.font('Helvetica-Bold').fontSize(7.5).fillColor(textColor).text(matGrade, 256, y, { width: 80 });
-        const matH = doc.heightOfString(matGrade, { width: 80 });
-        doc.font('Helvetica').fontSize(7).fillColor('#64748b').text(`Original: ${origDims}`, 256, y + matH + 2, { width: 80 });
-        const origH = matH + 2 + doc.heightOfString(`Original: ${origDims}`, { width: 80 });
-
-        // Col 5: Supply Type & Required Cut Size
-        if (isFastener) {
-          doc.font('Helvetica').fontSize(7.5).fillColor('#64748b').text('—', 338, y, { width: 84 });
-        } else if (isCut) {
-          doc.font('Helvetica-Bold').fontSize(7.5).fillColor('#c2410c').text('[ CUT SIZE ]', 338, y, { width: 84 });
-          doc.font('Helvetica-Bold').fontSize(7).fillColor('#9a3412').text(`Required Cut:\n${cutDims}`, 338, y + 10, { width: 84 });
-        } else {
-          doc.font('Helvetica-Bold').fontSize(7.5).fillColor('#0284c7').text('[ FULL SIZE ]', 338, y, { width: 84 });
-          doc.font('Helvetica').fontSize(7).fillColor('#64748b').text('Required Cut: —', 338, y + 10, { width: 84 });
-        }
-        const supplyH = 26;
-
-        // Col 6: Qty & Unit
-        doc.font('Helvetica-Bold').fontSize(8).fillColor(textColor).text(String(it.quantity), 424, y, { width: 44 });
-        doc.font('Helvetica').fontSize(7).fillColor('#64748b').text(it.unit || 'Sheet', 424, y + 10, { width: 44 });
-
-        // Col 7: Unit Price
-        doc.font('Helvetica').fontSize(7.5).fillColor(textColor).text(hasPrice ? formatIdr(rawPrice).replace('IDR ', '') : '—', 470, y, { width: 44, align: 'right' });
-
-        // Col 8: Estimated Total
-        doc.font('Helvetica-Bold').fontSize(8).fillColor('#059669').text(cost !== null ? formatIdr(cost).replace('IDR ', '') : '—', 516, y, { width: 43, align: 'right' });
-
-        const rowHeight = Math.max(descY - startY, origH, supplyH, 24);
-        y = startY + rowHeight + 6;
-        doc.moveTo(36, y).lineTo(559, y).strokeColor('#f1f5f9').stroke();
-        y += 6;
-      });
-
-      // Grand Total Line
-      doc.font('Helvetica-Bold').fontSize(9).fillColor(textColor);
-      doc.text('ESTIMATED GRAND TOTAL (IDR):', 290, y, { width: 185, align: 'right' });
-      doc.fillColor(primaryColor).text((allHaveCost && grandTotal > 0) ? formatIdr(grandTotal) : '—', 480, y, { width: 79, align: 'right' });
-
-      y += 24;
-      if (y > 680) {
+      // =========================================================================
+      // 7. REQUISITION REASON & REMARKS
+      // =========================================================================
+      if (y + 45 > 720) {
         doc.addPage();
         y = 36;
       }
-
-      // Reason & Remarks
-      doc.moveTo(36, y).lineTo(559, y).strokeColor(borderColor).stroke();
-      y += 10;
-      doc.fontSize(9).font('Helvetica-Bold').fillColor(primaryColor).text('REQUISITION REASON & REMARKS', 36, y);
-      y += 14;
-      doc.fontSize(8).font('Helvetica-Bold').fillColor(textColor).text('Reason: ', 36, y, { continued: true })
-         .font('Helvetica').text(pr.reason_for_purchase || '(No reason specified)');
-      y += 14;
-      if (pr.remarks) {
-        doc.font('Helvetica-Bold').text('Remarks: ', 36, y, { continued: true })
-           .font('Helvetica').text(pr.remarks);
-        y += 16;
-      }
-
-      // Formal Approval Block
-      y += 10;
-      if (y > 700) {
-        doc.addPage();
-        y = 36;
-      }
-      doc.moveTo(36, y).lineTo(559, y).strokeColor(borderColor).stroke();
+      doc.fontSize(8.5).font('Helvetica-Bold').fillColor(primaryColor).text('REQUISITION REASON & REMARKS', 36, y);
       y += 12;
-      doc.fontSize(9).font('Helvetica-Bold').fillColor(primaryColor).text('APPROVAL & AUDIT RECORD', 36, y);
-      y += 16;
 
-      const appDate = pr.approved_at ? new Date(pr.approved_at).toLocaleDateString('en-GB') : '-';
-      const rejDate = pr.rejected_at ? new Date(pr.rejected_at).toLocaleDateString('en-GB') : '-';
+      doc.rect(36, y, 523, 40).fillAndStroke('#f8fafc', '#e2e8f0');
+      doc.fontSize(7).font('Helvetica-Bold').fillColor(mutedColor).text('REASON FOR PURCHASE: ', 44, y + 6, { continued: true })
+         .font('Helvetica').fillColor(textColor).text(pr.reason_for_purchase || pr.reasonForPurchase || '(No reason specified)');
+      if (pr.remarks) {
+        doc.font('Helvetica-Bold').fillColor(mutedColor).text('REMARKS / INSTRUCTIONS: ', 44, y + 20, { continued: true })
+           .font('Helvetica').fillColor(textColor).text(pr.remarks);
+      }
+      y += 48;
 
-      doc.fontSize(8).font('Helvetica-Bold').fillColor(textColor);
-      doc.text('Requisitioned By:', 36, y);
-      doc.font('Helvetica').text(`${pr.requester_name || '-'} (${pr.requester_username || '-'})`, 36, y + 12);
-      doc.text(`Date: ${reqDate}`, 36, y + 24);
+      // =========================================================================
+      // 8. APPROVAL BLOCK & QR VERIFICATION
+      // =========================================================================
+      if (y + 80 > 720) {
+        doc.addPage();
+        y = 36;
+      }
+      doc.fontSize(8.5).font('Helvetica-Bold').fillColor(primaryColor).text('APPROVAL & DOCUMENT VERIFICATION', 36, y);
+      y += 12;
 
-      const appBlockX = 340;
+      const appBoxH = 72;
+      doc.rect(36, y, 523, appBoxH).fillAndStroke('#ffffff', borderColor);
+
+      // Col 1: Requisitioned By
+      doc.fontSize(7).font('Helvetica-Bold').fillColor(mutedColor).text('REQUISITIONED BY', 46, y + 7);
+      doc.fontSize(8).font('Helvetica-Bold').fillColor(textColor).text(pr.requester_name || pr.requestedBy || 'Requester', 46, y + 18);
+      doc.fontSize(6.5).font('Helvetica').fillColor(mutedColor).text(`Dept: ${pr.department || 'Engineering'}`, 46, y + 29);
+      doc.text(`Date: ${reqDate}`, 46, y + 39);
+      doc.text('Signature: ___________________', 46, y + 54);
+
+      // Col 2: Management / Procurement Approval
+      const appColX = 220;
+      doc.fontSize(7).font('Helvetica-Bold').fillColor(mutedColor).text('MANAGEMENT / APPROVAL', appColX, y + 7);
       if (pr.status === 'APPROVED') {
-        doc.font('Helvetica-Bold').fillColor('#059669').text('Approved By (Admin):', appBlockX, y);
-        doc.font('Helvetica').fillColor(textColor).text(`${pr.approver_name || 'Admin'} (${pr.approver_username || 'admin'})`, appBlockX, y + 12);
-        doc.text(`Approval Date: ${appDate}`, appBlockX, y + 24);
+        const appDate = pr.approved_at ? new Date(pr.approved_at).toLocaleDateString('en-GB') : '—';
+        doc.fontSize(8).font('Helvetica-Bold').fillColor('#059669').text(`✓ APPROVED`, appColX, y + 18);
+        doc.fontSize(7.5).font('Helvetica-Bold').fillColor(textColor).text(pr.approver_name || 'System Administrator', appColX, y + 29);
+        doc.fontSize(6.5).font('Helvetica').fillColor(mutedColor).text(`Approval Date: ${appDate}`, appColX, y + 40);
+        doc.text('Status: Officially Approved for Procurement', appColX, y + 54);
       } else if (pr.status === 'REJECTED') {
-        doc.font('Helvetica-Bold').fillColor('#e11d48').text('Rejected By (Admin):', appBlockX, y);
-        doc.font('Helvetica').fillColor(textColor).text(`${pr.rejecter_name || 'Admin'} (${pr.rejecter_username || 'admin'})`, appBlockX, y + 12);
-        doc.text(`Rejection Date: ${rejDate}`, appBlockX, y + 24);
-        doc.font('Helvetica-Bold').text(`Reason: `, appBlockX, y + 36, { continued: true })
-           .font('Helvetica').text(pr.rejection_reason || '-');
+        const rejDate = pr.rejected_at ? new Date(pr.rejected_at).toLocaleDateString('en-GB') : '—';
+        doc.fontSize(8).font('Helvetica-Bold').fillColor('#e11d48').text(`✕ REJECTED`, appColX, y + 18);
+        doc.fontSize(7.5).font('Helvetica-Bold').fillColor(textColor).text(pr.rejecter_name || 'System Administrator', appColX, y + 29);
+        doc.fontSize(6.5).font('Helvetica').fillColor(mutedColor).text(`Rejection Date: ${rejDate}`, appColX, y + 40);
+        doc.text(`Reason: ${pr.rejection_reason || '-'}`, appColX, y + 54);
       } else {
-        doc.font('Helvetica-Bold').fillColor('#d97706').text('Pending Administrative Review', appBlockX, y);
-        doc.font('Helvetica').fillColor(mutedColor).text('Awaiting verification by System Administrator', appBlockX, y + 12);
+        doc.fontSize(8).font('Helvetica-Bold').fillColor('#d97706').text('⏳ PENDING APPROVAL', appColX, y + 18);
+        doc.fontSize(6.5).font('Helvetica').fillColor(mutedColor).text('Awaiting Administrative Review & Signature', appColX, y + 32);
+        doc.text('Signature: ___________________', appColX, y + 54);
+      }
+
+      // Col 3: QR Code Verification
+      const qrColX = 430;
+      if (qrBuffer) {
+        doc.image(qrBuffer, qrColX + 35, y + 6, { width: 52 });
+        doc.fontSize(6).font('Helvetica-Bold').fillColor(primaryColor).text('SCAN TO VERIFY', qrColX + 25, y + 60, { width: 72, align: 'center' });
+      }
+
+      // =========================================================================
+      // 9. TWO-PASS DOCUMENT CONTROL FOOTER ACROSS ALL PAGES
+      // =========================================================================
+      const range = doc.bufferedPageRange();
+      const nowStr = new Date().toISOString().replace('T', ' ').substring(0, 16);
+
+      for (let i = 0; i < range.count; i++) {
+        doc.switchToPage(i);
+        doc.moveTo(36, 804).lineTo(559, 804).strokeColor('#cbd5e1').lineWidth(0.5).stroke();
+        doc.fontSize(6.5).font('Helvetica').fillColor(mutedColor);
+        doc.text(
+          `Document: ${pr.pr_number || pr.prNumber}  |  Rev: ${revStr}  |  Status: ${pr.status || 'PENDING'}  |  Generated: ${nowStr}  |  Flow Force Indonesia`,
+          36, 808, { width: 420 }
+        );
+        doc.text(`Page ${i + 1} of ${range.count}`, 460, 808, { width: 99, align: 'right' });
       }
 
       doc.end();
-
-      if (filePath && writeStream) {
-        writeStream.on('finish', () => resolve(filePath));
-        writeStream.on('error', (err) => reject(err));
-      }
     } catch (err) {
       reject(err);
     }
@@ -524,7 +950,6 @@ function generatePdfFile(pr, items, filePath) {
 /**
  * Safely checks all approved PRs, identifies any whose physical files
  * are missing on server storage, and regenerates them into persistent storage.
- * Does NOT modify business data, items, SKUs, or create duplicate document records.
  */
 async function restoreMissingApprovedPrDocuments() {
   const prRes = await query(
@@ -580,5 +1005,6 @@ module.exports = {
   generateExcelFile,
   generatePdfFile,
   formatIdr,
-  restoreMissingApprovedPrDocuments
+  restoreMissingApprovedPrDocuments,
+  getDocumentStorageDir
 };

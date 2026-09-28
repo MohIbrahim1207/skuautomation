@@ -4,9 +4,13 @@
  */
 const express = require('express');
 const router = express.Router();
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
 const { query, pool } = require('../db/pool');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
-const { generatePrDocuments } = require('../services/documentGenerator');
+const { generatePrDocuments, getDocumentStorageDir } = require('../services/documentGenerator');
+const { logActivity } = require('../services/activityLogger');
 const { REQUIRE_UNIT_PRICE } = require('../config/pricing');
 
 function validateDuctingItem(item) {
@@ -299,14 +303,15 @@ router.post('/', async (req, res) => {
       const itemSku = (isDucting && (!item.sku || item.sku === 'DUCT-SPEC' || item.sku === 'DUCT-CUSTOM')) ? null : (item.sku || null);
       const purchaseType = isDucting ? 'PROJECT-SPECIFIC DUCTING' : (isItemCutSize ? 'PROJECT-SPECIFIC CUT SIZE' : 'STANDARD STOCK ITEM');
 
-      await client.query(
+      const prItemRes = await client.query(
         `INSERT INTO pr_items (
           purchase_request_id, master_item_id, sku, product_name, item_description,
           material_grade, size_dimensions, specification, unit, quantity, weight,
           unit_price, estimated_total_cost, purchase_type, required_cut_size,
           status, supply_type, cut_length, cut_width, remarks,
           ducting_type, dim_a, dim_b, dim_c, angle_d, angle_b, radius, dim_l1, dim_l2, thickness
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30)`,
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30)
+        RETURNING id`,
         [
           prId,
           isDucting ? null : (item.masterItemId || null),
@@ -340,6 +345,93 @@ router.post('/', async (req, res) => {
           thickness
         ]
       );
+
+      const prItemId = prItemRes.rows[0].id;
+
+      // Handle Engineering Drawing Attachment if present
+      const drw = item.drawingAttachment || item.engineeringDrawing || null;
+      let drawingDocId = item.drawingDocumentId || item.documentId || (drw ? (drw.documentId || drw.id) : null);
+
+      if (!drawingDocId && drw && drw.dataUrl) {
+        try {
+          const isPdf = (drw.type && drw.type.includes('pdf')) || String(drw.name || drw.fileName).toLowerCase().endsWith('.pdf');
+          const base64Data = drw.dataUrl.replace(/^data:[^;]+;base64,/, '');
+          const buffer = Buffer.from(base64Data, 'base64');
+
+          const cleanProjCode = (project.project_code || 'GENERAL').replace(/[^a-zA-Z0-9_-]/g, '_');
+          const baseStorage = getDocumentStorageDir();
+          const drawingDir = path.join(baseStorage, 'projects', cleanProjCode, 'engineering-drawings');
+          if (!fs.existsSync(drawingDir)) {
+            fs.mkdirSync(drawingDir, { recursive: true });
+          }
+
+          const rawName = drw.name || drw.fileName || 'Engineering_Drawing';
+          const safeOrigName = path.basename(rawName).replace(/[^a-zA-Z0-9._-]/g, '_');
+          const diskFileName = `DRW_${Date.now()}_${safeOrigName}`;
+          const absoluteFilePath = path.join(drawingDir, diskFileName);
+          const storageKey = path.relative(process.cwd(), absoluteFilePath).replace(/\\/g, '/');
+
+          fs.writeFileSync(absoluteFilePath, buffer);
+
+          const sha256 = crypto.createHash('sha256').update(buffer).digest('hex');
+          const mimeType = drw.type || (isPdf ? 'application/pdf' : 'image/png');
+
+          const docRes = await client.query(
+            `INSERT INTO documents (
+              project_id, purchase_request_id, purchase_request_item_id,
+              document_type, file_name, original_file_name,
+              file_path_or_storage_key, uploaded_by_user_id,
+              sha256_checksum, file_size_bytes, mime_type
+            ) VALUES ($1, $2, $3, 'ENGINEERING_DRAWING', $4, $5, $6, $7, $8, $9, $10)
+            RETURNING id`,
+            [
+              projectId,
+              prId,
+              prItemId,
+              safeOrigName,
+              rawName,
+              storageKey,
+              req.user.id,
+              sha256,
+              buffer.length,
+              mimeType
+            ]
+          );
+          drawingDocId = docRes.rows[0].id;
+
+          await logActivity({
+            entityType: 'DOCUMENT',
+            entityId: String(drawingDocId),
+            action: 'DOCUMENT_UPLOADED',
+            userId: req.user.id,
+            username: req.user.username,
+            metadata: {
+              documentId: drawingDocId,
+              documentType: 'ENGINEERING_DRAWING',
+              prNumber: prNumber,
+              itemId: prItemId,
+              fileName: safeOrigName,
+              originalFilename: rawName,
+              fileSize: buffer.length
+            }
+          });
+        } catch (drwErr) {
+          console.error('[PR API] Failed to persist inline drawing:', drwErr);
+        }
+      }
+
+      if (drawingDocId) {
+        await client.query(
+          `UPDATE documents
+           SET purchase_request_id = $1, purchase_request_item_id = $2, project_id = COALESCE(project_id, $3)
+           WHERE id = $4`,
+          [prId, prItemId, projectId, drawingDocId]
+        );
+        await client.query(
+          `UPDATE pr_items SET drawing_document_id = $1 WHERE id = $2`,
+          [drawingDocId, prItemId]
+        );
+      }
     }
 
     // Insert audit record into pr_approval_history (Action: SUBMITTED)
@@ -420,7 +512,17 @@ router.get('/:id', async (req, res) => {
     }
 
     const itemsRes = await query(
-      `SELECT * FROM pr_items WHERE purchase_request_id = $1 ORDER BY id ASC`,
+      `SELECT it.*,
+              doc.id AS doc_id,
+              doc.file_name AS doc_file_name,
+              doc.original_file_name AS doc_orig_file_name,
+              doc.mime_type AS doc_mime_type,
+              doc.file_size_bytes AS doc_file_size,
+              doc.file_path_or_storage_key AS doc_storage_key
+       FROM pr_items it
+       LEFT JOIN documents doc ON (doc.id = it.drawing_document_id OR (doc.purchase_request_item_id = it.id AND doc.document_type = 'ENGINEERING_DRAWING'))
+       WHERE it.purchase_request_id = $1
+       ORDER BY it.id ASC`,
       [prNumericId]
     );
 
@@ -462,10 +564,27 @@ router.get('/:id', async (req, res) => {
         rejecterUsername: pr.rejecter_username,
         rejectedAt: pr.rejected_at,
         rejectionReason: pr.rejection_reason,
+        revision: pr.revision !== undefined && pr.revision !== null ? pr.revision : 0,
         createdAt: pr.created_at
       },
       items: itemsRes.rows.map(it => {
         const isCut = (it.supply_type === 'Cut Size' || it.purchase_type === 'PROJECT-SPECIFIC CUT SIZE');
+        const hasDrawing = Boolean(it.doc_id);
+        const fileName = it.doc_orig_file_name || it.doc_file_name;
+        const isPdf = (it.doc_mime_type && it.doc_mime_type.includes('pdf')) || String(fileName || '').toLowerCase().endsWith('.pdf');
+        const finalMime = it.doc_mime_type || (isPdf ? 'application/pdf' : 'image/png');
+        const drawingObj = hasDrawing ? {
+          id: it.doc_id,
+          documentId: it.doc_id,
+          fileName: fileName,
+          originalFilename: fileName,
+          mimeType: finalMime,
+          fileSize: it.doc_file_size ? parseInt(it.doc_file_size, 10) : 0,
+          fileSizeBytes: it.doc_file_size ? parseInt(it.doc_file_size, 10) : 0,
+          viewUrl: `/api/documents/${it.doc_id}/view`,
+          downloadUrl: `/api/documents/${it.doc_id}/download`
+        } : null;
+
         return {
           id: it.id,
           sku: it.sku,
@@ -508,7 +627,10 @@ router.get('/:id', async (req, res) => {
             l1: it.dim_l1 || null,
             l2: it.dim_l2 || null,
             thickness: it.thickness || null
-          } : null
+          } : null,
+          engineeringDrawing: drawingObj,
+          drawingAttachment: drawingObj,
+          drawingDocumentId: it.doc_id || null
         };
       }),
       history: historyRes.rows.map(h => ({
@@ -525,6 +647,9 @@ router.get('/:id', async (req, res) => {
         documentType: d.document_type,
         fileName: d.file_name,
         filePathOrStorageKey: d.file_path_or_storage_key,
+        revision: d.revision || 0,
+        sha256Checksum: d.sha256_checksum,
+        fileSizeBytes: d.file_size_bytes,
         createdAt: d.created_at
       }))
     });

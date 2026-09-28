@@ -17,8 +17,8 @@ const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors());
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Ensure base storage directory exists
 const STORAGE_DIR = process.env.STORAGE_DIR || './storage';
@@ -180,6 +180,7 @@ app.use('/api/master-items', require('./routes/masterItems'));
 app.use('/api/purchase-requests', require('./routes/purchaseRequests'));
 app.use('/api/documents', require('./routes/documents'));
 app.use('/api/import-submissions', require('./routes/importSubmissions'));
+app.use('/pr', require('./routes/verify'));
 
 // Serve Static Frontend Assets (no-cache for real-time frontend updates)
 app.use(express.static(path.join(__dirname, '..'), {
@@ -192,7 +193,7 @@ app.use(express.static(path.join(__dirname, '..'), {
 
 // Fallback for Single Page App
 app.get('*', (req, res, next) => {
-  if (req.path.startsWith('/api/') || req.path === '/health') return next();
+  if (req.path.startsWith('/api/') || req.path.startsWith('/pr/') || req.path === '/health') return next();
   res.sendFile(path.join(__dirname, '../index.html'));
 });
 
@@ -227,7 +228,33 @@ const runStartupMigrations = async () => {
       ALTER TABLE purchase_requests ADD CONSTRAINT purchase_requests_purchase_type_check CHECK (purchase_type IN ('STANDARD STOCK ITEM', 'PROJECT-SPECIFIC CUT SIZE', 'PROJECT-SPECIFIC DUCTING'));
       UPDATE pr_items SET status = 'Available' WHERE status IS NULL OR status NOT IN ('Available', 'Out of Stock');
       UPDATE pr_items SET supply_type = 'Full Size' WHERE supply_type IS NULL OR supply_type NOT IN ('Full Size', 'Cut Size');
-      UPDATE pr_items SET remarks = '' WHERE remarks IS NULL;
+      -- Enterprise Document Versioning, Integrity Checksum, and Activity Logs
+      ALTER TABLE purchase_requests ADD COLUMN IF NOT EXISTS revision INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE documents ADD COLUMN IF NOT EXISTS revision INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE documents ADD COLUMN IF NOT EXISTS sha256_checksum VARCHAR(64);
+      ALTER TABLE documents ADD COLUMN IF NOT EXISTS file_size_bytes BIGINT;
+      ALTER TABLE documents DROP CONSTRAINT IF EXISTS documents_document_type_check;
+      ALTER TABLE documents ADD CONSTRAINT documents_document_type_check CHECK (document_type IN ('PR_EXCEL', 'PR_PDF', 'ENGINEERING_DRAWING'));
+      ALTER TABLE documents ADD COLUMN IF NOT EXISTS purchase_request_item_id INTEGER REFERENCES pr_items(id) ON DELETE CASCADE;
+      ALTER TABLE documents ADD COLUMN IF NOT EXISTS original_file_name VARCHAR(255);
+      ALTER TABLE documents ADD COLUMN IF NOT EXISTS mime_type VARCHAR(100);
+      ALTER TABLE pr_items ADD COLUMN IF NOT EXISTS drawing_document_id INTEGER REFERENCES documents(id) ON DELETE SET NULL;
+      CREATE INDEX IF NOT EXISTS idx_documents_pr_item ON documents(purchase_request_item_id);
+      CREATE INDEX IF NOT EXISTS idx_documents_type ON documents(document_type);
+      CREATE INDEX IF NOT EXISTS idx_pr_items_drawing ON pr_items(drawing_document_id);
+
+      CREATE TABLE IF NOT EXISTS activity_logs (
+        id SERIAL PRIMARY KEY,
+        entity_type VARCHAR(50) NOT NULL,
+        entity_id VARCHAR(100),
+        action VARCHAR(50) NOT NULL,
+        performed_by_user_id VARCHAR(36) REFERENCES users(id) ON DELETE SET NULL,
+        performed_by_username VARCHAR(100),
+        metadata JSONB,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_activity_logs_entity ON activity_logs(entity_type, entity_id);
+      CREATE INDEX IF NOT EXISTS idx_activity_logs_action ON activity_logs(action);
 
       -- Controlled Excel Import Staging & Review Tables
       CREATE TABLE IF NOT EXISTS import_submissions (

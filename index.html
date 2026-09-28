@@ -1462,31 +1462,35 @@
        MODAL 4: FORMAL PR PRINTABLE REQUISITION VOUCHER (WHITE DOCUMENT)
        ========================================================================= -->
   <div class="modal-backdrop" id="modalPrVoucher">
-    <div class="modal-box pr-white-document-modal" style="max-width: 920px;">
+    <div class="modal-box pr-white-document-modal" style="max-width: 960px;">
       
-      <!-- PR Voucher Header -->
+      <!-- PR Voucher Header / Official Flow Force Letterhead -->
       <div class="pr-doc-header">
-        <div class="pr-doc-header-grid">
-          <div class="pr-doc-header-left">
-            <div class="flow-force-logo-placeholder">[ FLOW FORCE LOGO ]</div>
+        <div class="pr-letterhead-layout">
+          <div class="pr-letterhead-left">
+            <img src="assets/flow-force-logo.png" alt="Flow Force" class="pr-letterhead-logo-img">
           </div>
-          
-          <div class="pr-doc-header-center">
-            <h2 class="pr-doc-main-title">PURCHASE REQUEST</h2>
+          <div class="pr-letterhead-right">
+            <div class="company-name">PT. Flow Force Indonesia</div>
+            <div class="company-addr">Kawasan Industri Delta Silicon 5</div>
+            <div class="company-addr">Jl. Kenari 1 Blok G1 No. 23D</div>
+            <div class="company-addr">Cikarang, Bekasi, Indonesia</div>
+            <div class="company-contact">Phone : +62 21 2961 7055 | Fax : +62 21 2961 7056</div>
+            <div class="company-contact">Email : flowforce@flow-force.com | Website : www.flow-force.com</div>
           </div>
+          <button type="button" class="pr-doc-close-btn" data-modal-close title="Close">&times;</button>
+        </div>
 
-          <div class="pr-doc-header-right">
-            <div class="pr-header-meta-box">
-              <div class="pr-header-meta-line">
-                <span class="meta-label">PR No:</span>
-                <span class="meta-val pr-code" id="prVoucherDisplayNumber">PR-2026-XXXX</span>
-              </div>
-              <div class="pr-header-meta-line">
-                <span class="meta-label">Date:</span>
-                <span class="meta-val" id="prVoucherDisplayDate">DD/MM/YYYY</span>
-              </div>
-            </div>
-            <button type="button" class="pr-doc-close-btn" data-modal-close title="Close">&times;</button>
+        <div class="pr-letterhead-divider"></div>
+
+        <div class="pr-doc-title-row">
+          <div class="pr-title-group">
+            <h2 class="pr-doc-main-title">PURCHASE REQUISITION</h2>
+          </div>
+          <div class="pr-title-meta-box">
+            <span class="meta-label">PR Number:</span>
+            <span class="meta-val pr-code" id="prVoucherDisplayNumber">PR-2026-XXXX</span>
+            <span class="meta-val pr-rev-badge" id="prVoucherDisplayRev">Rev 00</span>
           </div>
         </div>
       </div>
@@ -1497,6 +1501,9 @@
 
       <div class="pr-doc-footer">
         <button type="button" class="pr-doc-btn pr-btn-secondary" data-modal-close>Close</button>
+        <button type="button" class="pr-doc-btn pr-btn-secondary" id="btnDownloadVoucherPdf">
+          <span>📥 Download PDF</span>
+        </button>
         <button type="button" class="pr-doc-btn pr-btn-primary" id="btnPrintVoucher">
           <span>🖨️ Print Purchase Request</span>
         </button>

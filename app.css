@@ -1642,61 +1642,99 @@ html {
   max-width: 900px !important;
 }
 
-/* PR Corporate Document Header */
+/* PR Corporate Document Header / Official Flow Force Letterhead */
 .pr-doc-header {
   background: #ffffff;
   border-bottom: 2px solid #0284c7;
-  padding: 1.25rem 2rem 1.15rem 2rem;
+  padding: 1.25rem 2rem 1rem 2rem;
 }
 
-.pr-doc-header-grid {
-  display: grid;
-  grid-template-columns: 200px 1fr 200px;
-  align-items: center;
-  gap: 1rem;
+.pr-letterhead-layout {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  position: relative;
+  gap: 1.5rem;
 }
 
-.flow-force-logo-placeholder {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 8px 14px;
-  border: 1.5px dashed #0284c7;
-  border-radius: var(--radius-sm);
-  background: #f0f9ff;
-  color: #0369a1;
-  font-family: var(--font-mono);
-  font-size: 0.8rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  user-select: none;
-  white-space: nowrap;
-}
-
-.pr-doc-header-left {
+.pr-letterhead-left {
   display: flex;
   align-items: center;
 }
 
-.pr-doc-header-center {
-  text-align: center;
+.pr-letterhead-logo-img {
+  width: 185px;
+  height: auto;
+  max-height: 52px;
+  object-fit: contain;
+  display: block;
+}
+
+.pr-letterhead-right {
+  text-align: right;
+  font-family: var(--font-sans);
+  color: #0f172a;
+  padding-right: 32px;
+}
+
+.pr-letterhead-right .company-name {
+  font-size: 0.92rem;
+  font-weight: 800;
+  color: #0f172a;
+  letter-spacing: 0.02em;
+  margin-bottom: 2px;
+}
+
+.pr-letterhead-right .company-addr {
+  font-size: 0.74rem;
+  color: #334155;
+  line-height: 1.35;
+}
+
+.pr-letterhead-right .company-contact {
+  font-size: 0.72rem;
+  color: #475569;
+  line-height: 1.35;
+  margin-top: 1px;
+}
+
+.pr-letterhead-divider {
+  margin: 12px 0 10px 0;
+  border: none;
+  border-bottom: 1.5px solid #0284c7;
+}
+
+.pr-doc-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
 .pr-doc-main-title {
-  font-size: 1.6rem;
+  font-size: 1.35rem;
   font-weight: 900;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   color: #0f172a;
   text-transform: uppercase;
   margin: 0;
 }
 
-.pr-doc-header-right {
+.pr-title-meta-box {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: 1rem;
+  gap: 8px;
+  font-size: 0.85rem;
+}
+
+.pr-rev-badge {
+  background: #0284c7;
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 0.72rem;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  letter-spacing: 0.03em;
 }
 
 .pr-header-meta-box {
@@ -2548,6 +2586,24 @@ html {
   line-height: 1.45;
   min-height: 38px;
   white-space: pre-wrap;
+}
+
+/* ==========================================================================
+   ENGINEERING DRAWING CARD & APPENDIX STYLES
+   ========================================================================== */
+.pr-card-drawing-section, .pr-item-drawing-card {
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: #f0f9ff;
+  border: 1px solid #bae6fd;
+  border-left: 3px solid #0284c7;
+  border-radius: 6px;
+  box-shadow: 0 1px 2px rgba(2, 132, 199, 0.05);
+  transition: border-color 0.2s ease;
+}
+
+.pr-card-drawing-section:hover, .pr-item-drawing-card:hover {
+  border-color: #0284c7;
 }
 
 /* ==========================================================================
@@ -4571,4 +4627,179 @@ html {
   color: #d97706;
   font-weight: 600;
 }
+
+/* ==========================================================================
+   ENTERPRISE FLOW FORCE PR BROWSER PRINT VIEW STYLES (@media print)
+   ========================================================================== */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 12mm 10mm 12mm 10mm;
+  }
+
+  /* Reset body and hide main application chrome */
+  body, html {
+    background: #ffffff !important;
+    color: #0f172a !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    font-size: 11pt !important;
+  }
+
+  /* Hide app navigation, header, footer, toast, background, sidebars, alerts */
+  .app-header,
+  .app-main,
+  .app-footer,
+  .toast-container,
+  .db-health-banner,
+  .modal-backdrop:not(#modalPrVoucher) {
+    display: none !important;
+  }
+
+  /* Make Voucher Modal the full print page */
+  #modalPrVoucher {
+    position: static !important;
+    display: block !important;
+    background: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+    overflow: visible !important;
+    box-shadow: none !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+    pointer-events: auto !important;
+  }
+
+  #modalPrVoucher .modal-box,
+  #modalPrVoucher .pr-white-document-modal {
+    position: static !important;
+    max-width: 100% !important;
+    width: 100% !important;
+    border: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+  }
+
+  /* Hide interactive buttons and modal close in print */
+  .pr-doc-close-btn,
+  .pr-doc-footer,
+  .btn,
+  button {
+    display: none !important;
+  }
+
+  /* Ensure body content is visible and expands */
+  .pr-doc-body {
+    padding: 0 !important;
+    overflow: visible !important;
+    height: auto !important;
+  }
+
+  .pr-doc-header {
+    padding: 0 0 10px 0 !important;
+    border-bottom: 2px solid #0284c7 !important;
+  }
+
+  /* Table print optimization */
+  .table-responsive {
+    overflow: visible !important;
+    border: none !important;
+  }
+
+  table {
+    page-break-inside: auto !important;
+    border-collapse: collapse !important;
+    width: 100% !important;
+  }
+
+  thead {
+    display: table-header-group !important;
+  }
+
+  tfoot {
+    display: table-footer-group !important;
+  }
+
+  tr {
+    page-break-inside: avoid !important;
+    page-break-after: auto !important;
+  }
+
+  /* Avoid breaking critical blocks across pages */
+  .pr-doc-section {
+    page-break-inside: avoid;
+    margin-bottom: 1.25rem !important;
+  }
+
+  /* Preserve borders, colors, and backgrounds in print */
+  .sku-badge,
+  .pr-badge,
+  .unit-badge,
+  .supply-badge,
+  .pr-rev-badge {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}
+
+/* Ducting Engineering Drawing Modal Preview & Controls */
+.ducting-drawing-preview-area {
+  position: relative;
+  width: 100%;
+  height: 480px;
+  min-height: 420px;
+  max-height: 520px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  overflow: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.ducting-drawing-preview-area iframe {
+  width: 100%;
+  height: 100%;
+  min-height: 470px;
+  border: none;
+  background: #ffffff;
+  display: block;
+}
+
+.ducting-drawing-preview-area img {
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  display: block;
+  margin: 0 auto;
+  background: #ffffff;
+}
+
+.ducting-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid #e2e8f0;
+  border-top-color: #0284c7;
+  border-radius: 50%;
+  animation: ductingSpin 0.8s linear infinite;
+}
+
+@keyframes ductingSpin {
+  to { transform: rotate(360deg); }
+}
+
 

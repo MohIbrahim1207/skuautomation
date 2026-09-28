@@ -8,7 +8,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'flowforce_super_secret_jwt_key_202
 
 function authenticateToken(req, res, next) {
   const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1];
+  const token = (authHeader && authHeader.split(' ')[1]) || req.query.token;
 
   if (!token) {
     return res.status(401).json({ error: 'Authentication required. Please log in.' });
