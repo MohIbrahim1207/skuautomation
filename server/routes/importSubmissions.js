@@ -8,11 +8,19 @@ const express = require('express');
 const router = express.Router();
 const { query, pool } = require('../db/pool');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
+const { serveTemplateDownload } = require('../services/templateService');
 
 // Helper: Format Import ID (e.g. IMP-0001)
 function formatImportId(seq) {
   return `IMP-${String(seq).padStart(4, '0')}`;
 }
+
+/**
+ * GET /api/import-submissions/template
+ * Download the standard Flow Force New SKU Input Excel template.
+ * Validated binary XLSX stream with correct MIME & attachment headers.
+ */
+router.get('/template', serveTemplateDownload);
 
 /**
  * POST /api/import-submissions

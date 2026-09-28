@@ -967,12 +967,14 @@
                 ENGINEERING DRAWING
               </div>
               ${thumbSrc ? (isPdf ? `
-                <div style="width: 100%; height: 95px; border: 1px solid #e2e8f0; border-radius: 4px; overflow: hidden; background: #fff; margin-bottom: 6px; position: relative;">
+                <div style="width: 100%; height: 95px; border: 1px solid #e2e8f0; border-radius: 4px; overflow: hidden; background: #fff; margin-bottom: 6px; position: relative; cursor: pointer;" onclick="DuctingWorkflowController.viewDrawing(${idx})" title="Click to view full drawing">
                   <iframe src="${thumbSrc}#page=1&view=FitH&toolbar=0&navpanes=0" style="width: 100%; height: 100%; border: none; pointer-events: none;" tabindex="-1"></iframe>
+                  <div style="position: absolute; bottom: 3px; right: 3px; background: rgba(15,23,42,0.8); color: #fff; font-size: 0.62rem; padding: 1px 5px; border-radius: 3px; font-weight: 600; pointer-events: none; display: flex; align-items: center; gap: 3px;"><span>🔍</span> Expand</div>
                 </div>
               ` : `
-                <div style="width: 100%; height: 95px; border: 1px solid #e2e8f0; border-radius: 4px; overflow: hidden; background: #fff; margin-bottom: 6px; display: flex; align-items: center; justify-content: center;">
+                <div style="width: 100%; height: 95px; border: 1px solid #e2e8f0; border-radius: 4px; overflow: hidden; background: #fff; margin-bottom: 6px; display: flex; align-items: center; justify-content: center; position: relative; cursor: pointer;" onclick="DuctingWorkflowController.viewDrawing(${idx})" title="Click to view full drawing">
                   <img src="${thumbSrc}" alt="Drawing Thumbnail" style="max-width: 100%; max-height: 100%; object-fit: contain;">
+                  <div style="position: absolute; bottom: 3px; right: 3px; background: rgba(15,23,42,0.8); color: #fff; font-size: 0.62rem; padding: 1px 5px; border-radius: 3px; font-weight: 600; pointer-events: none; display: flex; align-items: center; gap: 3px;"><span>🔍</span> Expand</div>
                 </div>
               `) : ''}
               <div style="font-size:0.75rem; font-weight:600; color:#0f172a; margin-bottom:2px;">
@@ -2575,17 +2577,17 @@
     openFullDrawing() {
       const up = this.state.uploadedDrawing;
       if (!up) return;
-      if (up.documentId || up.id) {
-        if (window.UI && window.UI.viewDrawingDocument) {
-          window.UI.viewDrawingDocument(up.documentId || up.id);
-          return;
-        }
-      }
-      const previewUrl = up.blobUrl || up.dataUrl;
-      if (previewUrl) {
-        window.open(previewUrl, '_blank');
+      if (window.DocumentViewer) {
+        window.DocumentViewer.open(up);
+      } else if (window.UI && window.UI.viewDrawingDocument) {
+        window.UI.viewDrawingDocument(up.documentId || up.id || up);
       } else {
-        alert('Drawing preview is not available.');
+        const previewUrl = up.blobUrl || up.dataUrl;
+        if (previewUrl) {
+          window.open(previewUrl, '_blank');
+        } else {
+          alert('Drawing preview is not available.');
+        }
       }
     },
 
@@ -2617,8 +2619,10 @@
       if (!it) return;
       const drw = it.drawingAttachment || it.engineeringDrawing;
       if (!drw) return;
-      if (drw.documentId || drw.id) {
-        window.UI.viewDrawingDocument(drw.documentId || drw.id);
+      if (window.DocumentViewer) {
+        window.DocumentViewer.open(drw);
+      } else if (window.UI && window.UI.viewDrawingDocument) {
+        window.UI.viewDrawingDocument(drw.documentId || drw.id || drw);
       } else if (drw.blobUrl || drw.dataUrl) {
         window.open(drw.blobUrl || drw.dataUrl, '_blank');
       }
@@ -3396,6 +3400,276 @@
   };
 
   window.DuctingWorkflowController = DuctingWorkflowController;
+
+  // =========================================================================
+  // DOCUMENT VIEWER CONTROLLER (FULL PDF & ENGINEERING DRAWING VIEWER)
+  // =========================================================================
+  const DocumentViewer = {
+    currentDoc: null,
+    activeBlobUrl: null,
+
+    async open(docOrItem) {
+      if (!docOrItem) {
+        if (window.UI && window.UI.showToast) {
+          window.UI.showToast('No drawing document specified.', 'warning');
+        }
+        return;
+      }
+
+      const modal = document.getElementById('modalDrawingViewer');
+      if (!modal) return;
+
+      this.cleanupBlob();
+      this.currentDoc = null;
+
+      const loadingEl = document.getElementById('drawingViewerLoading');
+      const errorEl = document.getElementById('drawingViewerError');
+      const contentEl = document.getElementById('drawingViewerContent');
+      const titleEl = document.getElementById('drawingViewerTitle');
+      const metaEl = document.getElementById('drawingViewerMeta');
+      const typeBadge = document.getElementById('drawingViewerTypeBadge');
+      const iconEl = document.getElementById('drawingViewerIcon');
+
+      if (loadingEl) loadingEl.style.display = 'flex';
+      if (errorEl) errorEl.style.display = 'none';
+      if (contentEl) contentEl.innerHTML = '';
+
+      modal.classList.add('active');
+      modal.style.display = 'flex';
+
+      // Normalize parameters
+      let docId = null;
+      let fileName = 'Engineering Drawing';
+      let mimeType = '';
+      let fileSize = null;
+      let directSrc = '';
+
+      if (typeof docOrItem === 'number' || (typeof docOrItem === 'string' && /^\d+$/.test(docOrItem))) {
+        docId = parseInt(docOrItem, 10);
+      } else if (typeof docOrItem === 'object' && docOrItem !== null) {
+        const drw = docOrItem.drawingAttachment || docOrItem.engineeringDrawing || docOrItem;
+        docId = drw.documentId || drw.id || (drw.doc_id ? drw.doc_id : null);
+        fileName = drw.fileName || drw.originalFilename || drw.original_file_name || drw.file_name || drw.name || 'Engineering Drawing';
+        mimeType = drw.mimeType || drw.mime_type || drw.type || '';
+        fileSize = drw.fileSize || drw.fileSizeBytes || drw.file_size_bytes || drw.size || null;
+        directSrc = drw.blobUrl || drw.dataUrl || '';
+      }
+
+      let isPdf = (mimeType && mimeType.includes('pdf')) || String(fileName).toLowerCase().endsWith('.pdf');
+      let isImage = (mimeType && mimeType.includes('image')) || /\.(png|jpe?g|webp|svg)$/i.test(fileName);
+      if (!isPdf && !isImage) {
+        isPdf = true;
+      }
+
+      const typeLabel = isPdf ? 'PDF' : 'IMAGE';
+      if (titleEl) titleEl.textContent = fileName;
+      if (typeBadge) {
+        typeBadge.textContent = typeLabel;
+        typeBadge.style.background = isPdf ? '#e0f2fe' : '#fef3c7';
+        typeBadge.style.color = isPdf ? '#0369a1' : '#b45309';
+      }
+      if (iconEl) iconEl.textContent = isPdf ? '📄' : '📐';
+      if (metaEl) {
+        const szStr = fileSize ? `${(fileSize / 1024).toFixed(1)} KB` : '';
+        metaEl.textContent = szStr ? `Size: ${szStr} • Full High-Resolution Vector Document` : 'Full High-Resolution Vector Document';
+      }
+
+      this.currentDoc = {
+        docId: docId,
+        fileName: fileName,
+        mimeType: mimeType,
+        fileSize: fileSize,
+        directSrc: directSrc,
+        isPdf: isPdf
+      };
+
+      if (docId) {
+        const token = (window.AuthService && typeof window.AuthService.getToken === 'function') ? window.AuthService.getToken() : '';
+        try {
+          const resp = await fetch(`/api/documents/${docId}/view`, {
+            headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+          });
+
+          if (!resp.ok) {
+            if (resp.status === 401) {
+              this.showError('Authentication Required', 'Please log in to view this engineering drawing.');
+              return;
+            }
+            if (resp.status === 403) {
+              this.showError('Access Denied', 'You are not authorized to view this document.');
+              return;
+            }
+            if (resp.status === 404) {
+              this.showError('Document Not Found', 'Engineering drawing was not found.');
+              return;
+            }
+            let errText = 'Unable to load engineering drawing.';
+            try {
+              const errJson = await resp.json();
+              if (errJson && errJson.error) errText = errJson.error;
+            } catch (_) {}
+            this.showError('Unable to load engineering drawing.', errText);
+            return;
+          }
+
+          // Read Content-Disposition for original filename if needed
+          const disp = resp.headers.get('Content-Disposition') || '';
+          const match = disp.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i);
+          if (match && match[1] && (!fileName || fileName === 'Engineering Drawing')) {
+            fileName = decodeURIComponent(match[1]);
+            if (titleEl) titleEl.textContent = fileName;
+            this.currentDoc.fileName = fileName;
+          }
+
+          const contentType = resp.headers.get('Content-Type') || '';
+          if (contentType) {
+            isPdf = contentType.includes('pdf') || String(fileName).toLowerCase().endsWith('.pdf');
+            this.currentDoc.isPdf = isPdf;
+            if (typeBadge) {
+              typeBadge.textContent = isPdf ? 'PDF' : 'IMAGE';
+              typeBadge.style.background = isPdf ? '#e0f2fe' : '#fef3c7';
+              typeBadge.style.color = isPdf ? '#0369a1' : '#b45309';
+            }
+          }
+
+          const blob = await resp.blob();
+          this.activeBlobUrl = URL.createObjectURL(blob);
+          if (metaEl && !fileSize) {
+            metaEl.textContent = `Size: ${(blob.size / 1024).toFixed(1)} KB • Full High-Resolution Vector Document`;
+          }
+
+          this.renderViewer(this.activeBlobUrl, isPdf, fileName);
+        } catch (networkErr) {
+          console.error('[DocumentViewer] Fetch error:', networkErr);
+          if (directSrc) {
+            this.renderViewer(directSrc, isPdf, fileName);
+          } else {
+            this.showError('Unable to load engineering drawing.', 'Network error while retrieving document.');
+          }
+        }
+      } else if (directSrc) {
+        this.renderViewer(directSrc, isPdf, fileName);
+      } else {
+        this.showError('Unable to load engineering drawing.', 'No drawing document source is available.');
+      }
+    },
+
+    renderViewer(srcUrl, isPdf, fileName) {
+      const loadingEl = document.getElementById('drawingViewerLoading');
+      const contentEl = document.getElementById('drawingViewerContent');
+      const footerInfo = document.getElementById('drawingViewerFooterInfo');
+      if (!contentEl) return;
+
+      if (isPdf) {
+        contentEl.innerHTML = `
+          <iframe
+            src="${srcUrl}#page=1&view=FitH"
+            title="${escapeHtml(fileName)}"
+            style="width: 100%; height: 100%; border: none; background: #525659; display: block;"
+          ></iframe>
+        `;
+        if (footerInfo) {
+          footerInfo.innerHTML = `<span>🔍</span> <span>Full multi-page vector inspection mode. Use native scroll and zoom to inspect technical dimensions and all document pages.</span>`;
+        }
+      } else {
+        contentEl.innerHTML = `
+          <div style="width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: #ffffff; padding: 1.5rem; overflow: auto;">
+            <img
+              src="${srcUrl}"
+              alt="${escapeHtml(fileName)}"
+              style="max-width: 100%; max-height: 100%; object-fit: contain; background: #ffffff; box-shadow: 0 4px 16px rgba(0,0,0,0.12); border: 1px solid #e2e8f0; border-radius: 4px;"
+            />
+          </div>
+        `;
+        if (footerInfo) {
+          footerInfo.innerHTML = `<span>🔍</span> <span>Full engineering image inspection. Original aspect ratio preserved (object-fit: contain).</span>`;
+        }
+      }
+
+      if (loadingEl) loadingEl.style.display = 'none';
+    },
+
+    showError(title, message) {
+      const loadingEl = document.getElementById('drawingViewerLoading');
+      const errorEl = document.getElementById('drawingViewerError');
+      const errTitleEl = document.getElementById('drawingViewerErrorTitle');
+      const errMsgEl = document.getElementById('drawingViewerErrorMessage');
+
+      if (loadingEl) loadingEl.style.display = 'none';
+      if (errTitleEl) errTitleEl.textContent = title || 'Unable to load engineering drawing.';
+      if (errMsgEl) errMsgEl.textContent = message || 'The document could not be retrieved from the server.';
+      if (errorEl) errorEl.style.display = 'flex';
+    },
+
+    retry() {
+      if (this.currentDoc) {
+        this.open(this.currentDoc);
+      }
+    },
+
+    async downloadCurrent() {
+      if (!this.currentDoc) return;
+      const docId = this.currentDoc.docId;
+      const fileName = this.currentDoc.fileName || 'Engineering_Drawing';
+
+      if (docId && window.UI && window.UI.downloadDocument) {
+        await window.UI.downloadDocument(docId, fileName);
+      } else if (this.activeBlobUrl || this.currentDoc.directSrc) {
+        const a = document.createElement('a');
+        a.href = this.activeBlobUrl || this.currentDoc.directSrc;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      } else {
+        alert('Download is currently unavailable.');
+      }
+    },
+
+    openInNewTab() {
+      if (!this.currentDoc) return;
+      const docId = this.currentDoc.docId;
+      const token = (window.AuthService && typeof window.AuthService.getToken === 'function') ? window.AuthService.getToken() : '';
+
+      if (docId) {
+        window.open(`/api/documents/${docId}/view?token=${encodeURIComponent(token)}`, '_blank');
+      } else if (this.activeBlobUrl || this.currentDoc.directSrc) {
+        window.open(this.activeBlobUrl || this.currentDoc.directSrc, '_blank');
+      }
+    },
+
+    cleanupBlob() {
+      if (this.activeBlobUrl) {
+        try {
+          URL.revokeObjectURL(this.activeBlobUrl);
+        } catch (_) {}
+        this.activeBlobUrl = null;
+      }
+    },
+
+    close() {
+      const modal = document.getElementById('modalDrawingViewer');
+      if (modal) {
+        modal.classList.remove('active');
+        modal.style.display = 'none';
+      }
+      const contentEl = document.getElementById('drawingViewerContent');
+      if (contentEl) contentEl.innerHTML = '';
+      this.cleanupBlob();
+    }
+  };
+
+  window.DocumentViewer = DocumentViewer;
+
+  // Global ESC key listener for modal closing
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      const m = document.getElementById('modalDrawingViewer');
+      if (m && (m.classList.contains('active') || m.style.display === 'flex')) {
+        DocumentViewer.close();
+      }
+    }
+  });
 
   // =========================================================================
   // 2. UI CONTROLLER & EVENT ORCHESTRATION
@@ -6930,12 +7204,14 @@
                               ENGINEERING DRAWING
                             </div>
                             ${thumbSrc ? (isPdf ? `
-                              <div style="width: 100%; height: 110px; border: 1px solid #bfdbfe; border-radius: 4px; overflow: hidden; background: #fff; margin-bottom: 8px; position: relative;">
+                              <div style="width: 100%; height: 110px; border: 1px solid #bfdbfe; border-radius: 4px; overflow: hidden; background: #fff; margin-bottom: 8px; position: relative; cursor: pointer;" onclick="UI.viewDrawingDocument(${docId})" title="Click to view full drawing">
                                 <iframe src="${thumbSrc}#page=1&view=FitH&toolbar=0&navpanes=0" style="width: 100%; height: 100%; border: none; pointer-events: none;" tabindex="-1"></iframe>
+                                <div style="position: absolute; bottom: 3px; right: 3px; background: rgba(15,23,42,0.8); color: #fff; font-size: 0.62rem; padding: 1px 5px; border-radius: 3px; font-weight: 600; pointer-events: none; display: flex; align-items: center; gap: 3px;"><span>🔍</span> Expand</div>
                               </div>
                             ` : `
-                              <div style="width: 100%; height: 110px; border: 1px solid #bfdbfe; border-radius: 4px; overflow: hidden; background: #fff; margin-bottom: 8px; display: flex; align-items: center; justify-content: center;">
+                              <div style="width: 100%; height: 110px; border: 1px solid #bfdbfe; border-radius: 4px; overflow: hidden; background: #fff; margin-bottom: 8px; display: flex; align-items: center; justify-content: center; position: relative; cursor: pointer;" onclick="UI.viewDrawingDocument(${docId})" title="Click to view full drawing">
                                 <img src="${thumbSrc}" alt="Drawing Thumbnail" style="max-width: 100%; max-height: 100%; object-fit: contain;">
+                                <div style="position: absolute; bottom: 3px; right: 3px; background: rgba(15,23,42,0.8); color: #fff; font-size: 0.62rem; padding: 1px 5px; border-radius: 3px; font-weight: 600; pointer-events: none; display: flex; align-items: center; gap: 3px;"><span>🔍</span> Expand</div>
                               </div>
                             `) : ''}
                             <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
@@ -7280,17 +7556,24 @@
       }
     },
 
-    viewDrawingDocument(docId) {
-      if (!docId) {
-        alert('Drawing document ID is missing.');
+    viewDrawingDocument(docOrId) {
+      if (!docOrId) {
+        if (window.UI && window.UI.showToast) {
+          window.UI.showToast('Drawing document is missing.', 'warning');
+        } else {
+          alert('Drawing document is missing.');
+        }
         return;
       }
-      const token = window.AuthService ? window.AuthService.getToken() : '';
-      if (!token) {
-        alert('Authentication required to view document.');
-        return;
+      if (window.DocumentViewer) {
+        window.DocumentViewer.open(docOrId);
+      } else {
+        const token = window.AuthService ? window.AuthService.getToken() : '';
+        const id = (typeof docOrId === 'object' && docOrId !== null) ? (docOrId.documentId || docOrId.id) : docOrId;
+        if (id) {
+          window.open(`/api/documents/${id}/view?token=${encodeURIComponent(token)}`, '_blank');
+        }
       }
-      window.open(`/api/documents/${docId}/view?token=${encodeURIComponent(token)}`, '_blank');
     },
 
     async downloadDrawingDocument(docId, fileName) {

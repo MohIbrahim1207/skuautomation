@@ -182,6 +182,12 @@ app.use('/api/documents', require('./routes/documents'));
 app.use('/api/import-submissions', require('./routes/importSubmissions'));
 app.use('/pr', require('./routes/verify'));
 
+// Explicit Master Item Excel Template Download Routes (100% Binary Safe)
+const { serveTemplateDownload } = require('./services/templateService');
+app.get('/Flow_Force_New_SKU_Input_Template.xlsx', serveTemplateDownload);
+app.get('/api/template', serveTemplateDownload);
+app.get('/template', serveTemplateDownload);
+
 // Serve Static Frontend Assets (no-cache for real-time frontend updates)
 app.use(express.static(path.join(__dirname, '..'), {
   etag: false,
@@ -194,6 +200,17 @@ app.use(express.static(path.join(__dirname, '..'), {
 // Fallback for Single Page App
 app.get('*', (req, res, next) => {
   if (req.path.startsWith('/api/') || req.path.startsWith('/pr/') || req.path === '/health') return next();
+
+  // Guard: Never serve index.html for document/binary extensions!
+  // Prevents corrupted downloads where HTML error/app pages get saved as .xlsx or .pdf
+  if (/\.(xlsx|xls|csv|pdf|png|jpe?g|webp|svg|ico|json|txt|map)$/i.test(req.path)) {
+    return res.status(404).json({
+      error: 'File not found',
+      path: req.path,
+      message: 'The requested document or asset does not exist.'
+    });
+  }
+
   res.sendFile(path.join(__dirname, '../index.html'));
 });
 

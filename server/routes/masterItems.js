@@ -30,6 +30,11 @@ function sanitizeRemarks(remarks) {
   return String(remarks).trim();
 }
 
+const { serveTemplateDownload } = require('../services/templateService');
+
+// GET /api/master-items/template - Download standard Flow Force New SKU Input template
+router.get('/template', serveTemplateDownload);
+
 router.use(authenticateToken);
 
 // GET /api/master-items - Browse Master Catalog (supports optional category and search filtering)
