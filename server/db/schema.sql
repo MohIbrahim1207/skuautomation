@@ -150,6 +150,8 @@ CREATE INDEX IF NOT EXISTS idx_documents_type ON documents(document_type);
 CREATE TABLE IF NOT EXISTS ducting_types (
   id SERIAL PRIMARY KEY,
   type_name VARCHAR(100) UNIQUE NOT NULL,
+  status VARCHAR(50) NOT NULL DEFAULT 'ACTIVE',
+  current_standard_drawing_id INTEGER,
   master_drawing_document_id INTEGER REFERENCES documents(id) ON DELETE SET NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
@@ -162,7 +164,52 @@ INSERT INTO ducting_types (type_name) VALUES
   ('Twin Duct')
 ON CONFLICT (type_name) DO NOTHING;
 
+-- 7a-1. STANDARD DRAWINGS TABLE (Cloudinary Storage & Reusable Versioned Reference)
+CREATE TABLE IF NOT EXISTS standard_drawings (
+  id SERIAL PRIMARY KEY,
+  ducting_type_id INTEGER NOT NULL REFERENCES ducting_types(id) ON DELETE CASCADE,
+  version INTEGER NOT NULL DEFAULT 1,
+  file_name VARCHAR(255) NOT NULL,
+  original_file_name VARCHAR(255),
+  file_size_bytes BIGINT,
+  mime_type VARCHAR(100),
+  cloudinary_public_id VARCHAR(500),
+  cloudinary_url TEXT,
+  file_path_or_storage_key TEXT,
+  uploaded_by_user_id VARCHAR(36) REFERENCES users(id) ON DELETE SET NULL,
+  uploaded_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  status VARCHAR(50) NOT NULL DEFAULT 'ACTIVE',
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT uq_standard_drawing_type_version UNIQUE(ducting_type_id, version)
+);
+
+ALTER TABLE ducting_types 
+  DROP CONSTRAINT IF EXISTS fk_ducting_types_curr_std,
+  ADD CONSTRAINT fk_ducting_types_curr_std FOREIGN KEY (current_standard_drawing_id) REFERENCES standard_drawings(id) ON DELETE SET NULL;
+
+CREATE INDEX IF NOT EXISTS idx_std_drawings_type ON standard_drawings(ducting_type_id);
+CREATE INDEX IF NOT EXISTS idx_std_drawings_status ON standard_drawings(status);
 CREATE INDEX IF NOT EXISTS idx_ducting_types_drawing ON ducting_types(master_drawing_document_id);
+CREATE INDEX IF NOT EXISTS idx_ducting_types_curr_std ON ducting_types(current_standard_drawing_id);
+
+-- 7a-2. DRAWING REMOVAL REQUESTS TABLE
+CREATE TABLE IF NOT EXISTS drawing_removal_requests (
+  id SERIAL PRIMARY KEY,
+  standard_drawing_id INTEGER NOT NULL REFERENCES standard_drawings(id) ON DELETE CASCADE,
+  requested_by_user_id VARCHAR(36) NOT NULL REFERENCES users(id) ON DELETE SET NULL,
+  requested_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  reason TEXT NOT NULL,
+  status VARCHAR(50) NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'APPROVED', 'REJECTED')),
+  reviewed_by_user_id VARCHAR(36) REFERENCES users(id) ON DELETE SET NULL,
+  reviewed_at TIMESTAMP WITH TIME ZONE,
+  admin_comment TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_removal_req_drawing ON drawing_removal_requests(standard_drawing_id);
+CREATE INDEX IF NOT EXISTS idx_removal_req_status ON drawing_removal_requests(status);
 
 -- 7b. ACTIVITY LOGS TABLE (Enterprise Activity & Document Audit Logging)
 CREATE TABLE IF NOT EXISTS activity_logs (

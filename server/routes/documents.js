@@ -199,6 +199,79 @@ router.post('/upload-drawing', async (req, res) => {
   }
 });
 
+// GET /api/documents/standard-drawings/:id/view - View standard drawing inline
+router.get('/standard-drawings/:id/view', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const result = await query(
+      `SELECT sd.*, dt.type_name
+       FROM standard_drawings sd
+       LEFT JOIN ducting_types dt ON dt.id = sd.ducting_type_id
+       WHERE sd.id = $1`,
+      [id]
+    );
+    if (result.rowCount === 0) return res.status(404).json({ error: 'Standard drawing not found.' });
+    const doc = result.rows[0];
+
+    const safeDispName = doc.original_file_name || doc.file_name || `standard_drawing_v${doc.version}`;
+    const contentType = getContentType(doc);
+
+    const fullPath = resolveStoragePath(doc.file_path_or_storage_key);
+    if (fullPath && fs.existsSync(fullPath)) {
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(safeDispName)}"`);
+      res.setHeader('Cache-Control', 'public, max-age=3600');
+      return fs.createReadStream(fullPath).pipe(res);
+    }
+
+    if (doc.cloudinary_url) {
+      return res.redirect(doc.cloudinary_url);
+    }
+
+    return res.status(404).json({ error: 'Physical drawing file not found on server storage.' });
+  } catch (err) {
+    console.error('[Documents API] View standard drawing error:', err);
+    res.status(500).json({ error: 'Internal server error: ' + err.message });
+  }
+});
+
+// GET /api/documents/standard-drawings/:id/download - Stream/download standard drawing
+router.get('/standard-drawings/:id/download', async (req, res) => {
+  const { id } = req.params;
+  try {
+    const result = await query(
+      `SELECT sd.*, dt.type_name
+       FROM standard_drawings sd
+       LEFT JOIN ducting_types dt ON dt.id = sd.ducting_type_id
+       WHERE sd.id = $1`,
+      [id]
+    );
+    if (result.rowCount === 0) return res.status(404).json({ error: 'Standard drawing not found.' });
+    const doc = result.rows[0];
+
+    const rawDispName = doc.original_file_name || doc.file_name || `standard_drawing_v${doc.version}`;
+    const safeDispName = rawDispName.replace(/["\r\n]/g, '').trim().replace(/[^\w.-]/g, '_');
+    const encodedFileName = encodeURIComponent(rawDispName);
+    const contentType = getContentType(doc);
+
+    const fullPath = resolveStoragePath(doc.file_path_or_storage_key);
+    if (fullPath && fs.existsSync(fullPath)) {
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Content-Disposition', `attachment; filename="${safeDispName}"; filename*=UTF-8''${encodedFileName}`);
+      return fs.createReadStream(fullPath).pipe(res);
+    }
+
+    if (doc.cloudinary_url) {
+      return res.redirect(doc.cloudinary_url);
+    }
+
+    return res.status(404).json({ error: 'Physical drawing file not found on server storage.' });
+  } catch (err) {
+    console.error('[Documents API] Download standard drawing error:', err);
+    res.status(500).json({ error: 'Internal server error: ' + err.message });
+  }
+});
+
 // GET /api/documents/:id/view - Inline view (PDF viewer / Image rendering)
 router.get('/:id/view', async (req, res) => {
   const { id } = req.params;
@@ -212,7 +285,22 @@ router.get('/:id/view', async (req, res) => {
       [id]
     );
 
-    if (result.rowCount === 0) return res.status(404).json({ error: 'Document not found.' });
+    if (result.rowCount === 0) {
+      // Check standard_drawings fallback
+      const stdRes = await query('SELECT * FROM standard_drawings WHERE id = $1', [id]);
+      if (stdRes.rowCount > 0) {
+        const stdDoc = stdRes.rows[0];
+        const safeDispName = stdDoc.original_file_name || stdDoc.file_name;
+        const fullPath = resolveStoragePath(stdDoc.file_path_or_storage_key);
+        if (fullPath && fs.existsSync(fullPath)) {
+          res.setHeader('Content-Type', getContentType(stdDoc));
+          res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(safeDispName)}"`);
+          return fs.createReadStream(fullPath).pipe(res);
+        }
+        if (stdDoc.cloudinary_url) return res.redirect(stdDoc.cloudinary_url);
+      }
+      return res.status(404).json({ error: 'Document not found.' });
+    }
     const doc = result.rows[0];
 
     // Authorization: Admin has full access; Employee can view own documents, master drawings, and unattached templates
@@ -223,9 +311,7 @@ router.get('/:id/view', async (req, res) => {
     }
     if (!isAllowed) {
       const masterCheck = await query(
-        `SELECT 1 FROM ducting_types WHERE master_drawing_document_id = $1
-         UNION
-         SELECT 1 FROM documents WHERE id = $1 AND document_type = 'ENGINEERING_DRAWING' AND purchase_request_id IS NULL`,
+        `SELECT 1 FROM ducting_types WHERE master_drawing_document_id = $1`,
         [id]
       );
       if (masterCheck.rowCount > 0) {
@@ -299,7 +385,23 @@ router.get('/:id/download', async (req, res) => {
       [id]
     );
 
-    if (result.rowCount === 0) return res.status(404).json({ error: 'Document not found.' });
+    if (result.rowCount === 0) {
+      // Check standard_drawings fallback
+      const stdRes = await query('SELECT * FROM standard_drawings WHERE id = $1', [id]);
+      if (stdRes.rowCount > 0) {
+        const stdDoc = stdRes.rows[0];
+        const rawDispName = stdDoc.original_file_name || stdDoc.file_name || `standard_drawing_v${stdDoc.version}`;
+        const safeDispName = rawDispName.replace(/["\r\n]/g, '').trim().replace(/[^\w.-]/g, '_');
+        const fullPath = resolveStoragePath(stdDoc.file_path_or_storage_key);
+        if (fullPath && fs.existsSync(fullPath)) {
+          res.setHeader('Content-Type', getContentType(stdDoc));
+          res.setHeader('Content-Disposition', `attachment; filename="${safeDispName}"`);
+          return fs.createReadStream(fullPath).pipe(res);
+        }
+        if (stdDoc.cloudinary_url) return res.redirect(stdDoc.cloudinary_url);
+      }
+      return res.status(404).json({ error: 'Document not found.' });
+    }
     const doc = result.rows[0];
 
     // Authorization: Admin has full access; Employee can download own PR documents, master drawings, and unattached templates
@@ -310,9 +412,7 @@ router.get('/:id/download', async (req, res) => {
     }
     if (!isAllowed) {
       const masterCheck = await query(
-        `SELECT 1 FROM ducting_types WHERE master_drawing_document_id = $1
-         UNION
-         SELECT 1 FROM documents WHERE id = $1 AND document_type = 'ENGINEERING_DRAWING' AND purchase_request_id IS NULL`,
+        `SELECT 1 FROM ducting_types WHERE master_drawing_document_id = $1`,
         [id]
       );
       if (masterCheck.rowCount > 0) {

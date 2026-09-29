@@ -348,29 +348,43 @@ router.post('/', async (req, res) => {
 
       const prItemId = prItemRes.rows[0].id;
 
-      // Handle Engineering Drawing Attachment if present
-      const drw = item.drawingAttachment || item.engineeringDrawing || null;
-      let drawingDocId = item.drawingDocumentId || item.documentId || (drw ? (drw.documentId || drw.id) : null);
+      // Handle Standard Drawing Version Snapshot & Project Drawing Attachment
+      let stdDrawingId = item.standardDrawingId || item.standard_drawing_id || (item.standardDrawing ? item.standardDrawing.id : null);
+      let stdDrawingVer = item.standardDrawingVersion || item.standard_drawing_version || (item.standardDrawing ? item.standardDrawing.version : null);
 
-      // If ducting item and no drawingDocId provided, automatically load master drawing for this ducting type
-      if (isDucting && !drawingDocId && ductType) {
-        const normDuctType = ductType.toLowerCase().replace(/[^a-z0-9]/g, '');
-        const masterRes = await client.query(
-          `SELECT master_drawing_document_id FROM ducting_types 
-           WHERE LOWER(REPLACE(type_name, ' ', '')) = $1 
-              OR LOWER(REPLACE(type_name, '-', '')) = $1 
-              OR LOWER(type_name) = LOWER($2)`,
-          [normDuctType, ductType]
-        );
-        if (masterRes.rowCount > 0 && masterRes.rows[0].master_drawing_document_id) {
-          drawingDocId = masterRes.rows[0].master_drawing_document_id;
+      if (isDucting) {
+        if (stdDrawingId) {
+          const sdRes = await client.query('SELECT id, version FROM standard_drawings WHERE id = $1', [stdDrawingId]);
+          if (sdRes.rowCount > 0) {
+            stdDrawingId = sdRes.rows[0].id;
+            stdDrawingVer = sdRes.rows[0].version;
+          }
+        } else if (ductType) {
+          const normDuct = ductType.toLowerCase().replace(/[^a-z0-9]/g, '');
+          const dtRes = await client.query(
+            `SELECT sd.id, sd.version 
+             FROM ducting_types dt
+             JOIN standard_drawings sd ON sd.id = dt.current_standard_drawing_id
+             WHERE LOWER(REPLACE(dt.type_name, ' ', '')) = $1 
+                OR LOWER(REPLACE(dt.type_name, '-', '')) = $1
+                OR LOWER(dt.type_name) = LOWER($2)`,
+            [normDuct, ductType]
+          );
+          if (dtRes.rowCount > 0) {
+            stdDrawingId = dtRes.rows[0].id;
+            stdDrawingVer = dtRes.rows[0].version;
+          }
         }
       }
 
-      if (!drawingDocId && drw && drw.dataUrl) {
+      // Handle Project-Specific Drawing / Drawing Attachment
+      const prjDrw = item.projectDrawingAttachment || item.projectDrawing || (item.drawingAttachment && !item.drawingAttachment.isStandard ? item.drawingAttachment : null);
+      let projectDocId = item.projectDrawingDocumentId || (prjDrw ? (prjDrw.documentId || prjDrw.id) : null);
+
+      if (!projectDocId && prjDrw && prjDrw.dataUrl) {
         try {
-          const isPdf = (drw.type && drw.type.includes('pdf')) || String(drw.name || drw.fileName).toLowerCase().endsWith('.pdf');
-          const base64Data = drw.dataUrl.replace(/^data:[^;]+;base64,/, '');
+          const isPdf = (prjDrw.type && prjDrw.type.includes('pdf')) || String(prjDrw.name || prjDrw.fileName).toLowerCase().endsWith('.pdf');
+          const base64Data = prjDrw.dataUrl.replace(/^data:[^;]+;base64,/, '');
           const buffer = Buffer.from(base64Data, 'base64');
 
           const cleanProjCode = (project.project_code || 'GENERAL').replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -380,18 +394,18 @@ router.post('/', async (req, res) => {
             fs.mkdirSync(drawingDir, { recursive: true });
           }
 
-          const rawName = drw.name || drw.fileName || 'Engineering_Drawing';
+          const rawName = prjDrw.name || prjDrw.fileName || 'Project_Drawing';
           const safeOrigName = path.basename(rawName).replace(/[^a-zA-Z0-9._-]/g, '_');
-          const diskFileName = `DRW_${Date.now()}_${safeOrigName}`;
+          const diskFileName = `DRW_PRJ_${Date.now()}_${safeOrigName}`;
           const absoluteFilePath = path.join(drawingDir, diskFileName);
           const storageKey = path.relative(process.cwd(), absoluteFilePath).replace(/\\/g, '/');
 
           fs.writeFileSync(absoluteFilePath, buffer);
 
           const sha256 = crypto.createHash('sha256').update(buffer).digest('hex');
-          const mimeType = drw.type || (isPdf ? 'application/pdf' : 'image/png');
+          const mimeType = prjDrw.type || (isPdf ? 'application/pdf' : 'image/png');
 
-          const docRes = await client.query(
+          const pDocRes = await client.query(
             `INSERT INTO documents (
               project_id, purchase_request_id, purchase_request_item_id,
               document_type, file_name, original_file_name,
@@ -412,16 +426,16 @@ router.post('/', async (req, res) => {
               mimeType
             ]
           );
-          drawingDocId = docRes.rows[0].id;
+          projectDocId = pDocRes.rows[0].id;
 
           await logActivity({
             entityType: 'DOCUMENT',
-            entityId: String(drawingDocId),
+            entityId: String(projectDocId),
             action: 'DOCUMENT_UPLOADED',
             userId: req.user.id,
             username: req.user.username,
             metadata: {
-              documentId: drawingDocId,
+              documentId: projectDocId,
               documentType: 'ENGINEERING_DRAWING',
               prNumber: prNumber,
               itemId: prItemId,
@@ -430,31 +444,49 @@ router.post('/', async (req, res) => {
               fileSize: buffer.length
             }
           });
-        } catch (drwErr) {
-          console.error('[PR API] Failed to persist inline drawing:', drwErr);
+        } catch (prjErr) {
+          console.error('[PR API] Failed to persist project drawing:', prjErr);
         }
       }
 
-      if (drawingDocId) {
-        const isMasterRes = await client.query(
-          `SELECT 1 FROM ducting_types WHERE master_drawing_document_id = $1`,
-          [drawingDocId]
+      // Legacy drawingDocId fallback for backward compatibility
+      let legacyDrawingDocId = projectDocId || item.drawingDocumentId || (item.drawingAttachment ? (item.drawingAttachment.documentId || item.drawingAttachment.id) : null) || item.documentId || null;
+      if (!legacyDrawingDocId && isDucting && ductType) {
+        const normDuctType = ductType.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const masterRes = await client.query(
+          `SELECT master_drawing_document_id FROM ducting_types 
+           WHERE LOWER(REPLACE(type_name, ' ', '')) = $1 
+              OR LOWER(REPLACE(type_name, '-', '')) = $1 
+              OR LOWER(type_name) = LOWER($2)`,
+          [normDuctType, ductType]
         );
-        const isMaster = isMasterRes.rowCount > 0;
+        if (masterRes.rowCount > 0 && masterRes.rows[0].master_drawing_document_id) {
+          legacyDrawingDocId = masterRes.rows[0].master_drawing_document_id;
+        }
+      }
 
-        if (!isMaster) {
+      const linkDocId = legacyDrawingDocId || projectDocId;
+      if (linkDocId) {
+        const isMaster = await client.query('SELECT id FROM ducting_types WHERE master_drawing_document_id = $1', [linkDocId]);
+        if (isMaster.rowCount === 0) {
           await client.query(
-            `UPDATE documents
-             SET purchase_request_id = $1, purchase_request_item_id = $2, project_id = COALESCE(project_id, $3)
-             WHERE id = $4`,
-            [prId, prItemId, projectId, drawingDocId]
+            `UPDATE documents 
+             SET purchase_request_id = $1, purchase_request_item_id = $2 
+             WHERE id = $3 AND purchase_request_id IS NULL`,
+            [prId, prItemId, linkDocId]
           );
         }
-        await client.query(
-          `UPDATE pr_items SET drawing_document_id = $1 WHERE id = $2`,
-          [drawingDocId, prItemId]
-        );
       }
+
+      await client.query(
+        `UPDATE pr_items 
+         SET standard_drawing_id = $1,
+             standard_drawing_version = $2,
+             project_drawing_document_id = $3,
+             drawing_document_id = $4
+         WHERE id = $5`,
+        [stdDrawingId || null, stdDrawingVer || null, isDucting ? null : (projectDocId || null), legacyDrawingDocId || null, prItemId]
+      );
     }
 
     // Insert audit record into pr_approval_history (Action: SUBMITTED)
@@ -536,6 +568,19 @@ router.get('/:id', async (req, res) => {
 
     const itemsRes = await query(
       `SELECT it.*,
+              sd.id AS std_id,
+              sd.version AS std_version_actual,
+              sd.file_name AS std_file_name,
+              sd.original_file_name AS std_orig_file_name,
+              sd.mime_type AS std_mime_type,
+              sd.file_size_bytes AS std_file_size,
+              sd.cloudinary_url AS std_cloudinary_url,
+              sd.status AS std_status,
+              pdoc.id AS prj_doc_id,
+              pdoc.file_name AS prj_file_name,
+              pdoc.original_file_name AS prj_orig_file_name,
+              pdoc.mime_type AS prj_mime_type,
+              pdoc.file_size_bytes AS prj_file_size,
               doc.id AS doc_id,
               doc.file_name AS doc_file_name,
               doc.original_file_name AS doc_orig_file_name,
@@ -543,6 +588,8 @@ router.get('/:id', async (req, res) => {
               doc.file_size_bytes AS doc_file_size,
               doc.file_path_or_storage_key AS doc_storage_key
        FROM pr_items it
+       LEFT JOIN standard_drawings sd ON sd.id = it.standard_drawing_id
+       LEFT JOIN documents pdoc ON pdoc.id = it.project_drawing_document_id
        LEFT JOIN documents doc ON (doc.id = it.drawing_document_id OR (doc.purchase_request_item_id = it.id AND doc.document_type = 'ENGINEERING_DRAWING'))
        WHERE it.purchase_request_id = $1
        ORDER BY it.id ASC`,
@@ -592,21 +639,56 @@ router.get('/:id', async (req, res) => {
       },
       items: itemsRes.rows.map(it => {
         const isCut = (it.supply_type === 'Cut Size' || it.purchase_type === 'PROJECT-SPECIFIC CUT SIZE');
-        const hasDrawing = Boolean(it.doc_id);
-        const fileName = it.doc_orig_file_name || it.doc_file_name;
-        const isPdf = (it.doc_mime_type && it.doc_mime_type.includes('pdf')) || String(fileName || '').toLowerCase().endsWith('.pdf');
-        const finalMime = it.doc_mime_type || (isPdf ? 'application/pdf' : 'image/png');
-        const drawingObj = hasDrawing ? {
+
+        // Standard Drawing Object
+        const hasStd = Boolean(it.std_id || it.standard_drawing_id);
+        const stdVersion = it.standard_drawing_version || it.std_version_actual || 1;
+        const stdFileName = it.std_orig_file_name || it.std_file_name;
+        const isStdPdf = (it.std_mime_type && it.std_mime_type.includes('pdf')) || String(stdFileName || '').toLowerCase().endsWith('.pdf');
+        const standardDrawing = hasStd ? {
+          id: it.std_id || it.standard_drawing_id,
+          standardDrawingId: it.std_id || it.standard_drawing_id,
+          version: stdVersion,
+          fileName: stdFileName,
+          originalFilename: stdFileName,
+          mimeType: it.std_mime_type || (isStdPdf ? 'application/pdf' : 'image/png'),
+          fileSize: it.std_file_size ? parseInt(it.std_file_size, 10) : 0,
+          fileSizeBytes: it.std_file_size ? parseInt(it.std_file_size, 10) : 0,
+          cloudinaryUrl: it.std_cloudinary_url || null,
+          status: it.std_status || 'ACTIVE',
+          viewUrl: `/api/documents/standard-drawings/${it.std_id || it.standard_drawing_id}/view`,
+          downloadUrl: `/api/documents/standard-drawings/${it.std_id || it.standard_drawing_id}/download`
+        } : null;
+
+        // Project-Specific Drawing Object (Ducting items use Standard Drawing only)
+        const isDuctingItem = Boolean(it.ducting_type || it.standard_drawing_id || (it.category && String(it.category).toLowerCase() === 'ducting'));
+        const prjId = !isDuctingItem ? (it.prj_doc_id || (it.doc_id && it.doc_id !== (it.std_id || it.standard_drawing_id) ? it.doc_id : null)) : null;
+        const prjFileName = prjId ? (it.prj_orig_file_name || it.prj_file_name || it.doc_orig_file_name || it.doc_file_name) : null;
+        const isPrjPdf = prjId ? ((it.prj_mime_type && it.prj_mime_type.includes('pdf')) || (it.doc_mime_type && it.doc_mime_type.includes('pdf')) || String(prjFileName || '').toLowerCase().endsWith('.pdf')) : false;
+        const projectDrawing = prjId ? {
+          id: prjId,
+          documentId: prjId,
+          fileName: prjFileName,
+          originalFilename: prjFileName,
+          mimeType: it.prj_mime_type || it.doc_mime_type || (isPrjPdf ? 'application/pdf' : 'image/png'),
+          fileSize: it.prj_file_size ? parseInt(it.prj_file_size, 10) : (it.doc_file_size ? parseInt(it.doc_file_size, 10) : 0),
+          fileSizeBytes: it.prj_file_size ? parseInt(it.prj_file_size, 10) : (it.doc_file_size ? parseInt(it.doc_file_size, 10) : 0),
+          viewUrl: `/api/documents/${prjId}/view`,
+          downloadUrl: `/api/documents/${prjId}/download`
+        } : null;
+
+        // General drawing fallback for legacy backward compatibility
+        const legacyDrawingObj = (it.doc_id ? {
           id: it.doc_id,
           documentId: it.doc_id,
-          fileName: fileName,
-          originalFilename: fileName,
-          mimeType: finalMime,
+          fileName: it.doc_orig_file_name || it.doc_file_name,
+          originalFilename: it.doc_orig_file_name || it.doc_file_name,
+          mimeType: it.doc_mime_type || 'image/png',
           fileSize: it.doc_file_size ? parseInt(it.doc_file_size, 10) : 0,
           fileSizeBytes: it.doc_file_size ? parseInt(it.doc_file_size, 10) : 0,
           viewUrl: `/api/documents/${it.doc_id}/view`,
           downloadUrl: `/api/documents/${it.doc_id}/download`
-        } : null;
+        } : (projectDrawing || standardDrawing));
 
         return {
           id: it.id,
@@ -651,9 +733,13 @@ router.get('/:id', async (req, res) => {
             l2: it.dim_l2 || null,
             thickness: it.thickness || null
           } : null,
-          engineeringDrawing: drawingObj,
-          drawingAttachment: drawingObj,
-          drawingDocumentId: it.doc_id || null
+          standardDrawing: standardDrawing,
+          projectDrawing: projectDrawing,
+          standardDrawingId: it.standard_drawing_id || (standardDrawing ? standardDrawing.id : null),
+          standardDrawingVersion: stdVersion,
+          engineeringDrawing: legacyDrawingObj,
+          drawingAttachment: legacyDrawingObj,
+          drawingDocumentId: (projectDrawing ? projectDrawing.id : null) || (standardDrawing ? standardDrawing.id : null) || it.doc_id || null
         };
       }),
       history: historyRes.rows.map(h => ({

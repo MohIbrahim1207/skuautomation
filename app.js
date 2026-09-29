@@ -949,17 +949,57 @@
         const isDucting = (item.category || '').toLowerCase() === 'ducting' || !!item.ductingType || item.purchaseType === 'PROJECT-SPECIFIC DUCTING';
         const isFastener = !isDucting && ((item.category || '').toLowerCase() === 'fasteners' || /fastener|bolt|screw|nut|stud/i.test(`${item.productName || ''} ${item.itemDescription || ''} ${item.category || ''}`));
 
-        const drw = item.drawingAttachment || item.engineeringDrawing;
+        const std = item.standardDrawing;
+        const legacyDrw = item.drawingAttachment || item.engineeringDrawing;
+
         let drwCardHtml = '';
-        if (drw) {
-          const drwName = drw.name || drw.fileName || 'Engineering Drawing';
-          const drwType = ((drw.type && drw.type.includes('pdf')) || (drw.mimeType && drw.mimeType.includes('pdf')) || String(drwName).toLowerCase().endsWith('.pdf')) ? 'PDF' : 'IMAGE';
+
+        if (std) {
+          const stdName = std.fileName || `${item.ductingType || 'Ducting'} Standard Drawing`;
+          const isStdPdf = ((std.mimeType && std.mimeType.includes('pdf')) || String(stdName).toLowerCase().endsWith('.pdf'));
+          const token = (window.AuthService && typeof window.AuthService.getToken === 'function') ? window.AuthService.getToken() : '';
+          const stdThumbSrc = std.id ? `/api/documents/standard-drawings/${std.id}/view?token=${encodeURIComponent(token)}` : (std.viewUrl ? `${std.viewUrl}?token=${encodeURIComponent(token)}` : (std.blobUrl || std.dataUrl || ''));
+          const stdVer = std.version || item.standardDrawingVersion || 1;
+
+          drwCardHtml = `
+            <div class="pr-card-drawing-section" style="margin-top:8px; padding:8px 10px; background:#f0f9ff; border:1px solid #bae6fd; border-left:3px solid #0284c7; border-radius:6px; max-width:280px;">
+              <div style="font-size:0.68rem; font-weight:800; color:#0369a1; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px; display:flex; justify-content:space-between; align-items:center;">
+                <span>📐 STANDARD DRAWING</span>
+                <span style="background:#0284c7; color:#fff; font-size:0.62rem; padding:1px 5px; border-radius:3px; font-weight:700;">V${stdVer}</span>
+              </div>
+              ${stdThumbSrc ? (isStdPdf ? `
+                <div style="width: 100%; height: 85px; border: 1px solid #bfdbfe; border-radius: 4px; overflow: hidden; background: #fff; margin-bottom: 6px; position: relative; cursor: pointer;" onclick="DuctingWorkflowController.viewCartStandardDrawing(${idx})" title="Click to view standard drawing">
+                  <iframe src="${stdThumbSrc}#page=1&view=FitH&toolbar=0&navpanes=0" style="width: 100%; height: 100%; border: none; pointer-events: none;" tabindex="-1"></iframe>
+                  <div style="position: absolute; bottom: 3px; right: 3px; background: rgba(15,23,42,0.8); color: #fff; font-size: 0.62rem; padding: 1px 5px; border-radius: 3px; font-weight: 600; pointer-events: none;">🔍 Expand</div>
+                </div>
+              ` : `
+                <div style="width: 100%; height: 85px; border: 1px solid #bfdbfe; border-radius: 4px; overflow: hidden; background: #fff; margin-bottom: 6px; display: flex; align-items: center; justify-content: center; position: relative; cursor: pointer;" onclick="DuctingWorkflowController.viewCartStandardDrawing(${idx})" title="Click to view standard drawing">
+                  <img src="${stdThumbSrc}" alt="Standard Drawing" style="max-width: 100%; max-height: 100%; object-fit: contain;">
+                  <div style="position: absolute; bottom: 3px; right: 3px; background: rgba(15,23,42,0.8); color: #fff; font-size: 0.62rem; padding: 1px 5px; border-radius: 3px; font-weight: 600; pointer-events: none;">🔍 Expand</div>
+                </div>
+              `) : ''}
+              <div style="font-size:0.72rem; font-family:var(--font-mono); color:#0284c7; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-bottom:6px;" title="${escapeHtml(stdName)}">
+                ${escapeHtml(stdName)}
+              </div>
+              <div style="display:flex; gap:6px;">
+                <button type="button" class="btn btn-secondary btn-sm" onclick="DuctingWorkflowController.viewCartStandardDrawing(${idx})" style="padding:2px 8px; font-size:0.7rem; border-color:#0284c7; color:#0284c7; font-weight:600;">
+                  View
+                </button>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="DuctingWorkflowController.downloadCartStandardDrawing(${idx})" style="padding:2px 8px; font-size:0.7rem; font-weight:600;">
+                  Download
+                </button>
+              </div>
+            </div>
+          `;
+        } else if (legacyDrw) {
+          const drwName = legacyDrw.name || legacyDrw.fileName || 'Engineering Drawing';
+          const drwType = ((legacyDrw.type && legacyDrw.type.includes('pdf')) || (legacyDrw.mimeType && legacyDrw.mimeType.includes('pdf')) || String(drwName).toLowerCase().endsWith('.pdf')) ? 'PDF' : 'IMAGE';
           const isPdf = drwType === 'PDF';
-          const sz = drw.size || drw.fileSize || drw.fileSizeBytes;
+          const sz = legacyDrw.size || legacyDrw.fileSize || legacyDrw.fileSizeBytes;
           const drwSizeStr = sz ? `${(sz / 1024).toFixed(1)} KB` : '';
           const token = (window.AuthService && typeof window.AuthService.getToken === 'function') ? window.AuthService.getToken() : '';
-          const docId = drw.documentId || drw.id;
-          const thumbSrc = drw.blobUrl || drw.dataUrl || (docId ? `/api/documents/${docId}/view?token=${encodeURIComponent(token)}` : (drw.viewUrl ? `${drw.viewUrl}?token=${encodeURIComponent(token)}` : ''));
+          const docId = legacyDrw.documentId || legacyDrw.id;
+          const thumbSrc = legacyDrw.blobUrl || legacyDrw.dataUrl || (docId ? `/api/documents/${docId}/view?token=${encodeURIComponent(token)}` : (legacyDrw.viewUrl ? `${legacyDrw.viewUrl}?token=${encodeURIComponent(token)}` : ''));
 
           drwCardHtml = `
             <div class="pr-card-drawing-section" style="margin-top:8px; padding:8px 10px; background:#f8fafc; border:1px solid #cbd5e1; border-left:3px solid #0284c7; border-radius:6px; max-width:260px;">
@@ -2549,13 +2589,15 @@
   // =========================================================================
   // 1.8. ENGINEERING DUCTING SKETCH WORKFLOW CONTROLLER
   // =========================================================================
-  const DuctingWorkflowController = {
+    const DuctingWorkflowController = {
     state: {
       currentStep: 1,
       selectedType: null,
       dimensions: {},
       errors: {},
-      uploadedDrawing: null // { name, size, type, dataUrl }
+      standardDrawing: null, // { id, version, fileName, size, mimeType, uploadedAt, uploadedByFullName, status, viewUrl, downloadUrl }
+      isPendingRemoval: false,
+      pendingRemovalReason: ''
     },
 
     open() {
@@ -2583,7 +2625,9 @@
         selectedType: null,
         dimensions: {},
         errors: {},
-        uploadedDrawing: null
+        standardDrawing: null,
+        isPendingRemoval: false,
+        pendingRemovalReason: ''
       };
       const alert = document.getElementById('ductingValidationAlert');
       if (alert) {
@@ -2596,10 +2640,8 @@
       if (qty) qty.value = '1';
       const mat = document.getElementById('ductingMaterial');
       if (mat) mat.value = 'GI';
-      const fileInput = document.getElementById('ductingSketchFileInput');
-      if (fileInput) fileInput.value = '';
-      const resetBtn = document.getElementById('btnDuctingResetSketch');
-      if (resetBtn) resetBtn.style.display = 'none';
+      const stdInput = document.getElementById('inputWorkflowStandardDrawing');
+      if (stdInput) stdInput.value = '';
     },
 
     showStep1() {
@@ -2619,12 +2661,9 @@
       this.state.currentStep = 2;
       this.state.dimensions = {};
       this.state.errors = {};
-      this.state.uploadedDrawing = null;
-
-      const fileInput = document.getElementById('ductingSketchFileInput');
-      if (fileInput) fileInput.value = '';
-      const resetBtn = document.getElementById('btnDuctingResetSketch');
-      if (resetBtn) resetBtn.style.display = 'none';
+      this.state.standardDrawing = null;
+      this.state.isPendingRemoval = false;
+      this.state.pendingRemovalReason = '';
 
       const s1 = document.getElementById('ductingStep1');
       const s2 = document.getElementById('ductingStep2');
@@ -2633,33 +2672,28 @@
 
       this.render();
 
-      // Automatically fetch master drawing for this ducting type
+      // Automatically fetch current Standard Drawing for this ducting type
       try {
         const token = (window.AuthService && typeof window.AuthService.getToken === 'function') ? window.AuthService.getToken() : '';
-        const resp = await fetch(`/api/ducting-types/${encodeURIComponent(type)}/drawing`, {
+        const resp = await fetch(`/api/ducting-types/${encodeURIComponent(type)}/standard-drawing`, {
           headers: token ? { 'Authorization': `Bearer ${token}` } : {}
         });
         if (resp.ok) {
           const data = await resp.json();
-          if (data.hasDrawing && data.drawing && this.state.selectedType === type) {
-            this.state.uploadedDrawing = {
-              name: data.drawing.fileName,
-              fileName: data.drawing.fileName,
-              size: data.drawing.fileSize || data.drawing.fileSizeBytes || 0,
-              type: data.drawing.mimeType || 'application/pdf',
-              mimeType: data.drawing.mimeType || 'application/pdf',
-              documentId: data.drawing.documentId || data.drawing.id,
-              id: data.drawing.documentId || data.drawing.id,
-              revision: data.drawing.revision || 0,
-              viewUrl: data.drawing.viewUrl,
-              downloadUrl: data.drawing.downloadUrl,
-              isMasterDrawing: true
-            };
+          if (this.state.selectedType === type) {
+            if (data.hasDrawing && data.drawing) {
+              this.state.standardDrawing = data.drawing;
+              this.state.isPendingRemoval = Boolean(data.isPendingRemoval || data.drawing.status === 'PENDING_REMOVAL');
+              this.state.pendingRemovalReason = data.pendingRemovalRequest ? data.pendingRemovalRequest.reason : '';
+            } else {
+              this.state.standardDrawing = null;
+              this.state.isPendingRemoval = false;
+            }
             this.renderSketch(type);
           }
         }
       } catch (err) {
-        console.warn('[DuctingWorkflow] Notice loading master drawing:', err.message);
+        console.warn('[DuctingWorkflow] Notice loading standard drawing:', err.message);
       }
 
       // Focus first input field without scrolling past the sketch
@@ -2679,29 +2713,24 @@
       }
     },
 
-    triggerSketchUpload() {
-      const fileInput = document.getElementById('ductingSketchFileInput');
-      if (fileInput) fileInput.click();
+    // Standard Drawing Upload Trigger & Handler
+    triggerStandardDrawingUpload() {
+      const fileInput = document.getElementById('inputWorkflowStandardDrawing');
+      if (fileInput) {
+        fileInput.value = '';
+        fileInput.click();
+      }
     },
 
-    handleSketchUpload(event) {
+    async handleStandardDrawingSelected(event) {
       const file = event.target.files && event.target.files[0];
-      if (!file) return;
-      this.processUploadedFile(file);
-    },
+      if (!file || !this.state.selectedType) return;
 
-    handleDroppedFile(file) {
-      if (!file) return;
-      this.processUploadedFile(file);
-    },
-
-    processUploadedFile(file) {
-      const validTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/svg+xml', 'application/pdf'];
       const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
-      const isImg = file.type.startsWith('image/') || /\.(png|jpe?g|webp|svg)$/i.test(file.name);
+      const isImg = file.type.startsWith('image/') || /\.(png|jpe?g)$/i.test(file.name);
 
       if (!isPdf && !isImg) {
-        alert('Unsupported file format. Please upload a PNG, JPG, WebP, SVG, or PDF engineering drawing.');
+        alert('Unsupported file format. Please upload a PDF, PNG, JPG, or JPEG standard engineering drawing.');
         return;
       }
 
@@ -2710,176 +2739,191 @@
         return;
       }
 
-      // Revoke prior blob URL to avoid browser memory leaks
-      if (this.state.uploadedDrawing && this.state.uploadedDrawing.blobUrl) {
-        try { URL.revokeObjectURL(this.state.uploadedDrawing.blobUrl); } catch (e) {}
-      }
-
-      const blobUrl = URL.createObjectURL(file);
-      const mimeType = file.type || (isPdf ? 'application/pdf' : 'image/png');
-
-      this.state.uploadedDrawing = {
-        name: file.name,
-        fileName: file.name,
-        size: file.size,
-        type: mimeType,
-        mimeType: mimeType,
-        blobUrl: blobUrl,
-        dataUrl: '',
-        documentId: null,
-        id: null,
-        viewUrl: null,
-        downloadUrl: null,
-        uploadedAt: new Date().toISOString()
-      };
-
-      const resetBtn = document.getElementById('btnDuctingResetSketch');
-      if (resetBtn) resetBtn.style.display = 'inline-flex';
-
-      // Instantly render visual preview in modal with zero network lag
-      this.renderSketch(this.state.selectedType);
-      if (window.UI && window.UI.showToast) {
-        window.UI.showToast(`Drawing "${file.name}" attached successfully!`, 'success');
-      }
-
-      // Background FileReader to acquire dataUrl and pre-upload to backend storage
       const reader = new FileReader();
       reader.onload = async (e) => {
         const dataUrl = e.target.result;
-        if (this.state.uploadedDrawing && this.state.uploadedDrawing.name === file.name) {
-          this.state.uploadedDrawing.dataUrl = dataUrl;
-        }
-
-        const token = window.AuthService ? window.AuthService.getToken() : '';
-        if (token) {
-          try {
-            const resp = await fetch('/api/documents/upload-drawing', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
-              },
-              body: JSON.stringify({
-                fileName: file.name,
-                mimeType: mimeType,
-                dataUrl: dataUrl
-              })
-            });
-            if (resp.ok) {
-              const resData = await resp.json();
-              if (resData.document && resData.document.id && this.state.uploadedDrawing && this.state.uploadedDrawing.name === file.name) {
-                this.state.uploadedDrawing.documentId = resData.document.id;
-                this.state.uploadedDrawing.id = resData.document.id;
-                this.state.uploadedDrawing.viewUrl = resData.document.viewUrl;
-                this.state.uploadedDrawing.downloadUrl = resData.document.downloadUrl;
-              }
-            }
-          } catch (uploadErr) {
-            console.warn('[DuctingWorkflow] Pre-upload notice:', uploadErr.message);
+        try {
+          if (window.UI && window.UI.showToast) {
+            window.UI.showToast(`Uploading Standard Drawing for ${this.state.selectedType}...`, 'info');
           }
+          const token = (window.AuthService && typeof window.AuthService.getToken === 'function') ? window.AuthService.getToken() : '';
+          const resp = await fetch(`/api/ducting-types/${encodeURIComponent(this.state.selectedType)}/standard-drawing`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+              fileName: file.name,
+              mimeType: file.type || (isPdf ? 'application/pdf' : 'image/png'),
+              dataUrl: dataUrl
+            })
+          });
+
+          if (!resp.ok) {
+            const errData = await resp.json().catch(() => ({}));
+            throw new Error(errData.error || `HTTP ${resp.status}`);
+          }
+
+          const resData = await resp.json();
+          this.state.standardDrawing = resData.drawing;
+          this.state.isPendingRemoval = false;
+          this.state.pendingRemovalReason = '';
+
+          this.renderSketch(this.state.selectedType);
+
+          if (window.UI && window.UI.showToast) {
+            window.UI.showToast(`Standard drawing uploaded successfully! Version ${resData.drawing.version} is now current.`, 'success');
+          }
+
+          if (window.DuctingConfigController && typeof window.DuctingConfigController.loadTypes === 'function') {
+            window.DuctingConfigController.loadTypes();
+          }
+        } catch (uploadErr) {
+          console.error('[DuctingWorkflow] Standard drawing upload error:', uploadErr);
+          alert(`Failed to upload standard drawing: ${uploadErr.message}`);
         }
       };
-
       reader.readAsDataURL(file);
     },
 
-    handlePreviewLoaded() {
-      const loader = document.getElementById('ductingPreviewLoading');
-      if (loader) loader.style.display = 'none';
-    },
+    // Request Removal of Standard Drawing (Admin & Employee)
+    async requestDrawingRemoval(drawingId) {
+      if (!drawingId) return;
+      const reason = prompt('Please provide a business reason for requesting removal of this standard drawing:\n(Note: Removal requires Administrator approval)');
+      if (reason === null) return;
+      if (!reason.trim()) {
+        alert('A reason is required to request removal of an engineering standard drawing.');
+        return;
+      }
 
-    handlePreviewError() {
-      const loader = document.getElementById('ductingPreviewLoading');
-      if (loader) loader.style.display = 'none';
-      const errBox = document.getElementById('ductingPreviewError');
-      if (errBox) errBox.style.display = 'flex';
+      try {
+        const token = (window.AuthService && typeof window.AuthService.getToken === 'function') ? window.AuthService.getToken() : '';
+        const resp = await fetch(`/api/ducting-types/standard-drawings/${drawingId}/request-removal`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ reason: reason.trim() })
+        });
+
+        if (!resp.ok) {
+          const errData = await resp.json().catch(() => ({}));
+          throw new Error(errData.error || `HTTP ${resp.status}`);
+        }
+
+        this.state.isPendingRemoval = true;
+        this.state.pendingRemovalReason = reason.trim();
+        if (this.state.standardDrawing) {
+          this.state.standardDrawing.status = 'PENDING_REMOVAL';
+        }
+        this.renderSketch(this.state.selectedType);
+
+        if (window.UI && window.UI.showToast) {
+          window.UI.showToast('Removal requested. Drawing status is now Pending Admin Approval.', 'info');
+        }
+
+        if (window.DuctingConfigController && typeof window.DuctingConfigController.loadTypes === 'function') {
+          window.DuctingConfigController.loadTypes();
+        }
+      } catch (err) {
+        console.error('[DuctingWorkflow] Removal request error:', err);
+        alert(`Failed to request removal: ${err.message}`);
+      }
     },
 
     openFullDrawing() {
-      const up = this.state.uploadedDrawing;
+      const up = this.state.standardDrawing;
       if (!up) return;
       if (window.DocumentViewer) {
         window.DocumentViewer.open(up);
-      } else if (window.UI && window.UI.viewDrawingDocument) {
-        window.UI.viewDrawingDocument(up.documentId || up.id || up);
       } else {
-        const previewUrl = up.blobUrl || up.dataUrl;
-        if (previewUrl) {
-          window.open(previewUrl, '_blank');
-        } else {
-          alert('Drawing preview is not available.');
-        }
+        this.openStandardDrawing();
       }
     },
 
-    downloadUploadedDrawing() {
-      const up = this.state.uploadedDrawing;
-      if (!up) return;
-      const fileName = up.name || up.fileName || 'Engineering_Drawing';
-      if (up.documentId || up.id) {
-        if (window.UI && window.UI.downloadDrawingDocument) {
-          window.UI.downloadDrawingDocument(up.documentId || up.id, fileName);
-          return;
-        }
+    openStandardDrawing() {
+      const sd = this.state.standardDrawing;
+      if (!sd) return;
+      if (window.DocumentViewer) {
+        window.DocumentViewer.open(sd);
+      } else if (sd.viewUrl) {
+        const token = (window.AuthService && typeof window.AuthService.getToken === 'function') ? window.AuthService.getToken() : '';
+        window.open(`${sd.viewUrl}?token=${encodeURIComponent(token)}`, '_blank');
       }
-      const dlUrl = up.blobUrl || up.dataUrl;
-      if (dlUrl) {
-        const a = document.createElement('a');
-        a.href = dlUrl;
-        a.download = fileName;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-      } else {
-        alert('Download is not available.');
-      }
+    },
+
+    downloadStandardDrawing() {
+      const sd = this.state.standardDrawing;
+      if (!sd) return;
+      const token = (window.AuthService && typeof window.AuthService.getToken === 'function') ? window.AuthService.getToken() : '';
+      const dlUrl = `${sd.downloadUrl || sd.viewUrl}?token=${encodeURIComponent(token)}`;
+      const a = document.createElement('a');
+      a.href = dlUrl;
+      a.download = sd.fileName || 'Standard_Drawing.pdf';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
     },
 
     viewDrawing(idx) {
       const it = (typeof PRCart !== 'undefined' && PRCart.items) ? PRCart.items[idx] : null;
       if (!it) return;
-      const drw = it.drawingAttachment || it.engineeringDrawing;
+      const drw = it.standardDrawing || it.drawingAttachment || it.engineeringDrawing;
       if (!drw) return;
       if (window.DocumentViewer) {
         window.DocumentViewer.open(drw);
-      } else if (window.UI && window.UI.viewDrawingDocument) {
-        window.UI.viewDrawingDocument(drw.documentId || drw.id || drw);
       } else if (drw.blobUrl || drw.dataUrl) {
         window.open(drw.blobUrl || drw.dataUrl, '_blank');
+      } else if (drw.viewUrl) {
+        const token = (window.AuthService && typeof window.AuthService.getToken === 'function') ? window.AuthService.getToken() : '';
+        window.open(`${drw.viewUrl}?token=${encodeURIComponent(token)}`, '_blank');
       }
+    },
+
+    viewCartStandardDrawing(idx) {
+      const it = (typeof PRCart !== 'undefined' && PRCart.items) ? PRCart.items[idx] : null;
+      if (!it || !it.standardDrawing) return;
+      if (window.DocumentViewer) {
+        window.DocumentViewer.open(it.standardDrawing);
+      } else if (it.standardDrawing.viewUrl) {
+        const token = (window.AuthService && typeof window.AuthService.getToken === 'function') ? window.AuthService.getToken() : '';
+        window.open(`${it.standardDrawing.viewUrl}?token=${encodeURIComponent(token)}`, '_blank');
+      } else if (it.standardDrawing.blobUrl || it.standardDrawing.dataUrl) {
+        window.open(it.standardDrawing.blobUrl || it.standardDrawing.dataUrl, '_blank');
+      }
+    },
+
+    downloadCartStandardDrawing(idx) {
+      const it = (typeof PRCart !== 'undefined' && PRCart.items) ? PRCart.items[idx] : null;
+      if (!it || !it.standardDrawing) return;
+      const sd = it.standardDrawing;
+      const token = (window.AuthService && typeof window.AuthService.getToken === 'function') ? window.AuthService.getToken() : '';
+      const dlUrl = `${sd.downloadUrl || sd.viewUrl}?token=${encodeURIComponent(token)}`;
+      const a = document.createElement('a');
+      a.href = dlUrl;
+      a.download = sd.fileName || `${it.ductingType || 'Ducting'}_Standard_Drawing.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
     },
 
     downloadDrawing(idx) {
       const it = (typeof PRCart !== 'undefined' && PRCart.items) ? PRCart.items[idx] : null;
       if (!it) return;
-      const drw = it.drawingAttachment || it.engineeringDrawing;
-      if (!drw) return;
-      const fileName = drw.name || drw.fileName || 'Engineering_Drawing';
-      if (drw.documentId || drw.id) {
-        window.UI.downloadDrawingDocument(drw.documentId || drw.id, fileName);
-      } else if (drw.blobUrl || drw.dataUrl) {
-        const a = document.createElement('a');
-        a.href = drw.blobUrl || drw.dataUrl;
-        a.download = fileName;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-      }
-    },
-
-    resetUploadedSketch() {
-      if (this.state.uploadedDrawing && this.state.uploadedDrawing.blobUrl) {
-        try { URL.revokeObjectURL(this.state.uploadedDrawing.blobUrl); } catch (e) {}
-      }
-      this.state.uploadedDrawing = null;
-      const fileInput = document.getElementById('ductingSketchFileInput');
-      if (fileInput) fileInput.value = '';
-      const resetBtn = document.getElementById('btnDuctingResetSketch');
-      if (resetBtn) resetBtn.style.display = 'none';
-
-      this.renderSketch(this.state.selectedType);
-      if (window.UI && window.UI.showToast) {
-        window.UI.showToast('Restored default engineering sketch.', 'info');
+      if (it.standardDrawing) {
+        this.downloadCartStandardDrawing(idx);
+      } else if (it.drawingAttachment || it.engineeringDrawing) {
+        const drw = it.drawingAttachment || it.engineeringDrawing;
+        if (drw.blobUrl || drw.dataUrl) {
+          const a = document.createElement('a');
+          a.href = drw.blobUrl || drw.dataUrl;
+          a.download = drw.fileName || drw.name || 'Drawing';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+        }
       }
     },
 
@@ -2899,7 +2943,7 @@
         alert.textContent = '';
       }
 
-      // 1. Render Sketch Section (MUST appear ABOVE the dimension fields)
+      // 1. Render Standard Drawing Section
       this.renderSketch(type);
 
       // 2. Render Dimension Fields for Selected Type ONLY
@@ -3045,168 +3089,102 @@
       const container = document.getElementById('ductingSketchContainer');
       if (!container) return;
 
-      let variableBadges = '';
-      if (type === 'Straight Duct') {
-        variableBadges = `
-          <span class="badge-eng-var" onclick="DuctingWorkflowController.focusField('dim_a')" title="Click to edit Ø A">Ø A (mm) ✎</span>
-          <span class="badge-eng-var" onclick="DuctingWorkflowController.focusField('dim_l1')" title="Click to edit L1">L1 (mm) ✎</span>
-          <span class="badge-eng-var" onclick="DuctingWorkflowController.focusField('dim_thickness')" title="Click to edit Thickness">Thickness (mm) ✎</span>
-        `;
-      } else if (type === 'Y-Duct') {
-        variableBadges = `
-          <span class="badge-eng-var required-range" onclick="DuctingWorkflowController.focusField('dim_a')" title="Click to edit Ø A (80–1000 mm)">Ø A: 80–1000 mm ✎</span>
-          <span class="badge-eng-var" onclick="DuctingWorkflowController.focusField('dim_b')" title="Click to edit Ø B">Ø B (mm) ✎</span>
-          <span class="badge-eng-var" onclick="DuctingWorkflowController.focusField('dim_c')" title="Click to edit Ø C">Ø C (mm) ✎</span>
-          <span class="badge-eng-var" onclick="DuctingWorkflowController.focusField('dim_angle_d')" title="Click to edit Angle D">Angle D (°) ✎</span>
-          <span class="badge-eng-var" onclick="DuctingWorkflowController.focusField('dim_l1')" title="Click to edit L1">L1 (mm) ✎</span>
-          <span class="badge-eng-var" onclick="DuctingWorkflowController.focusField('dim_l2')" title="Click to edit L2">L2 (mm) ✎</span>
-          <span class="badge-eng-var" onclick="DuctingWorkflowController.focusField('dim_thickness')" title="Click to edit Thickness">Thickness (mm) ✎</span>
-        `;
-      } else if (type === 'Elbow') {
-        variableBadges = `
-          <span class="badge-eng-var required-range" onclick="DuctingWorkflowController.focusField('dim_a')" title="Click to edit Ø A (80–1200 mm)">Ø A: 80–1200 mm ✎</span>
-          <span class="badge-eng-var" onclick="DuctingWorkflowController.focusField('dim_angle_b')" title="Click to edit Angle B">Angle B (°) ✎</span>
-          <span class="badge-eng-var" onclick="DuctingWorkflowController.focusField('dim_radius')" title="Click to edit RAD / Radius">RAD / Radius (mm) ✎</span>
-          <span class="badge-eng-var" onclick="DuctingWorkflowController.focusField('dim_thickness')" title="Click to edit Thickness">Thickness (mm) ✎</span>
-        `;
-      } else if (type === 'Twin Duct') {
-        variableBadges = `
-          <span class="badge-eng-var required-range" onclick="DuctingWorkflowController.focusField('dim_a')" title="Click to edit Ø A (80–1000 mm)">Ø A: 80–1000 mm ✎</span>
-          <span class="badge-eng-var" onclick="DuctingWorkflowController.focusField('dim_b')" title="Click to edit Ø B">Ø B (mm) ✎</span>
-          <span class="badge-eng-var" onclick="DuctingWorkflowController.focusField('dim_c')" title="Click to edit Ø C">Ø C (mm) ✎</span>
-          <span class="badge-eng-var" onclick="DuctingWorkflowController.focusField('dim_angle_d')" title="Click to edit Angle D">Angle D (°) ✎</span>
-          <span class="badge-eng-var" onclick="DuctingWorkflowController.focusField('dim_l1')" title="Click to edit L1">L1 (mm) ✎</span>
-        `;
-      }
+      const sd = this.state.standardDrawing;
 
-      // Check if ducting type has an automatically attached master drawing
-      if (this.state.uploadedDrawing) {
-        const up = this.state.uploadedDrawing;
-        const isPdf = (up.type && up.type.includes('pdf')) || (up.mimeType && up.mimeType.includes('pdf')) || String(up.name || '').toLowerCase().endsWith('.pdf');
-        
-        let formatLabel = 'PDF';
-        if (!isPdf) {
-          if (up.type && up.type.includes('png')) formatLabel = 'PNG';
-          else if (up.type && (up.type.includes('jpeg') || up.type.includes('jpg'))) formatLabel = 'JPG';
-          else if (up.type && up.type.includes('webp')) formatLabel = 'WEBP';
-          else if (up.type && up.type.includes('svg')) formatLabel = 'SVG';
-          else {
-            const ext = (up.name || '').split('.').pop().toUpperCase();
-            formatLabel = ext || 'IMAGE';
-          }
-        }
-
+      if (sd) {
+        const isPdf = (sd.mimeType && sd.mimeType.includes('pdf')) || String(sd.fileName || '').toLowerCase().endsWith('.pdf');
         const token = (window.AuthService && typeof window.AuthService.getToken === 'function') ? window.AuthService.getToken() : '';
-        const secureViewUrl = (up.documentId || up.id) ? `/api/documents/${up.documentId || up.id}/view?token=${encodeURIComponent(token)}` : (up.viewUrl ? `${up.viewUrl}?token=${encodeURIComponent(token)}` : null);
-        const previewSrc = up.blobUrl || secureViewUrl || up.dataUrl || '';
+        const secureViewUrl = sd.cloudinaryUrl || `${sd.viewUrl}?token=${encodeURIComponent(token)}`;
+        const sizeStr = sd.fileSize ? `${(sd.fileSize / 1024).toFixed(1)} KB` : '';
+        const dateStr = sd.uploadedAt ? new Date(sd.uploadedAt).toLocaleDateString() : '';
+        const uploaderStr = sd.uploadedByFullName || sd.uploadedByUsername || 'Engineering';
 
         container.innerHTML = `
-          <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 0.85rem; text-align: center;">
-            <!-- Automatic Master Drawing Banner -->
+          <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; padding: 0.85rem;">
+            
+            <!-- Standard Drawing Metadata & Version Banner -->
             <div style="display: flex; align-items: center; justify-content: space-between; background: #f0fdf4; border: 1px solid #86efac; border-radius: 6px; padding: 0.65rem 0.85rem; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem;">
               <div style="display: flex; align-items: center; gap: 0.65rem; text-align: left;">
                 <span style="font-size: 1.6rem;">${isPdf ? '📄' : '🖼️'}</span>
                 <div>
-                  <div style="display: flex; align-items: center; gap: 0.4rem; font-size: 0.78rem; font-weight: 700; color: #166534;">
-                    <span>✓</span> Drawing automatically attached
+                  <div style="display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap;">
+                    <span style="font-weight: 800; font-size: 0.82rem; color: #15803d; text-transform: uppercase;">Standard Drawing Reference</span>
+                    <span class="badge" style="background: #15803d; color: #ffffff; font-weight: 800; font-size: 0.7rem; padding: 2px 7px; border-radius: 4px;">
+                      Version ${sd.version} (CURRENT)
+                    </span>
                   </div>
-                  <div style="font-weight: 700; font-size: 0.88rem; color: #0f172a; word-break: break-all; margin-top: 1px;">
-                    ${escapeHtml(up.name)}
+                  <div style="font-weight: 700; font-size: 0.88rem; color: #0f172a; word-break: break-all; margin-top: 2px;">
+                    ${escapeHtml(sd.fileName)}
                   </div>
-                  <div style="font-size: 0.74rem; color: #475569;">
-                    ${(up.size / 1024).toFixed(1)} KB • ${formatLabel} • Master Drawing (${escapeHtml(type)})
+                  <div style="font-size: 0.73rem; color: #475569; margin-top: 1px;">
+                    Uploaded by: <strong>${escapeHtml(uploaderStr)}</strong> ${dateStr ? 'on ' + dateStr : ''} ${sizeStr ? '• ' + sizeStr : ''}
                   </div>
                 </div>
               </div>
-              <div style="display: flex; gap: 0.4rem; align-items: center;">
-                <button type="button" class="btn btn-secondary btn-sm" onclick="DuctingWorkflowController.openFullDrawing()" style="font-size: 0.78rem; padding: 0.3rem 0.75rem; border-color: #0284c7; color: #0284c7; font-weight: 600;">
-                  View Drawing
+              <div style="display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap;">
+                <button type="button" class="btn btn-secondary btn-sm" onclick="DuctingWorkflowController.openStandardDrawing()" style="font-size: 0.75rem; padding: 0.3rem 0.65rem; border-color: #0284c7; color: #0284c7; font-weight: 600;">
+                  👁️ View / Expand
                 </button>
-                <button type="button" class="btn btn-secondary btn-sm" onclick="DuctingWorkflowController.downloadUploadedDrawing()" style="font-size: 0.78rem; padding: 0.3rem 0.75rem; font-weight: 600;">
-                  Download
+                <button type="button" class="btn btn-secondary btn-sm" onclick="DuctingWorkflowController.downloadStandardDrawing()" style="font-size: 0.75rem; padding: 0.3rem 0.65rem; font-weight: 600;">
+                  ⬇️ Download
                 </button>
+                <button type="button" class="btn btn-secondary btn-sm" onclick="DuctingWorkflowController.triggerStandardDrawingUpload()" style="font-size: 0.75rem; padding: 0.3rem 0.65rem; font-weight: 600;">
+                  🔄 Replace Drawing
+                </button>
+                ${!this.state.isPendingRemoval ? `
+                  <button type="button" class="btn btn-secondary btn-sm" onclick="DuctingWorkflowController.requestDrawingRemoval(${sd.id})" style="font-size: 0.75rem; padding: 0.3rem 0.65rem; color: #ef4444;" title="Request removal (Requires Admin approval)">
+                    🗑️ Request Removal
+                  </button>
+                ` : ''}
               </div>
             </div>
 
-            <!-- Engineering Drawing Visual Preview Box -->
-            <div class="ducting-drawing-preview-area" style="position: relative; width: 100%; height: 480px; min-height: 420px; max-height: 520px; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; overflow: auto; display: flex; align-items: center; justify-content: center; box-shadow: inset 0 0 4px rgba(0,0,0,0.05);">
-              
-              <!-- Loading State Overlay -->
-              <div id="ductingPreviewLoading" style="position: absolute; inset: 0; background: rgba(255, 255, 255, 0.95); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 10; gap: 0.6rem;">
-                <div class="ducting-spinner"></div>
-                <div style="font-size: 0.88rem; font-weight: 600; color: #0284c7;">Loading master drawing...</div>
-              </div>
-
-              <!-- Error State Overlay -->
-              <div id="ductingPreviewError" style="position: absolute; inset: 0; background: #ffffff; display: none; flex-direction: column; align-items: center; justify-content: center; z-index: 12; padding: 1.5rem; text-align: center;">
-                <div style="font-size: 2.2rem; margin-bottom: 0.5rem; color: #ef4444;">⚠️</div>
-                <div style="font-weight: 700; font-size: 1rem; color: #b91c1c; margin-bottom: 0.35rem;">Unable to preview drawing.</div>
-                <div style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 0.85rem;">Filename: <strong style="font-family: var(--font-mono); color: var(--text-main);">${escapeHtml(up.name)}</strong></div>
-                <div style="display: flex; gap: 0.5rem; justify-content: center;">
-                  <button type="button" class="btn btn-secondary btn-sm" onclick="DuctingWorkflowController.openFullDrawing()" style="font-size: 0.8rem; padding: 0.35rem 0.75rem; border-color: #0284c7; color: #0284c7; font-weight: 600;">View Drawing</button>
-                  <button type="button" class="btn btn-secondary btn-sm" onclick="DuctingWorkflowController.downloadUploadedDrawing()" style="font-size: 0.8rem; padding: 0.35rem 0.75rem; font-weight: 600;">Download</button>
+            <!-- Removal Pending Alert Notice (if requested) -->
+            ${this.state.isPendingRemoval ? `
+              <div style="background: #fffbeb; border: 1px solid #fde68a; border-left: 4px solid #f59e0b; border-radius: 6px; padding: 0.65rem 0.85rem; margin-bottom: 0.75rem; color: #92400e; font-size: 0.82rem;">
+                <div style="font-weight: 700; display: flex; align-items: center; gap: 0.4rem;">
+                  <span>⚠️</span> Removal Pending Admin Approval
+                </div>
+                <div style="margin-top: 2px;">
+                  A removal request for this standard drawing was submitted and is pending review by an Administrator. Existing PR references remain completely protected.
+                  ${this.state.pendingRemovalReason ? `<br><em>Reason: ${escapeHtml(this.state.pendingRemovalReason)}</em>` : ''}
                 </div>
               </div>
+            ` : ''}
 
+            <!-- Visual Preview Area -->
+            <div class="ducting-drawing-preview-area" style="position: relative; width: 100%; height: 380px; min-height: 320px; max-height: 480px; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; overflow: auto; display: flex; align-items: center; justify-content: center;">
               ${isPdf ? `
                 <iframe
-                  id="ductingPdfPreviewFrame"
-                  src="${previewSrc}#page=1&view=FitH"
+                  src="${secureViewUrl}#page=1&view=FitH"
                   title="Master Engineering Drawing Preview"
-                  style="width: 100%; height: 100%; min-height: 470px; border: none; background: #ffffff; display: block;"
-                  onload="DuctingWorkflowController.handlePreviewLoaded()"
-                  onerror="DuctingWorkflowController.handlePreviewError()"
+                  style="width: 100%; height: 100%; border: none; background: #ffffff; display: block;"
                 ></iframe>
               ` : `
                 <img
-                  id="ductingImgPreview"
-                  src="${previewSrc}"
-                  alt="Master Engineering Drawing Preview"
+                  src="${secureViewUrl}"
+                  alt="Standard Engineering Drawing"
                   style="max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; display: block; margin: 0 auto; background: #ffffff;"
-                  onload="DuctingWorkflowController.handlePreviewLoaded()"
-                  onerror="DuctingWorkflowController.handlePreviewError()"
                 />
               `}
             </div>
-
-            <!-- Bottom Preview Controls Bar -->
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 0.6rem; padding: 0.4rem 0.75rem; background: #f1f5f9; border-radius: 6px; font-size: 0.75rem;">
-              <div style="color: #64748b; font-size: 0.75rem;">
-                🔍 <em>${isPdf ? 'Visualizing page 1 of master PDF drawing' : 'Visualizing master drawing specification'}</em>
-              </div>
-              <div style="display: flex; gap: 0.5rem;">
-                <button type="button" class="btn btn-secondary btn-sm" onclick="DuctingWorkflowController.openFullDrawing()" style="font-size: 0.75rem; padding: 0.2rem 0.6rem; border-color: #0284c7; color: #0284c7; font-weight: 600;">
-                  View Drawing
-                </button>
-                <button type="button" class="btn btn-secondary btn-sm" onclick="DuctingWorkflowController.downloadUploadedDrawing()" style="font-size: 0.75rem; padding: 0.2rem 0.6rem; font-weight: 600;">
-                  Download
-                </button>
-              </div>
-            </div>
-
-            <div class="sketch-variable-pills" style="margin-top: 0.65rem;">
-              ${variableBadges}
-            </div>
           </div>
         `;
-
-        setTimeout(() => {
-          const loader = document.getElementById('ductingPreviewLoading');
-          if (loader) loader.style.display = 'none';
-        }, 700);
       } else {
-        // Default engineering schematic SVG diagram
+        // No standard drawing uploaded yet -> show SVG schematic with upload option
         const svgContent = this.getSketchSvg(type);
         container.innerHTML = `
-          <div style="background: #ffffff; border-radius: 8px; padding: 0.5rem 0.75rem; position: relative;">
-            <div style="position: relative; border-radius: 6px; background: #fbfcfe; border: 1px solid var(--border-color); padding: 0.5rem 0.5rem 0.25rem 0.5rem;">
+          <div style="background: #ffffff; border-radius: 8px; padding: 0.75rem; border: 1px solid #cbd5e1;">
+            <div style="display: flex; justify-content: space-between; align-items: center; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 6px; padding: 0.5rem 0.85rem; margin-bottom: 0.75rem; flex-wrap: wrap; gap: 0.5rem;">
+              <div style="font-size: 0.82rem; color: #475569;">
+                <span>ℹ️</span> No uploaded standard drawing found for <strong>${escapeHtml(type)}</strong>. Showing reference schematic.
+              </div>
+              <button type="button" class="btn btn-primary btn-sm" onclick="DuctingWorkflowController.triggerStandardDrawingUpload()" style="font-size: 0.78rem; padding: 0.35rem 0.75rem;">
+                📁 Upload Standard Drawing
+              </button>
+            </div>
+            <div style="position: relative; border-radius: 6px; background: #fbfcfe; border: 1px solid #e2e8f0; padding: 0.5rem;">
               ${svgContent}
-            </div>
-            <div class="sketch-variable-pills" style="margin-top: 0.65rem;">
-              ${variableBadges}
-            </div>
-            <div style="text-align: center; margin-top: 0.45rem; font-size: 0.78rem; color: #64748b; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 6px; padding: 0.4rem;">
-              💡 <em>Click any parameter label above to edit that dimension. Master drawings can be configured by Admin in Settings.</em>
             </div>
           </div>
         `;
@@ -3513,7 +3491,7 @@
       const quantity = qtyEl ? (parseFloat(qtyEl.value) || 1) : 1;
       const remarks = remEl ? remEl.value.trim() : '';
 
-      // Format human-readable sizeDimensions and multiline itemDescription
+      // Format size dimensions and multiline description
       let sizeDimensions = '';
       let itemDescription = '';
 
@@ -3531,29 +3509,30 @@
         itemDescription = `Category: Ducting\nType: Twin Duct\nØA: ${values.dimA} mm\nØB: ${values.dimB} mm\nØC: ${values.dimC} mm\nAngle D: ${values.angleD}°\nL1: ${values.l1} mm`;
       }
 
-      // Drawing attachment details if user uploaded one
-      const drawingAttachment = this.state.uploadedDrawing ? {
-        documentId: this.state.uploadedDrawing.documentId || this.state.uploadedDrawing.id || null,
-        id: this.state.uploadedDrawing.documentId || this.state.uploadedDrawing.id || null,
-        name: this.state.uploadedDrawing.name || this.state.uploadedDrawing.fileName,
-        fileName: this.state.uploadedDrawing.name || this.state.uploadedDrawing.fileName,
-        size: this.state.uploadedDrawing.size,
-        type: this.state.uploadedDrawing.type,
-        mimeType: this.state.uploadedDrawing.type,
-        blobUrl: this.state.uploadedDrawing.blobUrl || null,
-        dataUrl: this.state.uploadedDrawing.dataUrl,
-        viewUrl: this.state.uploadedDrawing.viewUrl || null,
-        downloadUrl: this.state.uploadedDrawing.downloadUrl || null
+      // Snapshot Standard Drawing at this exact moment
+      const sd = this.state.standardDrawing;
+      const standardDrawingObj = sd ? {
+        id: sd.id,
+        standardDrawingId: sd.id,
+        version: sd.version || 1,
+        fileName: sd.fileName,
+        mimeType: sd.mimeType,
+        size: sd.fileSize,
+        cloudinaryUrl: sd.cloudinaryUrl,
+        viewUrl: sd.viewUrl,
+        downloadUrl: sd.downloadUrl
       } : null;
 
-      if (drawingAttachment) {
-        itemDescription += `\n[Drawing: ${drawingAttachment.name} (${(drawingAttachment.size / 1024).toFixed(1)} KB)]`;
+      if (standardDrawingObj) {
+        itemDescription += `\n[Standard Drawing: ${standardDrawingObj.fileName} (Version ${standardDrawingObj.version})]`;
       }
+
+      const effectiveLegacyDrawing = standardDrawingObj || null;
 
       // Add to PR Cart
       PRCart.addItem({
         masterItemId: null,
-        sku: null, // Critical SKU Rule: NULL for project-specific ducting
+        sku: null,
         category: 'Ducting',
         ductingType: type,
         productName: `Ducting — ${type}`,
@@ -3563,11 +3542,17 @@
         sizeDimensions: sizeDimensions,
         originalDimensions: sizeDimensions,
         itemDescription: itemDescription,
-        specification: 'Engineering Sketch Specification',
+        specification: 'Engineering Standard Drawing Specification',
         unit: 'Pcs',
         quantity: quantity,
         remarks: remarks,
-        drawingAttachment: drawingAttachment,
+        standardDrawing: standardDrawingObj,
+        standardDrawingId: standardDrawingObj ? standardDrawingObj.id : null,
+        standardDrawingVersion: standardDrawingObj ? standardDrawingObj.version : null,
+        projectDrawing: null,
+        projectDrawingAttachment: null,
+        drawingAttachment: effectiveLegacyDrawing,
+        engineeringDrawing: effectiveLegacyDrawing,
         purchaseType: 'PROJECT-SPECIFIC DUCTING',
         ductingDimensions: {
           dimA: isNaN(values.dimA) ? null : values.dimA,
@@ -3589,7 +3574,13 @@
         materialGrade: material,
         quantity: quantity,
         remarks: remarks,
-        drawingAttachment: drawingAttachment,
+        standardDrawing: standardDrawingObj,
+        standardDrawingId: standardDrawingObj ? standardDrawingObj.id : null,
+        standardDrawingVersion: standardDrawingObj ? standardDrawingObj.version : null,
+        projectDrawing: null,
+        projectDrawingAttachment: null,
+        drawingAttachment: effectiveLegacyDrawing,
+        engineeringDrawing: effectiveLegacyDrawing,
         purchaseType: 'PROJECT-SPECIFIC DUCTING',
         ductingDimensions: {
           dimA: isNaN(values.dimA) ? null : values.dimA,
@@ -3614,19 +3605,28 @@
   };
 
   window.DuctingWorkflowController = DuctingWorkflowController;
+  DuctingWorkflowController.openFullDrawing = function() {
+    const up = DuctingWorkflowController.state.standardDrawing;
+    if (!up) return;
+    if (window.DocumentViewer) {
+      DocumentViewer.open(up);
+    }
+  };
 
   // =========================================================================
   // MASTER DUCTING DRAWING CONFIGURATION CONTROLLER (ADMIN / ENGINEERING)
   // =========================================================================
   const DuctingConfigController = {
     types: [],
+    removalRequests: [],
     selectedTypeForUpload: null,
 
     async loadTypes() {
-      const container = document.getElementById('ductingConfigContainer');
-      if (!container) return;
-
-      container.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 1.5rem; color: #64748b;">Loading master ducting configurations...</div>';
+      const tbodyStd = document.getElementById('tbodyStandardDrawings');
+      const tbodyReq = document.getElementById('tbodyRemovalRequests');
+      if (tbodyStd) {
+        tbodyStd.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:1.5rem; color:#64748b;">Loading ducting standard drawings...</td></tr>';
+      }
 
       try {
         const token = (window.AuthService && typeof window.AuthService.getToken === 'function') ? window.AuthService.getToken() : '';
@@ -3636,111 +3636,177 @@
         if (!resp.ok) throw new Error('Failed to load ducting types');
         const data = await resp.json();
         this.types = data.types || [];
+
+        // If user is Admin, fetch pending removal requests
+        const isAdmin = (window.AuthService && window.AuthService.getUser && window.AuthService.getUser().role === 'ADMIN');
+        if (isAdmin) {
+          try {
+            const reqResp = await fetch('/api/ducting-types/removal-requests', {
+              headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (reqResp.ok) {
+              const reqData = await reqResp.json();
+              this.removalRequests = reqData.requests || [];
+            }
+          } catch (rErr) {
+            console.warn('[DuctingConfig] Removal requests notice:', rErr.message);
+          }
+        } else {
+          this.removalRequests = [];
+        }
+
         this.render();
       } catch (err) {
         console.error('[DuctingConfig] Error loading types:', err);
-        container.innerHTML = `<div style="grid-column: 1/-1; color: #ef4444; padding: 1rem;">Failed to load ducting types: ${escapeHtml(err.message)}</div>`;
+        if (tbodyStd) {
+          tbodyStd.innerHTML = `<tr><td colspan="7" style="color:#ef4444; padding:1rem; text-align:center;">Failed to load ducting types: ${escapeHtml(err.message)}</td></tr>`;
+        }
       }
     },
 
     render() {
-      const container = document.getElementById('ductingConfigContainer');
-      if (!container) return;
+      const tbodyStd = document.getElementById('tbodyStandardDrawings');
+      const tbodyReq = document.getElementById('tbodyRemovalRequests');
+      const badgeCount = document.getElementById('badgePendingRemovalCount');
 
-      if (!this.types || this.types.length === 0) {
-        container.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: #64748b; padding: 1.5rem;">No ducting types found in system.</div>';
-        return;
-      }
-
-      const typeIcons = {
-        'Straight Duct': '📏',
-        'Y-Duct': '🔀',
-        'Elbow': '↩️',
-        'Twin Duct': '♊'
-      };
+      if (!tbodyStd) return;
 
       const isAdmin = (window.AuthService && window.AuthService.getUser && window.AuthService.getUser().role === 'ADMIN');
 
-      container.innerHTML = this.types.map(t => {
-        const icon = typeIcons[t.typeName] || '💨';
-        const hasDrw = Boolean(t.hasDrawing && t.drawing);
-        const drw = t.drawing || {};
-        const safeName = drw.fileName || 'Master Drawing';
-        const isPdf = (drw.mimeType && drw.mimeType.includes('pdf')) || safeName.toLowerCase().endsWith('.pdf');
-        const formatLabel = isPdf ? 'PDF' : 'IMAGE';
-        const sizeStr = drw.fileSize ? `${(drw.fileSize / 1024).toFixed(1)} KB` : '';
-        const revStr = drw.revision !== undefined && drw.revision !== null ? `Rev ${drw.revision}` : 'Rev 0';
-        const dateStr = drw.uploadedAt ? new Date(drw.uploadedAt).toLocaleDateString() : '';
+      // 1. Render Table 1: DUCTING STANDARD DRAWINGS
+      if (!this.types || this.types.length === 0) {
+        tbodyStd.innerHTML = '<tr><td colspan="7" style="text-align:center; color:#64748b; padding:1.5rem;">No ducting types found.</td></tr>';
+      } else {
+        const typeIcons = {
+          'Straight Duct': '📏',
+          'Y-Duct': '🔀',
+          'Elbow': '↩️',
+          'Twin Duct': '♊'
+        };
 
-        return `
-          <div class="ducting-config-card" style="background: #ffffff; border: 1px solid var(--border-color); border-radius: 8px; padding: 1.25rem; display: flex; flex-direction: column; justify-content: space-between; box-shadow: 0 1px 3px rgba(0,0,0,0.05); transition: box-shadow 0.2s;">
-            <div>
-              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
-                <div style="display: flex; align-items: center; gap: 0.5rem;">
-                  <span style="font-size: 1.5rem;">${icon}</span>
-                  <h4 style="margin: 0; font-size: 1.05rem; font-weight: 700; color: var(--text-main);">${escapeHtml(t.typeName)}</h4>
-                </div>
+        tbodyStd.innerHTML = this.types.map(t => {
+          const icon = typeIcons[t.typeName] || '💨';
+          const hasDrw = Boolean(t.hasDrawing && t.drawing);
+          const drw = t.drawing || {};
+          const versionStr = hasDrw ? `V${drw.version || 1}` : '—';
+          const fileName = hasDrw ? (drw.fileName || 'drawing') : '—';
+          const uploader = hasDrw ? (drw.uploadedByFullName || drw.uploadedByUsername || 'Engineering') : '—';
+          const dateStr = hasDrw && drw.uploadedAt ? new Date(drw.uploadedAt).toLocaleDateString() : '—';
+          
+          let statusBadge = '<span class="badge" style="background:#f1f5f9; color:#64748b;">NO DRAWING</span>';
+          if (hasDrw) {
+            if (t.isPendingRemoval || drw.status === 'PENDING_REMOVAL') {
+              statusBadge = '<span class="badge" style="background:#fef3c7; color:#b45309; font-weight:700;">PENDING REMOVAL</span>';
+            } else if (drw.status === 'REMOVED') {
+              statusBadge = '<span class="badge" style="background:#fee2e2; color:#b91c1c;">REMOVED</span>';
+            } else {
+              statusBadge = '<span class="badge" style="background:#dcfce7; color:#15803d; font-weight:700;">ACTIVE</span>';
+            }
+          }
+
+          return `
+            <tr style="border-bottom: 1px solid var(--border-color);">
+              <td style="padding: 0.65rem 0.75rem; font-weight: 700; color: var(--text-main);">
+                <span style="margin-right: 0.4rem;">${icon}</span>${escapeHtml(t.typeName)}
+              </td>
+              <td style="padding: 0.65rem 0.75rem;">
+                <span style="font-weight: 700; color: #0369a1;">${escapeHtml(versionStr)}</span>
+              </td>
+              <td style="padding: 0.65rem 0.75rem; word-break: break-all;">
                 ${hasDrw ? `
-                  <span class="badge" style="background: #dcfce7; color: #15803d; font-size: 0.72rem; font-weight: 700; padding: 0.25rem 0.55rem; border-radius: 9999px;">
-                    ✓ Configured
-                  </span>
-                ` : `
-                  <span class="badge" style="background: #f1f5f9; color: #64748b; font-size: 0.72rem; font-weight: 600; padding: 0.25rem 0.55rem; border-radius: 9999px;">
-                    No Drawing
-                  </span>
-                `}
-              </div>
-
-              ${hasDrw ? `
-                <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 0.75rem; margin-bottom: 1rem;">
-                  <div style="font-size: 0.7rem; font-weight: 700; color: #64748b; text-transform: uppercase; margin-bottom: 4px;">Current Master Drawing</div>
-                  <div style="font-weight: 600; font-size: 0.85rem; color: #0284c7; word-break: break-all; margin-bottom: 4px;" title="${escapeHtml(safeName)}">
-                    ${escapeHtml(safeName)}
-                  </div>
-                  <div style="font-size: 0.75rem; color: #64748b; display: flex; gap: 0.5rem; flex-wrap: wrap;">
-                    <span style="font-weight: 600; color: #0369a1;">${revStr}</span>
-                    <span>•</span>
-                    <span>${formatLabel}</span>
-                    ${sizeStr ? `<span>•</span><span>${sizeStr}</span>` : ''}
-                    ${dateStr ? `<span>•</span><span>${dateStr}</span>` : ''}
-                  </div>
+                  <a href="javascript:void(0)" onclick="DuctingConfigController.viewDrawing('${escapeHtml(t.typeName)}')" style="color: #0284c7; text-decoration: none; font-weight: 600;">
+                    ${escapeHtml(fileName)}
+                  </a>
+                ` : '<span style="color:#94a3b8;">—</span>'}
+              </td>
+              <td style="padding: 0.65rem 0.75rem; color: #475569;">
+                ${escapeHtml(uploader)}
+              </td>
+              <td style="padding: 0.65rem 0.75rem; color: #475569;">
+                ${escapeHtml(dateStr)}
+              </td>
+              <td style="padding: 0.65rem 0.75rem;">
+                ${statusBadge}
+              </td>
+              <td style="padding: 0.65rem 0.75rem; text-align: right; white-space: nowrap;">
+                <div style="display: inline-flex; gap: 0.35rem; justify-content: flex-end;">
+                  ${hasDrw ? `
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="DuctingConfigController.viewDrawing('${escapeHtml(t.typeName)}')" style="font-size: 0.75rem; padding: 0.25rem 0.55rem; color: #0284c7; border-color: #0284c7;">
+                      View
+                    </button>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="DuctingConfigController.downloadDrawing('${escapeHtml(t.typeName)}')" style="font-size: 0.75rem; padding: 0.25rem 0.55rem;">
+                      Download
+                    </button>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="DuctingConfigController.triggerUpload('${escapeHtml(t.typeName)}')" style="font-size: 0.75rem; padding: 0.25rem 0.55rem;">
+                      Replace
+                    </button>
+                    ${(!t.isPendingRemoval && drw.status !== 'PENDING_REMOVAL') ? `
+                      <button type="button" class="btn btn-secondary btn-sm" onclick="DuctingConfigController.requestRemoval(${drw.id}, '${escapeHtml(t.typeName)}')" style="font-size: 0.75rem; padding: 0.25rem 0.55rem; color: #ef4444;">
+                        Request Removal
+                      </button>
+                    ` : `
+                      <span style="font-size: 0.72rem; color: #d97706; font-style: italic; padding: 0.25rem;">Pending Removal</span>
+                    `}
+                  ` : `
+                    <button type="button" class="btn btn-primary btn-sm" onclick="DuctingConfigController.triggerUpload('${escapeHtml(t.typeName)}')" style="font-size: 0.75rem; padding: 0.25rem 0.65rem;">
+                      + Upload Drawing
+                    </button>
+                  `}
                 </div>
-              ` : `
-                <div style="background: #fafaf9; border: 1px dashed #d6d3d1; border-radius: 6px; padding: 1.25rem; margin-bottom: 1rem; text-align: center; color: #78716c; font-size: 0.82rem;">
-                  No master drawing uploaded yet. Upload an engineering drawing once to automatically attach it to all future ${escapeHtml(t.typeName)} PRs.
-                </div>
-              `}
-            </div>
+              </td>
+            </tr>
+          `;
+        }).join('');
+      }
 
-            <div style="display: flex; gap: 0.4rem; flex-wrap: wrap; border-top: 1px solid #f1f5f9; margin-top: 0.5rem; padding-top: 0.75rem;">
-              ${hasDrw ? `
-                <button type="button" class="btn btn-secondary btn-sm" onclick="DuctingConfigController.viewDrawing('${escapeHtml(t.typeName)}')" style="font-size: 0.75rem; padding: 0.3rem 0.6rem; color: #0284c7; border-color: #0284c7; font-weight: 600;">
-                  👁️ View
-                </button>
-                <button type="button" class="btn btn-secondary btn-sm" onclick="DuctingConfigController.downloadDrawing('${escapeHtml(t.typeName)}')" style="font-size: 0.75rem; padding: 0.3rem 0.6rem; font-weight: 600;">
-                  ⬇️ Download
-                </button>
-                ${isAdmin ? `
-                  <button type="button" class="btn btn-secondary btn-sm" onclick="DuctingConfigController.triggerUpload('${escapeHtml(t.typeName)}')" style="font-size: 0.75rem; padding: 0.3rem 0.6rem;">
-                    🔄 Replace
-                  </button>
-                  <button type="button" class="btn btn-secondary btn-sm" onclick="DuctingConfigController.removeDrawing('${escapeHtml(t.typeName)}')" style="font-size: 0.75rem; padding: 0.3rem 0.6rem; color: #ef4444;">
-                    🗑️ Remove
-                  </button>
-                ` : ''}
-              ` : `
-                ${isAdmin ? `
-                  <button type="button" class="btn btn-primary btn-sm" onclick="DuctingConfigController.triggerUpload('${escapeHtml(t.typeName)}')" style="font-size: 0.8rem; padding: 0.35rem 0.85rem; width: 100%; justify-content: center;">
-                    📁 Upload Drawing
-                  </button>
-                ` : `
-                  <span style="font-size: 0.75rem; color: #94a3b8;">Admin permission required to upload</span>
-                `}
-              `}
-            </div>
-          </div>
-        `;
-      }).join('');
+      // 2. Render Table 2: PENDING DRAWING REMOVAL REQUESTS
+      if (tbodyReq) {
+        if (!isAdmin) {
+          tbodyReq.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:1.25rem; color:#64748b; font-style:italic;">Standard drawing removals are reviewed and authorized by System Administrators.</td></tr>';
+          if (badgeCount) badgeCount.style.display = 'none';
+        } else if (!this.removalRequests || this.removalRequests.length === 0) {
+          tbodyReq.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:1.25rem; color:#64748b;">No pending drawing removal requests.</td></tr>';
+          if (badgeCount) badgeCount.style.display = 'none';
+        } else {
+          if (badgeCount) {
+            badgeCount.textContent = `${this.removalRequests.length} Pending`;
+            badgeCount.style.display = 'inline-block';
+          }
+          tbodyReq.innerHTML = this.removalRequests.map(r => {
+            const reqDate = r.requestedAt ? new Date(r.requestedAt).toLocaleDateString() : '—';
+            const requester = r.requestedByFullName || r.requestedByUsername || 'Employee';
+            return `
+              <tr style="border-bottom: 1px solid #fecaca; background: #fffaf0;">
+                <td style="padding: 0.65rem 0.75rem; font-weight: 700; color: #0f172a;">
+                  ${escapeHtml(r.typeName)}
+                </td>
+                <td style="padding: 0.65rem 0.75rem; font-weight: 700; color: #0369a1;">
+                  Version ${escapeHtml(r.drawingVersion)}
+                </td>
+                <td style="padding: 0.65rem 0.75rem; color: #475569;">
+                  ${escapeHtml(requester)}
+                </td>
+                <td style="padding: 0.65rem 0.75rem; color: #475569;">
+                  ${escapeHtml(reqDate)}
+                </td>
+                <td style="padding: 0.65rem 0.75rem; color: #7f1d1d; font-style: italic;">
+                  "${escapeHtml(r.reason || 'No reason provided')}"
+                </td>
+                <td style="padding: 0.65rem 0.75rem; text-align: right; white-space: nowrap;">
+                  <div style="display: inline-flex; gap: 0.4rem; justify-content: flex-end;">
+                    <button type="button" class="btn btn-sm" onclick="DuctingConfigController.approveRemoval(${r.id}, '${escapeHtml(r.typeName)}')" style="background: #16a34a; color: #ffffff; border: none; font-size: 0.75rem; padding: 0.3rem 0.7rem; font-weight: 600; border-radius: 4px;">
+                      ✓ Approve Removal
+                    </button>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="DuctingConfigController.rejectRemoval(${r.id}, '${escapeHtml(r.typeName)}')" style="font-size: 0.75rem; padding: 0.3rem 0.7rem; color: #dc2626; border-color: #fca5a5;">
+                      ✕ Reject
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            `;
+          }).join('');
+        }
+      }
     },
 
     triggerUpload(typeName) {
@@ -3757,12 +3823,11 @@
       if (!file || !this.selectedTypeForUpload) return;
 
       const typeName = this.selectedTypeForUpload;
-      const validTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp', 'image/svg+xml', 'application/pdf'];
       const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
-      const isImg = file.type.startsWith('image/') || /\.(png|jpe?g|webp|svg)$/i.test(file.name);
+      const isImg = file.type.startsWith('image/') || /\.(png|jpe?g)$/i.test(file.name);
 
       if (!isPdf && !isImg) {
-        alert('Unsupported file format. Please upload a PDF or image drawing.');
+        alert('Unsupported file format. Please upload a PDF, PNG, JPG, or JPEG standard engineering drawing.');
         return;
       }
 
@@ -3776,10 +3841,10 @@
         const dataUrl = e.target.result;
         try {
           if (window.UI && window.UI.showToast) {
-            window.UI.showToast('Uploading master drawing...', 'info');
+            window.UI.showToast(`Uploading Standard Drawing for ${typeName}...`, 'info');
           }
           const token = (window.AuthService && typeof window.AuthService.getToken === 'function') ? window.AuthService.getToken() : '';
-          const resp = await fetch(`/api/ducting-types/${encodeURIComponent(typeName)}/drawing`, {
+          const resp = await fetch(`/api/ducting-types/${encodeURIComponent(typeName)}/standard-drawing`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -3797,61 +3862,64 @@
             throw new Error(errData.error || `HTTP ${resp.status}`);
           }
 
+          const resData = await resp.json();
           if (window.UI && window.UI.showToast) {
-            window.UI.showToast(`Master drawing for ${typeName} updated successfully!`, 'success');
+            window.UI.showToast(`Standard drawing for ${typeName} uploaded successfully! Version ${resData.drawing.version} is now current.`, 'success');
           }
           await this.loadTypes();
         } catch (err) {
           console.error('[DuctingConfig] Upload error:', err);
-          alert(`Failed to upload master drawing: ${err.message}`);
+          alert(`Failed to upload standard drawing: ${err.message}`);
         }
       };
 
       reader.readAsDataURL(file);
     },
 
-    async viewDrawing(typeName) {
-      const t = this.types.find(item => item.typeName === typeName);
-      if (!t || !t.drawing || !t.drawing.documentId) {
-        alert('No drawing found for this ducting type.');
-        return;
-      }
-      if (window.DocumentViewer) {
-        window.DocumentViewer.open(t.drawing);
-      } else if (window.UI && window.UI.viewDrawingDocument) {
-        window.UI.viewDrawingDocument(t.drawing.documentId);
-      }
-    },
-
-    async downloadDrawing(typeName) {
-      const t = this.types.find(item => item.typeName === typeName);
-      if (!t || !t.drawing || !t.drawing.documentId) {
-        alert('No drawing found for this ducting type.');
-        return;
-      }
-      const fileName = t.drawing.fileName || `${typeName}_Drawing.pdf`;
-      if (window.UI && window.UI.downloadDrawingDocument) {
-        window.UI.downloadDrawingDocument(t.drawing.documentId, fileName);
-      } else {
-        const token = (window.AuthService && typeof window.AuthService.getToken === 'function') ? window.AuthService.getToken() : '';
-        const a = document.createElement('a');
-        a.href = `/api/documents/${t.drawing.documentId}/download?token=${encodeURIComponent(token)}`;
-        a.download = fileName;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-      }
-    },
-
-    async removeDrawing(typeName) {
-      if (!confirm(`Are you sure you want to remove the master drawing for ${typeName}?\n\nNote: Existing PRs referencing previous versions will NOT be affected.`)) {
+    async requestRemoval(drawingId, typeName) {
+      if (!drawingId) return;
+      const reason = prompt(`Enter reason for requesting removal of standard drawing for ${typeName}:\n(Removal requires Admin approval)`);
+      if (reason === null) return;
+      if (!reason.trim()) {
+        alert('A reason is required to submit a removal request.');
         return;
       }
 
       try {
         const token = (window.AuthService && typeof window.AuthService.getToken === 'function') ? window.AuthService.getToken() : '';
-        const resp = await fetch(`/api/ducting-types/${encodeURIComponent(typeName)}/drawing`, {
-          method: 'DELETE',
+        const resp = await fetch(`/api/ducting-types/standard-drawings/${drawingId}/request-removal`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ reason: reason.trim() })
+        });
+
+        if (!resp.ok) {
+          const errData = await resp.json().catch(() => ({}));
+          throw new Error(errData.error || `HTTP ${resp.status}`);
+        }
+
+        if (window.UI && window.UI.showToast) {
+          window.UI.showToast('Removal requested successfully. Pending Admin review.', 'info');
+        }
+        await this.loadTypes();
+      } catch (err) {
+        console.error('[DuctingConfig] Removal request error:', err);
+        alert(`Failed to submit removal request: ${err.message}`);
+      }
+    },
+
+    async approveRemoval(requestId, typeName) {
+      if (!confirm(`Are you sure you want to APPROVE the removal of standard drawing for ${typeName}?\n\nNote: Existing PR records will remain intact.`)) {
+        return;
+      }
+
+      try {
+        const token = (window.AuthService && typeof window.AuthService.getToken === 'function') ? window.AuthService.getToken() : '';
+        const resp = await fetch(`/api/ducting-types/removal-requests/${requestId}/approve`, {
+          method: 'POST',
           headers: {
             'Authorization': `Bearer ${token}`
           }
@@ -3863,13 +3931,73 @@
         }
 
         if (window.UI && window.UI.showToast) {
-          window.UI.showToast(`Master drawing for ${typeName} removed.`, 'info');
+          window.UI.showToast(`Standard drawing removal approved for ${typeName}.`, 'success');
         }
         await this.loadTypes();
       } catch (err) {
-        console.error('[DuctingConfig] Delete error:', err);
-        alert(`Failed to remove master drawing: ${err.message}`);
+        console.error('[DuctingConfig] Approve error:', err);
+        alert(`Failed to approve removal: ${err.message}`);
       }
+    },
+
+    async rejectRemoval(requestId, typeName) {
+      const comment = prompt(`Provide an optional comment for REJECTING removal request for ${typeName}:`);
+      if (comment === null) return;
+
+      try {
+        const token = (window.AuthService && typeof window.AuthService.getToken === 'function') ? window.AuthService.getToken() : '';
+        const resp = await fetch(`/api/ducting-types/removal-requests/${requestId}/reject`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ adminComment: comment.trim() })
+        });
+
+        if (!resp.ok) {
+          const errData = await resp.json().catch(() => ({}));
+          throw new Error(errData.error || `HTTP ${resp.status}`);
+        }
+
+        if (window.UI && window.UI.showToast) {
+          window.UI.showToast(`Removal request rejected for ${typeName}. Drawing remains Active.`, 'info');
+        }
+        await this.loadTypes();
+      } catch (err) {
+        console.error('[DuctingConfig] Reject error:', err);
+        alert(`Failed to reject removal: ${err.message}`);
+      }
+    },
+
+    async viewDrawing(typeName) {
+      const t = this.types.find(item => item.typeName === typeName);
+      if (!t || !t.drawing || !t.drawing.id) {
+        alert('No drawing found for this ducting type.');
+        return;
+      }
+      if (window.DocumentViewer) {
+        window.DocumentViewer.open(t.drawing);
+      } else {
+        const token = (window.AuthService && typeof window.AuthService.getToken === 'function') ? window.AuthService.getToken() : '';
+        window.open(`/api/documents/standard-drawings/${t.drawing.id}/view?token=${encodeURIComponent(token)}`, '_blank');
+      }
+    },
+
+    async downloadDrawing(typeName) {
+      const t = this.types.find(item => item.typeName === typeName);
+      if (!t || !t.drawing || !t.drawing.id) {
+        alert('No drawing found for this ducting type.');
+        return;
+      }
+      const fileName = t.drawing.fileName || `${typeName}_Standard_Drawing.pdf`;
+      const token = (window.AuthService && typeof window.AuthService.getToken === 'function') ? window.AuthService.getToken() : '';
+      const a = document.createElement('a');
+      a.href = `/api/documents/standard-drawings/${t.drawing.id}/download?token=${encodeURIComponent(token)}`;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
     }
   };
 
@@ -3957,10 +4085,11 @@
         isPdf: isPdf
       };
 
-      if (docId) {
+      const viewEndpoint = (typeof docOrItem === 'object' && docOrItem !== null && docOrItem.viewUrl) ? docOrItem.viewUrl : (docId ? `/api/documents/${docId}/view` : null);
+      if (viewEndpoint) {
         const token = (window.AuthService && typeof window.AuthService.getToken === 'function') ? window.AuthService.getToken() : '';
         try {
-          const resp = await fetch(`/api/documents/${docId}/view`, {
+          const resp = await fetch(viewEndpoint, {
             headers: token ? { 'Authorization': `Bearer ${token}` } : {}
           });
 
@@ -7660,17 +7789,61 @@
                       }
                       const cutDisplay = isCut ? (rawCut ? (/\b(mm|in|ft|m|cm)\b/i.test(rawCut) ? rawCut : `${rawCut} mm`) : '—') : '—';
 
-                      const drw = it.engineeringDrawing || it.drawingAttachment;
+                      const std = it.standardDrawing;
+                      const legacyDrw = it.engineeringDrawing || it.drawingAttachment;
+
                       let drwCardHtml = '';
-                      if (drw) {
-                        const drwName = drw.fileName || drw.originalFilename || drw.name || 'Engineering Drawing';
-                        const drwType = ((drw.mimeType && drw.mimeType.includes('pdf')) || String(drwName).toLowerCase().endsWith('.pdf')) ? 'PDF' : 'IMAGE';
-                        const isPdf = drwType === 'PDF';
-                        const sz = drw.fileSize || drw.fileSizeBytes || drw.size;
-                        const drwSizeStr = sz ? `${(sz / 1024).toFixed(1)} KB` : '';
-                        const docId = drw.id || drw.documentId;
+                      if (std) {
+                        const stdName = std.fileName || `${it.ductingType || it.ducting_type || 'Ducting'} Standard Drawing`;
+                        const isStdPdf = ((std.mimeType && std.mimeType.includes('pdf')) || String(stdName).toLowerCase().endsWith('.pdf'));
                         const token = (window.AuthService && typeof window.AuthService.getToken === 'function') ? window.AuthService.getToken() : '';
-                        const thumbSrc = docId ? `/api/documents/${docId}/view?token=${encodeURIComponent(token)}` : (drw.viewUrl ? `${drw.viewUrl}?token=${encodeURIComponent(token)}` : (drw.blobUrl || drw.dataUrl || ''));
+                        const stdId = std.id || it.standard_drawing_id;
+                        const stdViewUrl = stdId ? `/api/documents/standard-drawings/${stdId}/view?token=${encodeURIComponent(token)}` : (std.viewUrl ? `${std.viewUrl}?token=${encodeURIComponent(token)}` : '');
+                        const stdVer = std.version || it.standard_drawing_version || 1;
+
+                        drwCardHtml = `
+                          <div class="pr-card-drawing-section" style="margin-top:10px; padding:10px 14px; background:#f0f9ff; border:1px solid #bae6fd; border-left:4px solid #0284c7; border-radius:6px; max-width:320px;">
+                            <div style="font-size:0.72rem; font-weight:800; color:#0369a1; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px; display:flex; justify-content:space-between; align-items:center;">
+                              <span>📐 STANDARD DRAWING</span>
+                              <span style="background:#0284c7; color:#fff; font-size:0.65rem; padding:2px 6px; border-radius:3px; font-weight:700;">VERSION ${stdVer}</span>
+                            </div>
+                            ${stdViewUrl ? (isStdPdf ? `
+                              <div style="width: 100%; height: 95px; border: 1px solid #bfdbfe; border-radius: 4px; overflow: hidden; background: #fff; margin-bottom: 8px; position: relative; cursor: pointer;" onclick="UI.viewStandardDrawingDocument(${stdId})" title="Click to view standard drawing">
+                                <iframe src="${stdViewUrl}#page=1&view=FitH&toolbar=0&navpanes=0" style="width: 100%; height: 100%; border: none; pointer-events: none;" tabindex="-1"></iframe>
+                                <div style="position: absolute; bottom: 3px; right: 3px; background: rgba(15,23,42,0.8); color: #fff; font-size: 0.62rem; padding: 1px 5px; border-radius: 3px; font-weight: 600; pointer-events: none;">🔍 Expand</div>
+                              </div>
+                            ` : `
+                              <div style="width: 100%; height: 95px; border: 1px solid #bfdbfe; border-radius: 4px; overflow: hidden; background: #fff; margin-bottom: 8px; display: flex; align-items: center; justify-content: center; position: relative; cursor: pointer;" onclick="UI.viewStandardDrawingDocument(${stdId})" title="Click to view standard drawing">
+                                <img src="${stdViewUrl}" alt="Standard Drawing" style="max-width: 100%; max-height: 100%; object-fit: contain;">
+                                <div style="position: absolute; bottom: 3px; right: 3px; background: rgba(15,23,42,0.8); color: #fff; font-size: 0.62rem; padding: 1px 5px; border-radius: 3px; font-weight: 600; pointer-events: none;">🔍 Expand</div>
+                              </div>
+                            `) : ''}
+                            <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
+                              <div>
+                                <div style="font-size:0.75rem; font-family:var(--font-mono); font-weight:600; color:#0f172a; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:180px;" title="${escapeHtml(stdName)}">
+                                  ${escapeHtml(stdName)}
+                                </div>
+                              </div>
+                              <div style="display:flex; gap:6px;">
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="UI.viewStandardDrawingDocument(${stdId})" style="padding:2px 8px; font-size:0.7rem; border-color:#0284c7; color:#0284c7; font-weight:600;">
+                                  View
+                                </button>
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="UI.downloadStandardDrawingDocument(${stdId}, '${escapeHtml(stdName)}')" style="padding:2px 8px; font-size:0.7rem; font-weight:600;">
+                                  Download
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        `;
+                      } else if (legacyDrw) {
+                        const drwName = legacyDrw.fileName || legacyDrw.originalFilename || legacyDrw.name || 'Engineering Drawing';
+                        const drwType = ((legacyDrw.mimeType && legacyDrw.mimeType.includes('pdf')) || String(drwName).toLowerCase().endsWith('.pdf')) ? 'PDF' : 'IMAGE';
+                        const isPdf = drwType === 'PDF';
+                        const sz = legacyDrw.fileSize || legacyDrw.fileSizeBytes || legacyDrw.size;
+                        const drwSizeStr = sz ? `${(sz / 1024).toFixed(1)} KB` : '';
+                        const docId = legacyDrw.id || legacyDrw.documentId;
+                        const token = (window.AuthService && typeof window.AuthService.getToken === 'function') ? window.AuthService.getToken() : '';
+                        const thumbSrc = docId ? `/api/documents/${docId}/view?token=${encodeURIComponent(token)}` : (legacyDrw.viewUrl ? `${legacyDrw.viewUrl}?token=${encodeURIComponent(token)}` : (legacyDrw.blobUrl || legacyDrw.dataUrl || ''));
 
                         drwCardHtml = `
                           <div class="pr-card-drawing-section" style="margin-top:10px; padding:10px 14px; background:#f0f9ff; border:1px solid #bae6fd; border-left:4px solid #0284c7; border-radius:6px; max-width:320px;">
@@ -8058,6 +8231,31 @@
       await this.downloadDocument(docId, fileName);
     },
 
+    viewStandardDrawingDocument(drawingId) {
+      if (!drawingId) return;
+      const token = window.AuthService ? window.AuthService.getToken() : '';
+      if (window.DocumentViewer) {
+        window.DocumentViewer.open({
+          id: drawingId,
+          viewUrl: `/api/documents/standard-drawings/${drawingId}/view`,
+          downloadUrl: `/api/documents/standard-drawings/${drawingId}/download`
+        });
+      } else {
+        window.open(`/api/documents/standard-drawings/${drawingId}/view?token=${encodeURIComponent(token)}`, '_blank');
+      }
+    },
+
+    downloadStandardDrawingDocument(drawingId, fileName) {
+      if (!drawingId) return;
+      const token = window.AuthService ? window.AuthService.getToken() : '';
+      const a = document.createElement('a');
+      a.href = `/api/documents/standard-drawings/${drawingId}/download?token=${encodeURIComponent(token)}`;
+      a.download = fileName || 'Standard_Drawing.pdf';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    },
+
     openVoucherModal(pr) {
       this.selectedPRForVoucher = pr;
       const modal = document.getElementById('modalPrVoucher');
@@ -8246,13 +8444,73 @@
                 if (dItem.l2 || dItem.dim_l2) dims.push(`L2: ${dItem.l2 || dItem.dim_l2} mm`);
                 if (dItem.thickness) dims.push(`Thickness: ${dItem.thickness} mm`);
 
+                const std = dItem.standardDrawing;
                 const drw = dItem.engineeringDrawing || dItem.drawingAttachment;
-                const dName = drw ? (drw.fileName || drw.originalFilename || drw.name || 'Engineering Drawing') : '';
-                const isPdf = drw ? (((drw.mimeType && drw.mimeType.includes('pdf')) || String(dName).toLowerCase().endsWith('.pdf'))) : false;
-                const dSize = drw ? (drw.fileSize || drw.fileSizeBytes || drw.size) : null;
-                const dSizeStr = dSize ? `${(dSize / 1024).toFixed(1)} KB` : '';
                 const token = window.AuthService ? window.AuthService.getToken() : '';
-                const viewUrl = drw ? (drw.viewUrl ? `${drw.viewUrl}?token=${encodeURIComponent(token)}` : (drw.dataUrl || '')) : '';
+
+                let drawingsHtml = '';
+                if (std) {
+                  const sName = std.fileName || `${dItem.ductingType || 'Ducting'} Standard Drawing`;
+                  const isPdf = ((std.mimeType && std.mimeType.includes('pdf')) || String(sName).toLowerCase().endsWith('.pdf'));
+                  const sSizeStr = std.fileSize ? `${(std.fileSize / 1024).toFixed(1)} KB` : '';
+                  const sUrl = std.id ? `/api/documents/standard-drawings/${std.id}/view?token=${encodeURIComponent(token)}` : (std.viewUrl ? `${std.viewUrl}?token=${encodeURIComponent(token)}` : '');
+                  const sVer = std.version || dItem.standard_drawing_version || 1;
+
+                  drawingsHtml += `
+                    <div style="margin-top:8px; padding:10px 12px; background:#ffffff; border:1px solid #0284c7; border-left:4px solid #0284c7; border-radius:6px;">
+                      <div style="font-size:0.72rem; font-weight:800; color:#0369a1; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px; display:flex; justify-content:space-between;">
+                        <span>📐 STANDARD DRAWING</span>
+                        <span style="background:#0284c7; color:#fff; font-size:0.65rem; padding:1px 5px; border-radius:3px;">VERSION ${sVer}</span>
+                      </div>
+                      <div style="font-size:0.82rem; font-weight:700; color:#0f172a;">
+                        Filename: <span style="font-family:var(--font-mono);">${escapeHtml(sName)}</span>
+                      </div>
+                      <div style="font-size:0.75rem; color:#64748b; margin-top:2px;">
+                        Type: <strong>${isPdf ? 'PDF' : 'IMAGE'}</strong> ${sSizeStr ? ` &bull; Size: <strong>${sSizeStr}</strong>` : ''}
+                      </div>
+                      ${!isPdf && sUrl ? `
+                        <div style="margin-top:8px; text-align:center;">
+                          <img src="${sUrl}" alt="Standard Drawing" style="max-height:200px; max-width:100%; border:1px solid #cbd5e1; border-radius:4px; object-fit:contain;">
+                        </div>
+                      ` : (isPdf ? `
+                        <div style="margin-top:6px; font-size:0.74rem; color:#0284c7; font-style:italic;">
+                          📄 Official Standard Engineering Drawing specification is appended to the PR PDF document.
+                        </div>
+                      ` : '')}
+                    </div>
+                  `;
+                }
+
+                if (!std && drw) {
+                  const dName = drw.fileName || drw.originalFilename || drw.name || 'Engineering Drawing';
+                  const isPdf = (((drw.mimeType && drw.mimeType.includes('pdf')) || String(dName).toLowerCase().endsWith('.pdf')));
+                  const dSize = drw.fileSize || drw.fileSizeBytes || drw.size;
+                  const dSizeStr = dSize ? `${(dSize / 1024).toFixed(1)} KB` : '';
+                  const viewUrl = drw.viewUrl ? `${drw.viewUrl}?token=${encodeURIComponent(token)}` : (drw.dataUrl || '');
+
+                  drawingsHtml += `
+                    <div style="margin-top:8px; padding:10px 12px; background:#ffffff; border:1px solid #0284c7; border-left:4px solid #0284c7; border-radius:6px;">
+                      <div style="font-size:0.72rem; font-weight:800; color:#0369a1; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px;">
+                        ENGINEERING DRAWING
+                      </div>
+                      <div style="font-size:0.82rem; font-weight:700; color:#0f172a;">
+                        Filename: <span style="font-family:var(--font-mono);">${escapeHtml(dName)}</span>
+                      </div>
+                      <div style="font-size:0.75rem; color:#64748b; margin-top:2px;">
+                        Type: <strong>${isPdf ? 'PDF' : 'IMAGE'}</strong> ${dSizeStr ? ` &bull; Size: <strong>${dSizeStr}</strong>` : ''}
+                      </div>
+                      ${!isPdf && viewUrl ? `
+                        <div style="margin-top:8px; text-align:center;">
+                          <img src="${viewUrl}" alt="Engineering Drawing" style="max-height:220px; max-width:100%; border:1px solid #cbd5e1; border-radius:4px; object-fit:contain;">
+                        </div>
+                      ` : (isPdf ? `
+                        <div style="margin-top:6px; font-size:0.74rem; color:#0284c7; font-style:italic;">
+                          📄 Complete original vector engineering drawing specification is appended to the official PR PDF document.
+                        </div>
+                      ` : '')}
+                    </div>
+                  `;
+                }
 
                 return `
                   <div style="background:#f0f9ff; border:1px solid #bae6fd; border-radius:var(--radius-md); padding:10px 14px; font-size:0.85rem;">
@@ -8262,28 +8520,7 @@
                     <div style="color:#0f172a; font-family:var(--font-mono); font-size:0.8rem;">
                       ${dims.join(' &nbsp;|&nbsp; ')}
                     </div>
-                    ${drw ? `
-                      <div style="margin-top:8px; padding:10px 12px; background:#ffffff; border:1px solid #0284c7; border-left:4px solid #0284c7; border-radius:6px;">
-                        <div style="font-size:0.72rem; font-weight:800; color:#0369a1; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:4px;">
-                          ENGINEERING DRAWING
-                        </div>
-                        <div style="font-size:0.82rem; font-weight:700; color:#0f172a;">
-                          Filename: <span style="font-family:var(--font-mono);">${escapeHtml(dName)}</span>
-                        </div>
-                        <div style="font-size:0.75rem; color:#64748b; margin-top:2px;">
-                          Type: <strong>${isPdf ? 'PDF' : 'IMAGE'}</strong> ${dSizeStr ? ` &bull; Size: <strong>${dSizeStr}</strong>` : ''}
-                        </div>
-                        ${!isPdf && viewUrl ? `
-                          <div style="margin-top:8px; text-align:center;">
-                            <img src="${viewUrl}" alt="Engineering Drawing" style="max-height:220px; max-width:100%; border:1px solid #cbd5e1; border-radius:4px; object-fit:contain;">
-                          </div>
-                        ` : (isPdf ? `
-                          <div style="margin-top:6px; font-size:0.74rem; color:#0284c7; font-style:italic;">
-                            📄 Complete original vector engineering drawing specification is appended to the official PR PDF document.
-                          </div>
-                        ` : '')}
-                      </div>
-                    ` : ''}
+                    ${drawingsHtml}
                   </div>
                 `;
               }).join('')}
@@ -8349,7 +8586,7 @@
           </div>
         </div>
 
-        ${items.some(it => it.engineeringDrawing || it.drawingAttachment) ? `
+        ${items.some(it => it.standardDrawing || it.engineeringDrawing || it.drawingAttachment) ? `
           <!-- OFFICIAL ENGINEERING DRAWING APPENDIX FOR PRINT VIEW -->
           <div class="pr-doc-section pr-print-drawing-appendix" style="margin-top:2.5rem; page-break-before:always; border-top:2px solid #0284c7; padding-top:1.5rem;">
             <div class="pr-doc-section-title">
@@ -8357,42 +8594,79 @@
               <span style="font-size:0.85rem; font-weight:800; color:#0284c7; font-family:var(--font-mono);">${escapeHtml(prNum)}</span>
             </div>
             <div style="display:flex; flex-direction:column; gap:1.5rem; margin-top:1rem;">
-              ${items.filter(it => it.engineeringDrawing || it.drawingAttachment).map((it, drwIdx) => {
+              ${items.filter(it => it.standardDrawing || it.engineeringDrawing || it.drawingAttachment).map((it, itemIdx) => {
+                const std = it.standardDrawing;
                 const drw = it.engineeringDrawing || it.drawingAttachment;
-                const dName = drw.fileName || drw.originalFilename || drw.name || 'Engineering Drawing';
-                const isPdf = ((drw.mimeType && drw.mimeType.includes('pdf')) || String(dName).toLowerCase().endsWith('.pdf'));
                 const token = window.AuthService ? window.AuthService.getToken() : '';
-                const viewUrl = drw.viewUrl ? `${drw.viewUrl}?token=${encodeURIComponent(token)}` : (drw.dataUrl || '');
-                const dSize = drw.fileSize || drw.fileSizeBytes || drw.size;
-                const dSizeStr = dSize ? `${(dSize / 1024).toFixed(1)} KB` : '';
+                const ductName = it.productName || it.product_name || 'Ducting Item';
+                const ductType = it.ductingType || it.ducting_type || 'Custom';
 
-                return `
-                  <div style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:6px; padding:16px;">
-                    <div style="font-size:0.9rem; font-weight:700; color:#0369a1; margin-bottom:8px;">
-                      Appendix #${drwIdx + 1}: ${escapeHtml(it.productName || it.product_name || 'Ducting Item')} (${escapeHtml(it.ductingType || it.ducting_type || 'Custom')})
+                const sections = [];
+
+                if (std) {
+                  const sName = std.fileName || `${ductType} Standard Drawing`;
+                  const isPdf = ((std.mimeType && std.mimeType.includes('pdf')) || String(sName).toLowerCase().endsWith('.pdf'));
+                  const sSizeStr = std.fileSize ? `${(std.fileSize / 1024).toFixed(1)} KB` : '';
+                  const sUrl = std.id ? `/api/documents/standard-drawings/${std.id}/view?token=${encodeURIComponent(token)}` : (std.viewUrl ? `${std.viewUrl}?token=${encodeURIComponent(token)}` : '');
+                  const sVer = std.version || it.standard_drawing_version || 1;
+
+                  sections.push(`
+                    <div style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:6px; padding:16px;">
+                      <div style="font-size:0.9rem; font-weight:700; color:#0369a1; margin-bottom:8px;">
+                        Standard Engineering Drawing (Version ${sVer}): ${escapeHtml(ductName)} (${escapeHtml(ductType)})
+                      </div>
+                      <div style="display:grid; grid-template-columns: repeat(2, 1fr); gap:6px 12px; font-size:0.82rem; margin-bottom:12px; background:#fff; padding:10px 14px; border:1px solid #e2e8f0; border-radius:4px;">
+                        <div><strong>Drawing File:</strong> <span style="font-family:var(--font-mono);">${escapeHtml(sName)}</span></div>
+                        <div><strong>Format:</strong> ${isPdf ? 'Vector PDF' : 'Image'}</div>
+                        <div><strong>Version:</strong> ${sVer}</div>
+                        <div><strong>PR Item:</strong> ${escapeHtml(ductName)}</div>
+                      </div>
+                      ${!isPdf && sUrl ? `
+                        <div style="text-align:center; padding:12px; background:#fff; border:1px solid #e2e8f0; border-radius:4px;">
+                          <img src="${sUrl}" alt="${escapeHtml(sName)}" style="max-width:100%; max-height:480px; object-fit:contain;">
+                        </div>
+                      ` : `
+                        <div style="padding:16px; background:#f0f9ff; border:1px solid #bae6fd; border-radius:4px; font-size:0.85rem; color:#0369a1;">
+                          <div style="font-weight:700; font-size:0.9rem; margin-bottom:4px;">📄 Official Standard Drawing Specification (${escapeHtml(sName)})</div>
+                          <div>This standard technical drawing (Version ${sVer}) is attached and permanently snapshotted in the generated official PR PDF document.</div>
+                        </div>
+                      `}
                     </div>
-                    <div style="display:grid; grid-template-columns: repeat(2, 1fr); gap:6px 12px; font-size:0.82rem; margin-bottom:12px; background:#fff; padding:10px 14px; border:1px solid #e2e8f0; border-radius:4px;">
-                      <div><strong>Drawing File:</strong> <span style="font-family:var(--font-mono);">${escapeHtml(dName)}</span></div>
-                      <div><strong>Format:</strong> ${isPdf ? 'Vector PDF' : 'Image'}</div>
-                      <div><strong>File Size:</strong> ${dSizeStr || '—'}</div>
-                      <div><strong>PR Item:</strong> ${escapeHtml(it.productName || it.product_name || 'Ducting')}</div>
+                  `);
+                }
+
+                if (!std && drw) {
+                  const dName = drw.fileName || drw.originalFilename || drw.name || 'Engineering Drawing';
+                  const isPdf = ((drw.mimeType && drw.mimeType.includes('pdf')) || String(dName).toLowerCase().endsWith('.pdf'));
+                  const dSizeStr = drw.fileSize ? `${(drw.fileSize / 1024).toFixed(1)} KB` : '';
+                  const viewUrl = drw.viewUrl ? `${drw.viewUrl}?token=${encodeURIComponent(token)}` : (drw.dataUrl || '');
+
+                  sections.push(`
+                    <div style="background:#f8fafc; border:1px solid #cbd5e1; border-radius:6px; padding:16px;">
+                      <div style="font-size:0.9rem; font-weight:700; color:#0369a1; margin-bottom:8px;">
+                        Engineering Drawing: ${escapeHtml(ductName)} (${escapeHtml(ductType)})
+                      </div>
+                      <div style="display:grid; grid-template-columns: repeat(2, 1fr); gap:6px 12px; font-size:0.82rem; margin-bottom:12px; background:#fff; padding:10px 14px; border:1px solid #e2e8f0; border-radius:4px;">
+                        <div><strong>Drawing File:</strong> <span style="font-family:var(--font-mono);">${escapeHtml(dName)}</span></div>
+                        <div><strong>Format:</strong> ${isPdf ? 'Vector PDF' : 'Image'}</div>
+                        <div><strong>File Size:</strong> ${dSizeStr || '—'}</div>
+                        <div><strong>PR Item:</strong> ${escapeHtml(ductName)}</div>
+                      </div>
+                      ${!isPdf && viewUrl ? `
+                        <div style="text-align:center; padding:12px; background:#fff; border:1px solid #e2e8f0; border-radius:4px;">
+                          <img src="${viewUrl}" alt="${escapeHtml(dName)}" style="max-width:100%; max-height:480px; object-fit:contain;">
+                        </div>
+                      ` : `
+                        <div style="padding:16px; background:#f0f9ff; border:1px solid #bae6fd; border-radius:4px; font-size:0.85rem; color:#0369a1;">
+                          <div style="font-weight:700; font-size:0.9rem; margin-bottom:4px;">📄 Vector Engineering Drawing Specification (${escapeHtml(dName)})</div>
+                          <div>This technical specification is preserved in full vector resolution and appended directly into the generated official PR PDF document.</div>
+                        </div>
+                      `}
                     </div>
-                    ${!isPdf && viewUrl ? `
-                      <div style="text-align:center; padding:12px; background:#fff; border:1px solid #e2e8f0; border-radius:4px;">
-                        <img src="${viewUrl}" alt="${escapeHtml(dName)}" style="max-width:100%; max-height:480px; object-fit:contain;">
-                      </div>
-                    ` : (isPdf && viewUrl ? `
-                      <div style="text-align:center; padding:8px; background:#fff; border:1px solid #e2e8f0; border-radius:4px;">
-                        <iframe src="${viewUrl}#page=1&view=FitH" title="${escapeHtml(dName)}" style="width:100%; height:550px; border:none; background:#ffffff;"></iframe>
-                      </div>
-                    ` : `
-                      <div style="padding:16px; background:#f0f9ff; border:1px solid #bae6fd; border-radius:4px; font-size:0.85rem; color:#0369a1;">
-                        <div style="font-weight:700; font-size:0.9rem; margin-bottom:4px;">📄 Vector Engineering Drawing Specification (${escapeHtml(dName)})</div>
-                        <div>This technical specification is preserved in full vector resolution and appended directly into the generated official PR PDF document.</div>
-                      </div>
-                    `)}
-                  </div>
-                `;
+                  `);
+                }
+
+                return sections.join('');
               }).join('')}
             </div>
           </div>

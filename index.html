@@ -554,15 +554,15 @@
         </form>
       </div>
 
-      <!-- 2. Master Ducting Engineering Drawings Configuration -->
+      <!-- 2. Master Ducting Standard Drawings Management & Removal Requests -->
       <div class="settings-card" id="cardDuctingConfig" style="margin-top: 1.5rem;">
         <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem; margin-bottom: 0.75rem;">
           <div>
             <h3 style="margin: 0; font-size: 1.15rem; font-weight: 700; color: var(--text-main);">
-              2. Master Ducting Engineering Drawings
+              2. Ducting Standard Drawings &amp; Version Management
             </h3>
             <p class="settings-desc" style="margin-top: 0.35rem; margin-bottom: 0;">
-              Upload master drawings once per ducting type. Configured drawings automatically attach to all future PRs created for that ducting type. Replacing a master drawing applies to future PRs only, preserving historical PR records.
+              Production standard engineering reference drawings for all Ducting types. Both Admins and Employees may upload and replace standard drawings or request removal. Drawing removal requires Admin approval. Historical PRs permanently preserve their original snapshot version.
             </p>
           </div>
           <button type="button" class="btn btn-secondary btn-sm" onclick="DuctingConfigController.loadTypes()" style="display: inline-flex; align-items: center; gap: 0.35rem;">
@@ -570,8 +570,65 @@
           </button>
         </div>
 
-        <div id="ductingConfigContainer" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; margin-top: 1rem;">
-          <!-- Loaded dynamically by DuctingConfigController.render() -->
+        <!-- Table 1: DUCTING STANDARD DRAWINGS -->
+        <div style="margin-top: 1rem; overflow-x: auto;">
+          <table class="table" style="width: 100%; border-collapse: collapse; font-size: 0.85rem;" id="tableStandardDrawings">
+            <thead>
+              <tr style="background: #f8fafc; border-bottom: 2px solid var(--border-color); text-align: left;">
+                <th style="padding: 0.65rem 0.75rem;">Ducting Type</th>
+                <th style="padding: 0.65rem 0.75rem;">Current Version</th>
+                <th style="padding: 0.65rem 0.75rem;">File Name</th>
+                <th style="padding: 0.65rem 0.75rem;">Uploaded By</th>
+                <th style="padding: 0.65rem 0.75rem;">Date</th>
+                <th style="padding: 0.65rem 0.75rem;">Status</th>
+                <th style="padding: 0.65rem 0.75rem; text-align: right;">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="tbodyStandardDrawings">
+              <tr>
+                <td colspan="7" style="text-align: center; padding: 1.5rem; color: #64748b;">
+                  Loading standard drawings...
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Table 2: PENDING DRAWING REMOVAL REQUESTS (ADMIN APPROVAL) -->
+        <div id="sectionPendingRemovals" style="margin-top: 2rem; border-top: 1px solid var(--border-color); padding-top: 1.25rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+            <div>
+              <h4 style="margin: 0; font-size: 1rem; font-weight: 700; color: #b91c1c; display: flex; align-items: center; gap: 0.4rem;">
+                <span>⚠️</span> Pending Drawing Removal Requests
+              </h4>
+              <p style="margin: 0.25rem 0 0 0; font-size: 0.8rem; color: var(--text-muted);">
+                Standard drawings requested for removal. Only Admins can approve or reject removal. Approved removal unlinks the active drawing without breaking historical PRs.
+              </p>
+            </div>
+            <span class="badge" id="badgePendingRemovalCount" style="background: #fef2f2; color: #b91c1c; font-weight: 700; border: 1px solid #fecaca; display: none;">0 Pending</span>
+          </div>
+
+          <div style="overflow-x: auto;">
+            <table class="table" style="width: 100%; border-collapse: collapse; font-size: 0.85rem;" id="tableRemovalRequests">
+              <thead>
+                <tr style="background: #fff1f2; border-bottom: 2px solid #fecaca; text-align: left; color: #9f1239;">
+                  <th style="padding: 0.65rem 0.75rem;">Ducting Type</th>
+                  <th style="padding: 0.65rem 0.75rem;">Drawing Version</th>
+                  <th style="padding: 0.65rem 0.75rem;">Requested By</th>
+                  <th style="padding: 0.65rem 0.75rem;">Request Date</th>
+                  <th style="padding: 0.65rem 0.75rem;">Reason</th>
+                  <th style="padding: 0.65rem 0.75rem; text-align: right;">Review Actions</th>
+                </tr>
+              </thead>
+              <tbody id="tbodyRemovalRequests">
+                <tr>
+                  <td colspan="6" style="text-align: center; padding: 1.25rem; color: #64748b;">
+                    No pending removal requests.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
 
         <input type="file" id="inputMasterDrawingUpload" accept="image/*,.pdf" style="display: none;" onchange="DuctingConfigController.handleFileSelected(event)">
@@ -2449,7 +2506,7 @@
           <div id="ductingSketchSection" style="margin-bottom: 1.25rem;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; flex-wrap: wrap; gap: 0.5rem;">
               <h4 id="ductingSketchHeading" style="font-size: 0.98rem; color: var(--text-main); margin: 0; font-weight: 700; letter-spacing: 0.5px;">
-                ENGINEERING DRAWING
+                Engineering Sketch
               </h4>
             </div>
             <div id="ductingSketchContainer" class="ducting-sketch-box" style="margin-bottom: 0;">
@@ -2463,12 +2520,14 @@
           <!-- Dimensions Form -->
           <div style="margin-bottom: 1.25rem;">
             <h4 style="font-size: 0.95rem; color: var(--text-main); margin-bottom: 0.75rem; font-weight: 700; border-bottom: 1px solid var(--border-color); padding-bottom: 0.4rem;">
-              Dimensions
+              Project Dimensions
             </h4>
             <div id="ductingDimensionsFieldsContainer" class="ducting-fields-grid">
               <!-- Rendered dynamically for selected type only -->
             </div>
           </div>
+
+          <input type="file" id="inputWorkflowStandardDrawing" accept="image/png,image/jpeg,image/jpg,application/pdf" style="display: none;" onchange="DuctingWorkflowController.handleStandardDrawingSelected(event)">
 
           <!-- Additional PR Fields: Material / Grade, Quantity, Remarks -->
           <div style="margin-top: 1.25rem; padding-top: 1rem; border-top: 1px dashed var(--border-color);">

@@ -70,6 +70,17 @@ async function generatePrDocuments(prId) {
 
   const itemsRes = await query(
     `SELECT it.*,
+            sd.id AS std_id,
+            sd.version AS std_version,
+            sd.file_name AS std_file_name,
+            sd.original_file_name AS std_orig_file_name,
+            sd.file_path_or_storage_key AS std_storage_key,
+            sd.mime_type AS std_mime_type,
+            pdoc.id AS prj_id,
+            pdoc.file_name AS prj_file_name,
+            pdoc.original_file_name AS prj_orig_file_name,
+            pdoc.file_path_or_storage_key AS prj_storage_key,
+            pdoc.mime_type AS prj_mime_type,
             doc.id AS drawing_id,
             doc.file_name AS drawing_file_name,
             doc.original_file_name AS drawing_orig_file_name,
@@ -77,6 +88,8 @@ async function generatePrDocuments(prId) {
             doc.mime_type AS drawing_mime_type,
             doc.file_size_bytes AS drawing_file_size
      FROM pr_items it
+     LEFT JOIN standard_drawings sd ON sd.id = it.standard_drawing_id
+     LEFT JOIN documents pdoc ON pdoc.id = it.project_drawing_document_id
      LEFT JOIN documents doc ON (doc.id = it.drawing_document_id OR (doc.purchase_request_item_id = it.id AND doc.document_type = 'ENGINEERING_DRAWING'))
      WHERE it.purchase_request_id = $1
      ORDER BY it.id ASC`,
@@ -180,6 +193,8 @@ async function generatePrDocuments(prId) {
   const result = {
     excelFilePath,
     pdfFilePath,
+    excelPath: excelFilePath,
+    pdfPath: pdfFilePath,
     excelFileName,
     pdfFileName,
     sha256Checksum,
@@ -259,7 +274,9 @@ function generateExcelFile(pr, items, filePath) {
       'Estimated Total (IDR)',
       'Remarks',
       'Ducting Type',
-      'Ducting Dimensions'
+      'Ducting Dimensions',
+      'Standard Drawing Version',
+      'Standard Drawing Reference'
     ]
   ];
 
@@ -314,7 +331,9 @@ function generateExcelFile(pr, items, filePath) {
       cost !== null ? cost : '—',
       it.remarks || '',
       it.ducting_type || '',
-      ductDims.join(', ')
+      ductDims.join(', '),
+      it.standard_drawing_version ? (`V${it.standard_drawing_version}`) : (it.std_version ? `V${it.std_version}` : '—'),
+      it.std_orig_file_name || it.std_file_name || '—'
     ]);
   });
 
@@ -421,7 +440,11 @@ async function generatePdfFile(pr, items, filePath) {
           let finalBuffer = Buffer.concat(buffers);
 
           // Append Engineering Drawings Appendix using pdf-lib if any items have drawings
-          const hasAnyDrawings = items.some(it => it.drawing_storage_key || it.drawingDocumentId || it.drawing_document_id);
+          const hasAnyDrawings = items.some(it => 
+            it.std_storage_key || it.standard_drawing_id || it.standardDrawingId ||
+            it.prj_storage_key || it.project_drawing_document_id ||
+            it.drawing_storage_key || it.drawingDocumentId || it.drawing_document_id
+          );
 
           if (hasAnyDrawings) {
             try {
@@ -430,30 +453,13 @@ async function generatePdfFile(pr, items, filePath) {
               const fontBold = await mainPdf.embedFont(StandardFonts.HelveticaBold);
               const fontRegular = await mainPdf.embedFont(StandardFonts.Helvetica);
 
-              for (let i = 0; i < items.length; i++) {
-                const item = items[i];
-                let storageKey = item.drawing_storage_key;
-                let fileName = item.drawing_orig_file_name || item.drawing_file_name;
-                let mimeType = item.drawing_mime_type;
-
-                if (!storageKey && (item.drawing_document_id || item.drawingDocumentId)) {
-                  const dId = item.drawing_document_id || item.drawingDocumentId;
-                  const dRes = await query('SELECT * FROM documents WHERE id = $1', [dId]);
-                  if (dRes.rowCount > 0) {
-                    storageKey = dRes.rows[0].file_path_or_storage_key;
-                    fileName = dRes.rows[0].original_file_name || dRes.rows[0].file_name;
-                    mimeType = dRes.rows[0].mime_type;
-                  }
-                }
-
-                if (!storageKey) continue;
-
+              const appendSingleDrawing = async (item, itemIdx, drwCategory, storageKey, fileName, mimeType) => {
+                if (!storageKey) return;
                 const { resolveStoragePath } = require('../routes/documents');
                 const physicalPath = resolveStoragePath ? resolveStoragePath(storageKey) : path.resolve(process.cwd(), storageKey);
-
                 if (!physicalPath || !fs.existsSync(physicalPath)) {
                   console.warn(`[DocumentGenerator] Drawing file not found at ${physicalPath} for item ${item.id}`);
-                  continue;
+                  return;
                 }
 
                 const fileBytes = fs.readFileSync(physicalPath);
@@ -461,28 +467,25 @@ async function generatePdfFile(pr, items, filePath) {
                 const isImg = (mimeType && mimeType.startsWith('image/')) || /\.(png|jpe?g|webp|svg)$/i.test(fileName || physicalPath);
 
                 if (isPdf) {
-                  // Add Appendix Header Page
                   const appendixPage = mainPdf.addPage([595.28, 841.89]); // A4
                   const { width, height } = appendixPage.getSize();
 
-                  // Header banner
                   appendixPage.drawRectangle({
                     x: 36,
                     y: height - 60,
                     width: width - 72,
                     height: 24,
-                    color: rgb(0.008, 0.518, 0.78) // #0284c7
+                    color: rgb(0.008, 0.518, 0.78)
                   });
 
-                  appendixPage.drawText('ENGINEERING DRAWING APPENDIX', {
+                  appendixPage.drawText(drwCategory, {
                     x: 48,
                     y: height - 52,
-                    size: 11,
+                    size: 10,
                     font: fontBold,
                     color: rgb(1, 1, 1)
                   });
 
-                  // Info Box
                   appendixPage.drawRectangle({
                     x: 36,
                     y: height - 195,
@@ -501,7 +504,7 @@ async function generatePdfFile(pr, items, filePath) {
                     color: rgb(0.06, 0.09, 0.16)
                   });
 
-                  appendixPage.drawText(`Item: #${i + 1} — ${item.product_name || item.productName || 'Ducting'}`, {
+                  appendixPage.drawText(`Item: #${itemIdx + 1} — ${item.product_name || item.productName || 'Ducting'}`, {
                     x: 50,
                     y: height - 110,
                     size: 9,
@@ -509,7 +512,7 @@ async function generatePdfFile(pr, items, filePath) {
                     color: rgb(0.06, 0.09, 0.16)
                   });
 
-                  appendixPage.drawText(`Ducting Type: ${item.ducting_type || item.ductingType || 'Straight Duct'}`, {
+                  appendixPage.drawText(`Type: ${item.ducting_type || item.ductingType || 'Custom'} | Category: ${drwCategory}`, {
                     x: 50,
                     y: height - 130,
                     size: 8.5,
@@ -517,7 +520,7 @@ async function generatePdfFile(pr, items, filePath) {
                     color: rgb(0.28, 0.33, 0.41)
                   });
 
-                  appendixPage.drawText(`Drawing: ${fileName || path.basename(physicalPath)}`, {
+                  appendixPage.drawText(`Drawing Reference: ${fileName || path.basename(physicalPath)}`, {
                     x: 50,
                     y: height - 150,
                     size: 8.5,
@@ -525,7 +528,7 @@ async function generatePdfFile(pr, items, filePath) {
                     color: rgb(0.008, 0.518, 0.78)
                   });
 
-                  appendixPage.drawText('Note: The complete original drawing specification is appended immediately below preserving 100% vector fidelity.', {
+                  appendixPage.drawText('Note: Original drawing specification appended below preserving 100% vector fidelity.', {
                     x: 50,
                     y: height - 175,
                     size: 8,
@@ -533,16 +536,13 @@ async function generatePdfFile(pr, items, filePath) {
                     color: rgb(0.39, 0.45, 0.55)
                   });
 
-                  // Load and append original PDF pages
                   const drwPdf = await PDFLibDoc.load(fileBytes);
                   const copiedPages = await mainPdf.copyPages(drwPdf, drwPdf.getPageIndices());
                   copiedPages.forEach(cp => mainPdf.addPage(cp));
                 } else if (isImg) {
-                  // Image Appendix Page
-                  const appendixPage = mainPdf.addPage([595.28, 841.89]); // A4
+                  const appendixPage = mainPdf.addPage([595.28, 841.89]);
                   const { width, height } = appendixPage.getSize();
 
-                  // Header banner
                   appendixPage.drawRectangle({
                     x: 36,
                     y: height - 60,
@@ -551,16 +551,15 @@ async function generatePdfFile(pr, items, filePath) {
                     color: rgb(0.008, 0.518, 0.78)
                   });
 
-                  appendixPage.drawText('ENGINEERING DRAWING APPENDIX', {
+                  appendixPage.drawText(drwCategory, {
                     x: 48,
                     y: height - 52,
-                    size: 11,
+                    size: 10,
                     font: fontBold,
                     color: rgb(1, 1, 1)
                   });
 
-                  // Info line
-                  appendixPage.drawText(`PR Number: ${pr.pr_number || pr.prNumber || '-'}  |  Item: #${i + 1}  |  Ducting Type: ${item.ducting_type || item.ductingType || 'Custom'}  |  Drawing: ${fileName || path.basename(physicalPath)}`, {
+                  appendixPage.drawText(`PR: ${pr.pr_number || pr.prNumber || '-'} | Item #${itemIdx + 1} | ${fileName || path.basename(physicalPath)}`, {
                     x: 36,
                     y: height - 76,
                     size: 8,
@@ -589,6 +588,27 @@ async function generatePdfFile(pr, items, filePath) {
                     width: imgW,
                     height: imgH
                   });
+                }
+              };
+
+              for (let i = 0; i < items.length; i++) {
+                const item = items[i];
+
+                // 1. Standard Reference Drawing
+                let stdStorageKey = item.std_storage_key;
+                let stdFileName = item.std_orig_file_name || item.std_file_name;
+                let stdMimeType = item.std_mime_type;
+                if (!stdStorageKey && item.standard_drawing_id) {
+                  const sRes = await query('SELECT * FROM standard_drawings WHERE id = $1', [item.standard_drawing_id]);
+                  if (sRes.rowCount > 0) {
+                    stdStorageKey = sRes.rows[0].file_path_or_storage_key;
+                    stdFileName = sRes.rows[0].original_file_name || sRes.rows[0].file_name;
+                    stdMimeType = sRes.rows[0].mime_type;
+                  }
+                }
+                if (stdStorageKey) {
+                  const verStr = item.standard_drawing_version || item.std_version || 1;
+                  await appendSingleDrawing(item, i, `STANDARD DUCTING DRAWING (VERSION ${verStr})`, stdStorageKey, stdFileName, stdMimeType);
                 }
               }
 

@@ -286,7 +286,57 @@ const runStartupMigrations = async () => {
         ('Elbow'),
         ('Twin Duct')
       ON CONFLICT (type_name) DO NOTHING;
+      ALTER TABLE ducting_types ADD COLUMN IF NOT EXISTS status VARCHAR(50) NOT NULL DEFAULT 'ACTIVE';
       CREATE INDEX IF NOT EXISTS idx_ducting_types_drawing ON ducting_types(master_drawing_document_id);
+
+      -- Standard Drawings with Versioning & Cloudinary Storage Metadata
+      CREATE TABLE IF NOT EXISTS standard_drawings (
+        id SERIAL PRIMARY KEY,
+        ducting_type_id INTEGER NOT NULL REFERENCES ducting_types(id) ON DELETE CASCADE,
+        version INTEGER NOT NULL DEFAULT 1,
+        file_name VARCHAR(255) NOT NULL,
+        original_file_name VARCHAR(255),
+        file_size_bytes BIGINT,
+        mime_type VARCHAR(100),
+        cloudinary_public_id VARCHAR(500),
+        cloudinary_url TEXT,
+        file_path_or_storage_key TEXT,
+        uploaded_by_user_id VARCHAR(36) REFERENCES users(id) ON DELETE SET NULL,
+        uploaded_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        status VARCHAR(50) NOT NULL DEFAULT 'ACTIVE',
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT uq_standard_drawing_type_version UNIQUE(ducting_type_id, version)
+      );
+      CREATE INDEX IF NOT EXISTS idx_std_drawings_type ON standard_drawings(ducting_type_id);
+      CREATE INDEX IF NOT EXISTS idx_std_drawings_status ON standard_drawings(status);
+
+      ALTER TABLE ducting_types ADD COLUMN IF NOT EXISTS current_standard_drawing_id INTEGER REFERENCES standard_drawings(id) ON DELETE SET NULL;
+      CREATE INDEX IF NOT EXISTS idx_ducting_types_curr_std ON ducting_types(current_standard_drawing_id);
+
+      -- Drawing Removal Requests (Employee requests removal, Admin reviews)
+      CREATE TABLE IF NOT EXISTS drawing_removal_requests (
+        id SERIAL PRIMARY KEY,
+        standard_drawing_id INTEGER NOT NULL REFERENCES standard_drawings(id) ON DELETE CASCADE,
+        requested_by_user_id VARCHAR(36) NOT NULL REFERENCES users(id) ON DELETE SET NULL,
+        requested_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        reason TEXT NOT NULL,
+        status VARCHAR(50) NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'APPROVED', 'REJECTED')),
+        reviewed_by_user_id VARCHAR(36) REFERENCES users(id) ON DELETE SET NULL,
+        reviewed_at TIMESTAMP WITH TIME ZONE,
+        admin_comment TEXT,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_removal_req_drawing ON drawing_removal_requests(standard_drawing_id);
+      CREATE INDEX IF NOT EXISTS idx_removal_req_status ON drawing_removal_requests(status);
+
+      -- PR Items Drawing Version Snapshot & Project-specific Drawing Linkage
+      ALTER TABLE pr_items ADD COLUMN IF NOT EXISTS standard_drawing_id INTEGER REFERENCES standard_drawings(id) ON DELETE SET NULL;
+      ALTER TABLE pr_items ADD COLUMN IF NOT EXISTS standard_drawing_version INTEGER;
+      ALTER TABLE pr_items ADD COLUMN IF NOT EXISTS project_drawing_document_id INTEGER REFERENCES documents(id) ON DELETE SET NULL;
+      CREATE INDEX IF NOT EXISTS idx_pr_items_std_drawing ON pr_items(standard_drawing_id);
+      CREATE INDEX IF NOT EXISTS idx_pr_items_proj_drawing ON pr_items(project_drawing_document_id);
 
       CREATE TABLE IF NOT EXISTS activity_logs (
         id SERIAL PRIMARY KEY,
