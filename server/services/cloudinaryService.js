@@ -89,11 +89,13 @@ async function uploadStandardDrawing({ buffer, fileName, mimeType, typeName, ver
   let cloudinaryPublicId = null;
   let cloudinaryUrl = null;
   let cloudinarySecureUrl = null;
+  let thumbnailUrl = null;
 
   if (isCloudinaryConfigured) {
     try {
       const folder = `flowforce/ducting/standard-drawings/${typeSlug}`;
-      const resourceType = isPdf ? 'raw' : 'image';
+      // In Cloudinary, uploading PDF as 'image' or 'auto' allows page-by-page transformation (pg_1 thumbnail)
+      const resourceType = isPdf ? 'image' : 'image';
       const publicId = `${typeSlug}_${uniqueTag}`;
 
       const uploadResult = await new Promise((resolve, reject) => {
@@ -115,11 +117,30 @@ async function uploadStandardDrawing({ buffer, fileName, mimeType, typeName, ver
       cloudinaryPublicId = uploadResult.public_id;
       cloudinaryUrl = uploadResult.url;
       cloudinarySecureUrl = uploadResult.secure_url;
+
+      if (isPdf) {
+        thumbnailUrl = cloudinary.url(uploadResult.public_id, {
+          resource_type: 'image',
+          page: 1,
+          format: 'jpg',
+          width: 1000,
+          crop: 'limit',
+          quality: 'auto',
+          secure: true
+        });
+      }
+
       console.log(`[CloudinaryService] Uploaded ${fileName} to ${folder}/${publicId}`);
     } catch (cldErr) {
-      console.warn(`[CloudinaryService] Cloudinary upload notice for ${fileName}:`, cldErr.message);
-      // Fallback preserves local storage so operations never crash
+      console.error(`[CloudinaryService] Cloudinary upload failure for ${fileName}:`, cldErr.message);
+      // In production, do NOT silently fall back to local disk if Cloudinary is configured but fails
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error(`Production Cloudinary storage failure: ${cldErr.message}. Cannot fall back to non-persistent storage in production.`);
+      }
+      // Non-production fallback preserves local storage for dev/testing
     }
+  } else if (process.env.NODE_ENV === 'production') {
+    console.warn(`[CloudinaryService] WARNING: Running in production without Cloudinary credentials configured!`);
   }
 
   return {
@@ -132,6 +153,7 @@ async function uploadStandardDrawing({ buffer, fileName, mimeType, typeName, ver
     absoluteLocalPath,
     cloudinaryPublicId,
     cloudinaryUrl: cloudinarySecureUrl || cloudinaryUrl || null,
+    thumbnailUrl,
     isCloudinaryStored: Boolean(cloudinarySecureUrl || cloudinaryUrl)
   };
 }
@@ -203,9 +225,80 @@ async function uploadProjectDrawing({ buffer, fileName, mimeType, projectCode = 
   };
 }
 
+/**
+ * Health check evaluator for active storage mode
+ * Returns mode: 'CLOUDINARY' | 'LOCAL_FALLBACK', status, and details.
+ */
+async function getStorageHealth() {
+  const isProd = process.env.NODE_ENV === 'production';
+
+  if (isCloudinaryConfigured) {
+    try {
+      const pingResult = await Promise.race([
+        cloudinary.api.ping(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Cloudinary ping timed out')), 3000))
+      ]);
+
+      const isOk = pingResult && pingResult.status === 'ok';
+      return {
+        mode: 'CLOUDINARY',
+        status: isOk ? 'HEALTHY' : 'DEGRADED',
+        isCloudinaryConfigured: true,
+        cloudName: process.env.CLOUDINARY_CLOUD_NAME || (process.env.CLOUDINARY_URL ? 'configured' : null),
+        details: pingResult
+      };
+    } catch (err) {
+      return {
+        mode: 'CLOUDINARY',
+        status: isProd ? 'UNHEALTHY' : 'DEGRADED',
+        isCloudinaryConfigured: true,
+        cloudName: process.env.CLOUDINARY_CLOUD_NAME || (process.env.CLOUDINARY_URL ? 'configured' : null),
+        error: `Cloudinary ping error: ${err.message}`,
+        warning: isProd ? 'Cloudinary is configured but currently unreachable. Drawings may not be persistent across container restarts.' : undefined
+      };
+    }
+  }
+
+  return {
+    mode: 'LOCAL_FALLBACK',
+    status: isProd ? 'DEGRADED' : 'HEALTHY',
+    isCloudinaryConfigured: false,
+    warning: isProd ? 'Production environment lacks Cloudinary credentials. Storage fallback to local disk is active and may not be persistent across restarts.' : undefined,
+    localStorageDir: getDocumentStorageDir()
+  };
+}
+
+/**
+ * Derives a page-1 PDF thumbnail URL from Cloudinary metadata if available
+ */
+function derivePdfThumbnail(cloudinaryUrl, cloudinaryPublicId) {
+  if (!cloudinaryUrl && !cloudinaryPublicId) return null;
+  if (cloudinaryPublicId && isCloudinaryConfigured) {
+    try {
+      return cloudinary.url(cloudinaryPublicId, {
+        resource_type: 'image',
+        page: 1,
+        format: 'jpg',
+        width: 1000,
+        crop: 'limit',
+        quality: 'auto',
+        secure: true
+      });
+    } catch (e) {}
+  }
+  if (cloudinaryUrl && typeof cloudinaryUrl === 'string' && cloudinaryUrl.includes('res.cloudinary.com')) {
+    if (cloudinaryUrl.includes('/upload/')) {
+      return cloudinaryUrl.replace('/upload/', '/upload/pg_1,f_jpg,w_1000,c_limit/').replace(/\.pdf$/i, '.jpg');
+    }
+  }
+  return null;
+}
+
 module.exports = {
   isConfigured: () => isCloudinaryConfigured,
   getDuctingTypeSlug,
   uploadStandardDrawing,
-  uploadProjectDrawing
+  uploadProjectDrawing,
+  getStorageHealth,
+  derivePdfThumbnail
 };

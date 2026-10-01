@@ -2867,6 +2867,13 @@
       document.body.removeChild(a);
     },
 
+    togglePdfPreviewMode() {
+      this.state.pdfPreviewMode = (this.state.pdfPreviewMode === 'iframe') ? 'thumbnail' : 'iframe';
+      if (this.state.selectedType) {
+        this.renderSketch(this.state.selectedType);
+      }
+    },
+
     viewDrawing(idx) {
       const it = (typeof PRCart !== 'undefined' && PRCart.items) ? PRCart.items[idx] : null;
       if (!it) return;
@@ -3122,6 +3129,11 @@
                 </div>
               </div>
               <div style="display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap;">
+                ${isPdf && sd.thumbnailUrl ? `
+                  <button type="button" class="btn btn-secondary btn-sm" onclick="DuctingWorkflowController.togglePdfPreviewMode()" style="font-size: 0.75rem; padding: 0.3rem 0.65rem; font-weight: 600;" title="Toggle preview mode">
+                    ${this.state.pdfPreviewMode === 'iframe' ? '🖼️ Page 1 Thumbnail' : '📄 Interactive PDF'}
+                  </button>
+                ` : ''}
                 <button type="button" class="btn btn-secondary btn-sm" onclick="DuctingWorkflowController.openStandardDrawing()" style="font-size: 0.75rem; padding: 0.3rem 0.65rem; border-color: #0284c7; color: #0284c7; font-weight: 600;">
                   👁️ View / Expand
                 </button>
@@ -3154,13 +3166,27 @@
 
             <!-- Visual Preview Area -->
             <div class="ducting-drawing-preview-area" style="position: relative; width: 100%; height: 380px; min-height: 320px; max-height: 480px; background: #ffffff; border: 1px solid #cbd5e1; border-radius: 6px; overflow: auto; display: flex; align-items: center; justify-content: center;">
-              ${isPdf ? `
-                <iframe
-                  src="${secureViewUrl}#page=1&view=FitH"
-                  title="Master Engineering Drawing Preview"
-                  style="width: 100%; height: 100%; border: none; background: #ffffff; display: block;"
-                ></iframe>
-              ` : `
+              ${isPdf ? (
+                (sd.thumbnailUrl && this.state.pdfPreviewMode !== 'iframe') ? `
+                  <div style="position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; cursor: pointer;" onclick="DuctingWorkflowController.openStandardDrawing()" title="Click to view full expanded drawing">
+                    <img
+                      src="${sd.thumbnailUrl}"
+                      alt="Page 1 Standard Drawing Preview"
+                      style="max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; display: block; margin: 0 auto; background: #ffffff;"
+                      onerror="this.onerror=null; DuctingWorkflowController.togglePdfPreviewMode();"
+                    />
+                    <div style="position: absolute; bottom: 8px; right: 8px; background: rgba(15, 23, 42, 0.75); color: #fff; font-size: 0.7rem; font-weight: 600; padding: 2px 8px; border-radius: 4px; pointer-events: none;">
+                      Page 1 Thumbnail • Click to Expand
+                    </div>
+                  </div>
+                ` : `
+                  <iframe
+                    src="${secureViewUrl}#page=1&view=FitH"
+                    title="Master Engineering Drawing Preview"
+                    style="width: 100%; height: 100%; border: none; background: #ffffff; display: block;"
+                  ></iframe>
+                `
+              ) : `
                 <img
                   src="${secureViewUrl}"
                   alt="Standard Engineering Drawing"

@@ -18,11 +18,11 @@
 const express = require('express');
 const router = express.Router();
 const fs = require('fs');
-const path = require('path');
-const { query } = require('../db/pool');
+const { query, pool } = require('../db/pool');
 const { authenticateToken } = require('../middleware/auth');
+const { uploadRateLimiter } = require('../middleware/rateLimiter');
 const { logActivity } = require('../services/activityLogger');
-const { uploadStandardDrawing, getDuctingTypeSlug } = require('../services/cloudinaryService');
+const { uploadStandardDrawing, getDuctingTypeSlug, derivePdfThumbnail } = require('../services/cloudinaryService');
 
 router.use(authenticateToken);
 
@@ -53,6 +53,7 @@ router.get('/', async (req, res) => {
         sd.mime_type AS std_mime_type,
         sd.cloudinary_url AS std_cloudinary_url,
         sd.cloudinary_public_id AS std_cloudinary_public_id,
+        sd.thumbnail_url AS std_thumbnail_url,
         sd.status AS std_status,
         sd.uploaded_at AS std_uploaded_at,
         u.full_name AS std_uploaded_by_full_name,
@@ -85,6 +86,7 @@ router.get('/', async (req, res) => {
           mimeType: row.std_mime_type || (isPdf ? 'application/pdf' : 'image/png'),
           cloudinaryUrl: row.std_cloudinary_url || null,
           url: row.std_cloudinary_url || null,
+          thumbnailUrl: row.std_thumbnail_url || derivePdfThumbnail(row.std_cloudinary_url, row.std_cloudinary_public_id),
           status: row.std_status || 'ACTIVE',
           uploadedAt: row.std_uploaded_at,
           uploadedByFullName: row.std_uploaded_by_full_name || row.std_uploaded_by_username || 'Engineering',
@@ -149,6 +151,8 @@ router.get('/:typeName/standard-drawing', async (req, res) => {
         sd.file_size_bytes AS std_file_size,
         sd.mime_type AS std_mime_type,
         sd.cloudinary_url AS std_cloudinary_url,
+        sd.cloudinary_public_id AS std_cloudinary_public_id,
+        sd.thumbnail_url AS std_thumbnail_url,
         sd.status AS std_status,
         sd.uploaded_at AS std_uploaded_at,
         u.full_name AS std_uploaded_by_full_name,
@@ -182,6 +186,7 @@ router.get('/:typeName/standard-drawing', async (req, res) => {
         mimeType: row.std_mime_type || (isPdf ? 'application/pdf' : 'image/png'),
         cloudinaryUrl: row.std_cloudinary_url || null,
         url: row.std_cloudinary_url || null,
+        thumbnailUrl: row.std_thumbnail_url || derivePdfThumbnail(row.std_cloudinary_url, row.std_cloudinary_public_id),
         status: row.std_status || 'ACTIVE',
         uploadedAt: row.std_uploaded_at,
         uploadedByFullName: row.std_uploaded_by_full_name || row.std_uploaded_by_username,
@@ -340,8 +345,49 @@ router.get('/:typeName/history', async (req, res) => {
 });
 
 /**
+ * Validate actual magic bytes of uploaded drawing files (PRIORITY 2 - File Security).
+ * Validates actual binary signatures:
+ * - PDF: %PDF- (0x25 0x50 0x44 0x46 0x2D)
+ * - PNG: 89 50 4E 47 (0x89 0x50 0x4E 0x47)
+ * - JPEG: FF D8 FF (0xFF 0xD8 0xFF)
+ */
+function validateDrawingMagicBytes(buffer) {
+  if (!buffer || buffer.length < 4) {
+    return { valid: false, error: 'File payload is empty or corrupted.' };
+  }
+
+  // 1. PDF signature: %PDF- (0x25 0x50 0x44 0x46 0x2D)
+  const isPdf = (buffer.length >= 5 && buffer.slice(0, 5).toString('ascii') === '%PDF-') ||
+                (buffer.indexOf(Buffer.from('%PDF-')) >= 0 && buffer.indexOf(Buffer.from('%PDF-')) < 1024);
+
+  // 2. PNG signature: 89 50 4E 47 (0x89 0x50 0x4E 0x47)
+  const isPng = buffer.length >= 4 &&
+                buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47;
+
+  // 3. JPEG signature: FF D8 FF (0xFF 0xD8 0xFF)
+  const isJpeg = buffer.length >= 3 &&
+                 buffer[0] === 0xFF && buffer[1] === 0xD8 && buffer[2] === 0xFF;
+
+  if (isPdf) {
+    return { valid: true, type: 'PDF', mimeType: 'application/pdf', extension: '.pdf' };
+  }
+  if (isPng) {
+    return { valid: true, type: 'PNG', mimeType: 'image/png', extension: '.png' };
+  }
+  if (isJpeg) {
+    return { valid: true, type: 'JPEG', mimeType: 'image/jpeg', extension: '.jpg' };
+  }
+
+  return {
+    valid: false,
+    error: 'Invalid file signature (magic bytes mismatch). Only authentic PDF (%PDF-), PNG (89 50 4E 47), and JPEG (FF D8 FF) engineering drawings are permitted.'
+  };
+}
+
+/**
  * Unified Handler: Upload or Replace Standard Drawing
  * Both ADMIN and EMPLOYEE are allowed to upload and update standard drawings.
+ * Uses PostgreSQL row-level locking (SELECT ... FOR UPDATE) to guarantee race-free versioning.
  */
 async function handleStandardDrawingUpload(req, res) {
   const { typeName } = req.params;
@@ -352,15 +398,25 @@ async function handleStandardDrawingUpload(req, res) {
     return res.status(400).json({ error: 'File name and data payload are required.' });
   }
 
-  const isPdf = (mimeType && mimeType.includes('pdf')) || fileName.toLowerCase().endsWith('.pdf');
-  const isImage = (mimeType && mimeType.startsWith('image/')) || /\.(png|jpe?g|webp|svg)$/i.test(fileName);
-
-  if (!isPdf && !isImage) {
-    return res.status(400).json({ error: 'Unsupported file format. Please upload a PDF, PNG, JPG, or JPEG engineering drawing.' });
-  }
-
   try {
-    // 1. Resolve or create ducting type dynamically to support future types
+    // 1. Decode base64 buffer
+    const base64Data = dataUrl.replace(/^data:[^;]+;base64,/, '');
+    const buffer = Buffer.from(base64Data, 'base64');
+
+    // 2. Validate file size (15 MB maximum)
+    if (buffer.length > 15 * 1024 * 1024) {
+      return res.status(400).json({ error: 'File size exceeds maximum 15 MB limit.' });
+    }
+
+    // 3. Validate Magic Bytes (PRIORITY 2 - File Security)
+    const magicValidation = validateDrawingMagicBytes(buffer);
+    if (!magicValidation.valid) {
+      return res.status(400).json({ error: magicValidation.error });
+    }
+
+    const determinedMimeType = magicValidation.mimeType;
+
+    // 4. Resolve or create ducting type dynamically to support future types
     let dtRes = await query(`
       SELECT dt.*, sd.version AS current_version, sd.file_name AS current_file_name
       FROM ducting_types dt
@@ -370,7 +426,6 @@ async function handleStandardDrawingUpload(req, res) {
 
     let dt;
     if (dtRes.rowCount === 0) {
-      // Automatically register new ducting type if not found
       const insType = await query(`
         INSERT INTO ducting_types (type_name, status)
         VALUES ($1, 'ACTIVE')
@@ -381,82 +436,108 @@ async function handleStandardDrawingUpload(req, res) {
       dt = dtRes.rows[0];
     }
 
-    // 2. Decode base64 buffer
-    const base64Data = dataUrl.replace(/^data:[^;]+;base64,/, '');
-    const buffer = Buffer.from(base64Data, 'base64');
+    // 5. PRIORITY 1 — Concurrency Transaction with Row-Level Locking (SELECT ... FOR UPDATE)
+    const client = await pool.connect();
+    let newStdId;
+    let legacyDocId;
+    let nextVersion;
+    let isReplacement;
+    let uploadMeta;
+    let thumbnailUrl;
+    let stdCreatedAt;
 
-    if (buffer.length > 15 * 1024 * 1024) {
-      return res.status(400).json({ error: 'File size exceeds maximum 15 MB limit.' });
+    try {
+      await client.query('BEGIN');
+
+      // Row-level exclusive lock on the ducting type row
+      const lockRes = await client.query(`
+        SELECT id, type_name, current_standard_drawing_id
+        FROM ducting_types
+        WHERE id = $1
+        FOR UPDATE
+      `, [dt.id]);
+
+      const lockedDt = lockRes.rows[0];
+
+      // Calculate next version while locked (guarantees strictly incremented versions without collisions)
+      const maxVerRes = await client.query(`
+        SELECT COALESCE(MAX(version), 0) AS max_v
+        FROM standard_drawings
+        WHERE ducting_type_id = $1
+      `, [dt.id]);
+      nextVersion = parseInt(maxVerRes.rows[0].max_v, 10) + 1;
+      isReplacement = nextVersion > 1 && Boolean(lockedDt.current_standard_drawing_id);
+
+      // Upload to Cloudinary (with local disk caching)
+      uploadMeta = await uploadStandardDrawing({
+        buffer,
+        fileName,
+        mimeType: determinedMimeType,
+        typeName: dt.type_name,
+        version: nextVersion
+      });
+
+      thumbnailUrl = uploadMeta.thumbnailUrl || derivePdfThumbnail(uploadMeta.cloudinaryUrl, uploadMeta.cloudinaryPublicId);
+
+      // Insert new standard_drawings row
+      const insStd = await client.query(`
+        INSERT INTO standard_drawings (
+          ducting_type_id, version, file_name, original_file_name,
+          file_size_bytes, mime_type, cloudinary_public_id, cloudinary_url,
+          file_path_or_storage_key, uploaded_by_user_id, status, thumbnail_url
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'ACTIVE', $11)
+        RETURNING id, created_at
+      `, [
+        dt.id,
+        nextVersion,
+        uploadMeta.fileName,
+        uploadMeta.originalFileName,
+        uploadMeta.fileSizeBytes,
+        uploadMeta.mimeType,
+        uploadMeta.cloudinaryPublicId,
+        uploadMeta.cloudinaryUrl,
+        uploadMeta.storageKey,
+        req.user.id,
+        thumbnailUrl || null
+      ]);
+      newStdId = insStd.rows[0].id;
+      stdCreatedAt = insStd.rows[0].created_at;
+
+      // Also register document record for backward-compatible document queries
+      const insDoc = await client.query(`
+        INSERT INTO documents (
+          document_type, file_name, original_file_name, file_path_or_storage_key,
+          uploaded_by_user_id, revision, sha256_checksum, file_size_bytes, mime_type
+        ) VALUES ('ENGINEERING_DRAWING', $1, $2, $3, $4, $5, $6, $7, $8)
+        RETURNING id
+      `, [
+        uploadMeta.fileName,
+        uploadMeta.originalFileName,
+        uploadMeta.storageKey,
+        req.user.id,
+        nextVersion,
+        uploadMeta.sha256,
+        uploadMeta.fileSizeBytes,
+        uploadMeta.mimeType
+      ]);
+      legacyDocId = insDoc.rows[0].id;
+
+      // Update ducting_types to reference new standard drawing as current
+      await client.query(`
+        UPDATE ducting_types
+        SET current_standard_drawing_id = $1, master_drawing_document_id = $2, updated_at = CURRENT_TIMESTAMP
+        WHERE id = $3
+      `, [newStdId, legacyDocId, dt.id]);
+
+      await client.query('COMMIT');
+    } catch (txErr) {
+      await client.query('ROLLBACK');
+      throw txErr;
+    } finally {
+      client.release();
     }
 
-    // 3. Compute next version number (Historical Versioning: NEVER overwrite)
-    const maxVerRes = await query(`
-      SELECT COALESCE(MAX(version), 0) AS max_v
-      FROM standard_drawings
-      WHERE ducting_type_id = $1
-    `, [dt.id]);
-    const nextVersion = parseInt(maxVerRes.rows[0].max_v, 10) + 1;
-    const isReplacement = nextVersion > 1 && Boolean(dt.current_standard_drawing_id);
-
-    // 4. Upload to Cloudinary (with local disk caching)
-    const uploadMeta = await uploadStandardDrawing({
-      buffer,
-      fileName,
-      mimeType: mimeType || (isPdf ? 'application/pdf' : 'image/png'),
-      typeName: dt.type_name,
-      version: nextVersion
-    });
-
-    // 5. Insert new standard drawing record in standard_drawings table
-    const insStd = await query(`
-      INSERT INTO standard_drawings (
-        ducting_type_id, version, file_name, original_file_name,
-        file_size_bytes, mime_type, cloudinary_public_id, cloudinary_url,
-        file_path_or_storage_key, uploaded_by_user_id, status
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'ACTIVE')
-      RETURNING id, created_at
-    `, [
-      dt.id,
-      nextVersion,
-      uploadMeta.fileName,
-      uploadMeta.originalFileName,
-      uploadMeta.fileSizeBytes,
-      uploadMeta.mimeType,
-      uploadMeta.cloudinaryPublicId,
-      uploadMeta.cloudinaryUrl,
-      uploadMeta.storageKey,
-      req.user.id
-    ]);
-
-    const newStdId = insStd.rows[0].id;
-
-    // 6. Also register document record for backward-compatible document queries
-    const insDoc = await query(`
-      INSERT INTO documents (
-        document_type, file_name, original_file_name, file_path_or_storage_key,
-        uploaded_by_user_id, revision, sha256_checksum, file_size_bytes, mime_type
-      ) VALUES ('ENGINEERING_DRAWING', $1, $2, $3, $4, $5, $6, $7, $8)
-      RETURNING id
-    `, [
-      uploadMeta.fileName,
-      uploadMeta.originalFileName,
-      uploadMeta.storageKey,
-      req.user.id,
-      nextVersion,
-      uploadMeta.sha256,
-      uploadMeta.fileSizeBytes,
-      uploadMeta.mimeType
-    ]);
-    const legacyDocId = insDoc.rows[0].id;
-
-    // 7. Update ducting_types to reference new standard drawing as current
-    await query(`
-      UPDATE ducting_types
-      SET current_standard_drawing_id = $1, master_drawing_document_id = $2, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $3
-    `, [newStdId, legacyDocId, dt.id]);
-
-    // 8. Audit Logging: UPLOADED / REPLACED & ACTIVATED
+    // 6. Audit Logging: UPLOADED / REPLACED & ACTIVATED
     const primaryAction = isReplacement ? 'REPLACED' : 'UPLOADED';
 
     await logActivity({
@@ -493,7 +574,7 @@ async function handleStandardDrawingUpload(req, res) {
       }
     });
 
-    // Also emit backward-compatible DOCUMENT_UPLOADED / DOCUMENT_UPDATED logs
+    // Backward-compatible DOCUMENT_UPLOADED / DOCUMENT_UPDATED logs
     await logActivity({
       entityType: 'DOCUMENT',
       entityId: String(legacyDocId || newStdId),
@@ -522,8 +603,9 @@ async function handleStandardDrawingUpload(req, res) {
       mimeType: uploadMeta.mimeType,
       cloudinaryUrl: uploadMeta.cloudinaryUrl,
       url: uploadMeta.cloudinaryUrl,
+      thumbnailUrl: thumbnailUrl || null,
       status: 'ACTIVE',
-      uploadedAt: insStd.rows[0].created_at,
+      uploadedAt: stdCreatedAt || new Date().toISOString(),
       uploadedByFullName: req.user.fullName || req.user.username,
       uploadedByUsername: req.user.username,
       viewUrl: `/api/documents/standard-drawings/${newStdId}/view`,
@@ -549,13 +631,15 @@ async function handleStandardDrawingUpload(req, res) {
 
 /**
  * POST /api/ducting-types/:typeName/standard-drawing
+ * Protected with upload rate limiting (PRIORITY 3)
  */
-router.post('/:typeName/standard-drawing', handleStandardDrawingUpload);
+router.post('/:typeName/standard-drawing', uploadRateLimiter, handleStandardDrawingUpload);
 
 /**
  * Backward-compatible endpoint: POST /api/ducting-types/:typeName/drawing
+ * Protected with upload rate limiting (PRIORITY 3)
  */
-router.post('/:typeName/drawing', handleStandardDrawingUpload);
+router.post('/:typeName/drawing', uploadRateLimiter, handleStandardDrawingUpload);
 
 /**
  * POST /api/ducting-types/standard-drawings/:drawingId/request-removal

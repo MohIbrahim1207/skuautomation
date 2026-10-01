@@ -10,6 +10,7 @@ const path = require('path');
 const fs = require('fs');
 const bcrypt = require('bcryptjs');
 const { query } = require('./db/pool');
+const { getStorageHealth } = require('./services/cloudinaryService');
 require('dotenv').config();
 
 const app = express();
@@ -151,10 +152,19 @@ const handleHealthCheck = async (req, res) => {
     await ensureSeedUsers();
     const userRes = await query(`SELECT id, username, role, status, (password_hash IS NOT NULL AND length(password_hash) > 0) AS has_hash, substring(password_hash from 1 for 4) AS hash_prefix, must_change_password FROM users ORDER BY id ASC`);
     const masterCount = await query(`SELECT COUNT(*) FROM master_items`);
-    res.json({
-      status: 'ok',
+    const storageHealth = await getStorageHealth();
+
+    const isProduction = process.env.NODE_ENV === 'production';
+    const isDegraded = storageHealth.status === 'UNHEALTHY' || (isProduction && storageHealth.mode === 'LOCAL_FALLBACK');
+    const overallStatus = isDegraded ? 'degraded' : 'ok';
+    const httpStatus = (isProduction && storageHealth.status === 'UNHEALTHY') ? 503 : 200;
+
+    res.status(httpStatus).json({
+      status: overallStatus,
       service: 'Flow Force Enterprise Portal API',
       database: 'connected',
+      drawingStorageMode: storageHealth.mode,
+      storage: storageHealth,
       masterItemsCount: parseInt(masterCount.rows[0].count, 10),
       users: userRes.rows,
       timestamp: new Date().toISOString()
@@ -310,6 +320,7 @@ const runStartupMigrations = async () => {
       );
       CREATE INDEX IF NOT EXISTS idx_std_drawings_type ON standard_drawings(ducting_type_id);
       CREATE INDEX IF NOT EXISTS idx_std_drawings_status ON standard_drawings(status);
+      ALTER TABLE standard_drawings ADD COLUMN IF NOT EXISTS thumbnail_url TEXT;
 
       ALTER TABLE ducting_types ADD COLUMN IF NOT EXISTS current_standard_drawing_id INTEGER REFERENCES standard_drawings(id) ON DELETE SET NULL;
       CREATE INDEX IF NOT EXISTS idx_ducting_types_curr_std ON ducting_types(current_standard_drawing_id);
