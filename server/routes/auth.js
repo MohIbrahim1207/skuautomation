@@ -8,6 +8,8 @@ const jwt = require('jsonwebtoken');
 const { query } = require('../db/pool');
 const { authenticateToken, JWT_SECRET } = require('../middleware/auth');
 
+const { logActivity, extractClientIp } = require('../services/activityLogger');
+
 // POST /api/auth/login
 router.post('/login', async (req, res) => {
   const { username, password } = req.body;
@@ -15,6 +17,8 @@ router.post('/login', async (req, res) => {
   if (!username || !password) {
     return res.status(400).json({ error: 'Please enter both username/email and password.' });
   }
+
+  const clientIp = extractClientIp(req);
 
   try {
     const clean = username.trim().toLowerCase();
@@ -24,19 +28,73 @@ router.post('/login', async (req, res) => {
     );
 
     if (result.rowCount === 0) {
+      await logActivity({
+        entityType: 'USER',
+        action: 'LOGIN_FAILURE',
+        module: 'AUTH',
+        description: `Failed login attempt: User not found (${clean})`,
+        ipAddress: clientIp,
+        status: 'FAILURE',
+        metadata: { attemptedUsername: clean }
+      });
       return res.status(401).json({ error: 'Invalid username/email or password.' });
     }
 
     const user = result.rows[0];
 
     if (user.status === 'Disabled') {
+      await logActivity({
+        entityType: 'USER',
+        entityId: user.id,
+        action: 'LOGIN_BLOCKED',
+        module: 'AUTH',
+        description: `Disabled account attempted login: ${user.username} (${user.id})`,
+        userId: user.id,
+        username: user.username,
+        role: user.role,
+        ipAddress: clientIp,
+        status: 'FAILURE',
+        metadata: { userId: user.id, username: user.username }
+      });
       return res.status(403).json({ error: 'This account has been disabled. Please contact the administrator.' });
     }
 
     const match = await bcrypt.compare(password.trim(), user.password_hash);
     if (!match) {
+      await logActivity({
+        entityType: 'USER',
+        entityId: user.id,
+        action: 'LOGIN_FAILURE',
+        module: 'AUTH',
+        description: `Failed login attempt: Invalid password for ${user.username}`,
+        userId: user.id,
+        username: user.username,
+        role: user.role,
+        ipAddress: clientIp,
+        status: 'FAILURE',
+        metadata: { userId: user.id, username: user.username }
+      });
       return res.status(401).json({ error: 'Invalid username/email or password.' });
     }
+
+    // Update last_login_at timestamp
+    await query(
+      `UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = $1`,
+      [user.id]
+    );
+
+    await logActivity({
+      entityType: 'USER',
+      entityId: user.id,
+      action: 'LOGIN_SUCCESS',
+      module: 'AUTH',
+      description: `User ${user.username} (${user.full_name}) logged in successfully`,
+      userId: user.id,
+      username: user.username,
+      role: user.role,
+      ipAddress: clientIp,
+      status: 'SUCCESS'
+    });
 
     const tokenPayload = {
       id: user.id,
@@ -59,7 +117,8 @@ router.post('/login', async (req, res) => {
         email: user.email,
         role: user.role,
         status: user.status,
-        mustChangePassword: user.must_change_password
+        mustChangePassword: user.must_change_password,
+        lastLoginAt: new Date().toISOString()
       }
     });
   } catch (err) {
@@ -122,6 +181,20 @@ router.post('/change-password', authenticateToken, async (req, res) => {
     }
 
     const u = result.rows[0];
+
+    await logActivity({
+      entityType: 'USER',
+      entityId: req.user.id,
+      action: 'PASSWORD_CHANGED',
+      module: 'AUTH',
+      description: `User ${req.user.username} successfully updated their password`,
+      userId: req.user.id,
+      username: req.user.username,
+      role: req.user.role,
+      ipAddress: extractClientIp(req),
+      status: 'SUCCESS'
+    });
+
     res.json({
       success: true,
       message: 'Password updated successfully.',

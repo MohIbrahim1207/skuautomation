@@ -4334,6 +4334,7 @@
       this.bindAuthEvents();
       this.bindEvents();
       this.initUserManagement();
+      this.initAuditLogs();
 
       const currentUser = window.AuthService ? window.AuthService.getCurrentUser() : null;
       const currentToken = window.AuthService && typeof window.AuthService.getToken === 'function' ? window.AuthService.getToken() : '';
@@ -4500,6 +4501,7 @@
 
       // Adjust navigation visibility according to role
       const navBtnUsers = document.getElementById('navBtnUsers');
+      const navBtnAuditLogs = document.getElementById('navBtnAuditLogs');
       const navBtnSettings = document.getElementById('navBtnSettings');
       const btnOpenNewSku = document.getElementById('btnOpenNewSku');
       const btnHeaderNewSku = document.getElementById('btnHeaderNewSku');
@@ -4531,11 +4533,13 @@
 
       if (user.role === 'ADMIN') {
         if (navBtnUsers) navBtnUsers.style.display = '';
+        if (navBtnAuditLogs) navBtnAuditLogs.style.display = '';
         if (navBtnSettings) navBtnSettings.style.display = '';
         if (btnOpenNewSku) btnOpenNewSku.style.display = '';
         this.renderUsersTable();
       } else {
         if (navBtnUsers) navBtnUsers.style.display = 'none';
+        if (navBtnAuditLogs) navBtnAuditLogs.style.display = 'none';
         if (navBtnSettings) navBtnSettings.style.display = 'none';
         if (btnOpenNewSku) btnOpenNewSku.style.display = canCreate ? '' : 'none';
       }
@@ -4886,6 +4890,14 @@
         }
       }
 
+      if (viewName === 'audit-logs') {
+        const currentUser = window.AuthService ? window.AuthService.getCurrentUser() : null;
+        if (!currentUser || currentUser.role !== 'ADMIN') {
+          this.showAccessDeniedModal('Access Denied — Only System Administrators can access Activity & Audit Logs.');
+          return;
+        }
+      }
+
       this.currentTab = viewName;
 
       // Update Nav Buttons
@@ -4923,6 +4935,8 @@
         this.loadImportReviewTable();
       } else if (viewName === 'my-imports') {
         this.loadMyImportsTable();
+      } else if (viewName === 'audit-logs') {
+        this.loadAuditLogs(1);
       }
       
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -5002,6 +5016,88 @@
       if (elCatFasteners) elCatFasteners.textContent = `${fastenersCount} Items`;
       if (elCatPiping) elCatPiping.textContent = `${pipingCount} Items`;
       if (elCatElectrical) elCatElectrical.textContent = `${electricalCount} Items`;
+
+      // Admin Operational Operations & System Health Ribbon
+      const adminSec = document.getElementById('adminDashboardSection');
+      if (isAdmin) {
+        if (adminSec) adminSec.style.display = 'block';
+        this.loadAdminDashboardTelemetry();
+      } else {
+        if (adminSec) adminSec.style.display = 'none';
+      }
+    },
+
+    async loadAdminDashboardTelemetry() {
+      const token = window.AuthService ? window.AuthService.getToken() : '';
+      try {
+        const resp = await fetch('/api/admin/dashboard', {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (!resp.ok) return;
+        const data = await resp.json();
+        if (!data.success) return;
+
+        // 1. Populate System Health indicators
+        const sh = data.systemHealth || {};
+        const elDb = document.getElementById('healthDbText');
+        const elStorage = document.getElementById('healthStorageModeText');
+        const elAppStatus = document.getElementById('healthAppStatusText');
+        const elAppUptime = document.getElementById('healthAppUptimeText');
+        const elAppMem = document.getElementById('healthAppMemoryText');
+
+        if (elDb) elDb.textContent = `PostgreSQL: ${sh.database?.status === 'connected' ? 'Connected' : 'Unavailable'}`;
+        if (elStorage) elStorage.textContent = sh.drawingStorageMode || 'LOCAL_FALLBACK';
+        if (elAppStatus) elAppStatus.textContent = sh.app?.status || 'Healthy';
+        if (elAppUptime) {
+          const upSec = sh.app?.uptimeSeconds || 0;
+          const mins = Math.floor(upSec / 60);
+          elAppUptime.textContent = mins < 60 ? `${mins}m` : `${Math.floor(mins / 60)}h ${mins % 60}m`;
+        }
+        if (elAppMem) elAppMem.textContent = `${sh.app?.memoryUsageMb || 0} MB`;
+
+        // 2. Populate Operational KPIs
+        const kpis = data.kpis || {};
+        const elActUsers = document.getElementById('adminKpiActiveUsers');
+        const elPendPrs = document.getElementById('adminKpiPendingPrs');
+        const elPendRem = document.getElementById('adminKpiPendingRemovals');
+        const elTotSkus = document.getElementById('adminKpiTotalSkus');
+        const elActDrw = document.getElementById('adminKpiActiveDrawings');
+        const elPrsMonth = document.getElementById('adminKpiPrsThisMonth');
+
+        if (elActUsers) elActUsers.textContent = kpis.activeUsers ?? '-';
+        if (elPendPrs) elPendPrs.textContent = kpis.pendingPrs ?? '-';
+        if (elPendRem) elPendRem.textContent = kpis.pendingDrawingRemovals ?? '-';
+        if (elTotSkus) elTotSkus.textContent = kpis.totalSkus ?? '-';
+        if (elActDrw) elActDrw.textContent = kpis.activeStandardDrawings ?? '-';
+        if (elPrsMonth) elPrsMonth.textContent = kpis.prsThisMonth ?? '-';
+
+        // 3. Populate Recent Activity Stream (Live real audit logs)
+        const recentTbody = document.getElementById('recentActivityTbody');
+        if (recentTbody && Array.isArray(data.recentActivity)) {
+          if (data.recentActivity.length === 0) {
+            recentTbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:1.5rem; color:#64748b;">No recent activity logged yet.</td></tr>';
+          } else {
+            recentTbody.innerHTML = data.recentActivity.slice(0, 15).map(act => {
+              const statusPill = act.status === 'SUCCESS' 
+                ? '<span style="color:#047857; font-weight:600; font-size:0.75rem;">● SUCCESS</span>' 
+                : '<span style="color:#e11d48; font-weight:600; font-size:0.75rem;">● FAILURE</span>';
+              return `
+                <tr>
+                  <td style="font-size:0.75rem; color:#64748b; font-family:var(--font-mono);">${formatDateDisplay(act.created_at)}</td>
+                  <td><span class="role-pill" style="background:#f1f5f9; color:#475569; font-size:0.7rem;">${escapeHtml(act.module || 'SYSTEM')}</span></td>
+                  <td style="font-weight:600; font-size:0.8rem; color:#1e293b;">${escapeHtml(act.action)}</td>
+                  <td style="font-family:var(--font-mono); font-size:0.75rem; color:#0284c7;">${escapeHtml(act.entity_id || '-')}</td>
+                  <td style="font-size:0.8rem;"><strong>${escapeHtml(act.performed_by_username || 'System')}</strong> <span style="font-size:0.7rem; color:#64748b;">(${escapeHtml(act.role || '-')})</span></td>
+                  <td>${statusPill}</td>
+                  <td style="font-size:0.8rem; color:#334155;">${escapeHtml(act.description || '-')}</td>
+                </tr>
+              `;
+            }).join('');
+          }
+        }
+      } catch (err) {
+        console.warn('[Admin UI] Telemetry fetch error:', err);
+      }
     },
 
     // =========================================================================
@@ -5282,6 +5378,34 @@
       }
     },
 
+    async handleForcePasswordChange(userId) {
+      const user = (this.cachedUsers || []).find(u => u.id === userId) || (window.UserService && window.UserService.getUserById ? window.UserService.getUserById(userId) : null);
+      if (!user) return;
+
+      if (!confirm(`Are you sure you want to require user "${user.fullName}" (${user.username}) to change their password on next login?`)) {
+        return;
+      }
+
+      try {
+        const token = window.AuthService ? window.AuthService.getToken() : '';
+        const resp = await fetch(`/api/users/${encodeURIComponent(userId)}/force-password-change`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          }
+        });
+        if (!resp.ok) {
+          const errData = await resp.json().catch(() => ({}));
+          throw new Error(errData.error || 'Failed to force password change.');
+        }
+        this.showToast('Password Change Required', `User "${user.fullName}" must change password upon next login.`);
+        await this.renderUsersTable();
+      } catch (err) {
+        alert(err.message);
+      }
+    },
+
     async renderUsersTable() {
       // Robust selector finding tbody
       const tbody = document.getElementById('usersTableTbody') || 
@@ -5337,7 +5461,7 @@
       if (!users || users.length === 0) {
         tbody.innerHTML = `
           <tr class="empty-row">
-            <td colspan="8" style="text-align: center; padding: 2.5rem 1rem; color: var(--text-muted); font-size: 0.95rem;">
+            <td colspan="9" style="text-align: center; padding: 2.5rem 1rem; color: var(--text-muted); font-size: 0.95rem;">
               No user accounts found.
             </td>
           </tr>
@@ -5351,6 +5475,7 @@
         const roleClass = user.role === 'ADMIN' ? 'role-admin' : 'role-employee';
         const statusClass = user.status === 'Active' ? 'status-pill-active' : 'status-pill-disabled';
         const formattedDate = formatDateDisplay(user.createdAt);
+        const lastLoginDisplay = user.lastLoginAt ? formatDateDisplay(user.lastLoginAt) : '<span style="color:#94a3b8;">Never</span>';
         const isSelf = currentUser && currentUser.id === user.id;
 
         // Check if this is the last active admin
@@ -5376,6 +5501,9 @@
             <td>
               <span class="${statusClass}">● ${escapeHtml(user.status)}</span>
             </td>
+            <td style="font-size:0.8rem; color:#475569;">
+              ${lastLoginDisplay}
+            </td>
             <td style="color:var(--text-muted); font-size:0.8rem;">
               ${formattedDate}
             </td>
@@ -5385,7 +5513,10 @@
                   ✏️ Edit
                 </button>
                 <button type="button" class="btn-user-action btn-action-user-reset" data-user-id="${escapeHtml(user.id)}" title="Reset Temporary Password">
-                  🔑 Reset Password
+                  🔑 Reset
+                </button>
+                <button type="button" class="btn-user-action btn-action-user-force-change" data-user-id="${escapeHtml(user.id)}" title="Force Password Change on Next Login" style="color:#d97706; border-color:#fde68a;">
+                  ⚡ Force Pwd
                 </button>
                 <button type="button" class="btn-user-action ${user.status === 'Active' ? 'btn-disable' : 'btn-enable'} btn-action-user-status" data-user-id="${escapeHtml(user.id)}" title="${user.status === 'Active' ? (isLastActiveAdmin ? 'Cannot disable last active Admin' : 'Disable Account') : 'Enable Account'}" ${isLastActiveAdmin ? 'disabled style="opacity:0.5; cursor:not-allowed;"' : ''}>
                   ${user.status === 'Active' ? '🚫 Disable' : '✓ Enable'}
@@ -5413,6 +5544,13 @@
         });
       });
 
+      tbody.querySelectorAll('.btn-action-user-force-change').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const uid = btn.getAttribute('data-user-id');
+          this.handleForcePasswordChange(uid);
+        });
+      });
+
       tbody.querySelectorAll('.btn-action-user-status').forEach(btn => {
         btn.addEventListener('click', () => {
           const uid = btn.getAttribute('data-user-id');
@@ -5424,6 +5562,253 @@
     // Alias for renderUserManagement as specified in user prompt data flow
     renderUserManagement() {
       return this.renderUsersTable();
+    },
+
+    // =========================================================================
+    // ACTIVITY & AUDIT LOGS CONTROLLER (ADMIN ONLY)
+    // =========================================================================
+    auditLogState: {
+      page: 1,
+      limit: 25,
+      totalCount: 0,
+      logs: []
+    },
+
+    initAuditLogs() {
+      const btnRefresh = document.getElementById('btnRefreshAuditLogs');
+      if (btnRefresh && !btnRefresh._bound) {
+        btnRefresh._bound = true;
+        btnRefresh.addEventListener('click', () => this.loadAuditLogs(this.auditLogState.page));
+      }
+
+      const btnApply = document.getElementById('btnApplyAuditFilters');
+      if (btnApply && !btnApply._bound) {
+        btnApply._bound = true;
+        btnApply.addEventListener('click', () => this.loadAuditLogs(1));
+      }
+
+      const btnReset = document.getElementById('btnResetAuditFilters');
+      if (btnReset && !btnReset._bound) {
+        btnReset._bound = true;
+        btnReset.addEventListener('click', () => {
+          const s = document.getElementById('auditSearchInput');
+          const m = document.getElementById('auditModuleFilter');
+          const a = document.getElementById('auditActionFilter');
+          const st = document.getElementById('auditStatusFilter');
+          if (s) s.value = '';
+          if (m) m.value = '';
+          if (a) a.value = '';
+          if (st) st.value = '';
+          this.loadAuditLogs(1);
+        });
+      }
+
+      const prevBtn = document.getElementById('btnAuditPrevPage');
+      if (prevBtn && !prevBtn._bound) {
+        prevBtn._bound = true;
+        prevBtn.addEventListener('click', () => {
+          if (this.auditLogState.page > 1) {
+            this.loadAuditLogs(this.auditLogState.page - 1);
+          }
+        });
+      }
+
+      const nextBtn = document.getElementById('btnAuditNextPage');
+      if (nextBtn && !nextBtn._bound) {
+        nextBtn._bound = true;
+        nextBtn.addEventListener('click', () => {
+          const maxPage = Math.ceil(this.auditLogState.totalCount / this.auditLogState.limit);
+          if (this.auditLogState.page < maxPage) {
+            this.loadAuditLogs(this.auditLogState.page + 1);
+          }
+        });
+      }
+
+      const searchInput = document.getElementById('auditSearchInput');
+      if (searchInput && !searchInput._bound) {
+        searchInput._bound = true;
+        searchInput.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            this.loadAuditLogs(1);
+          }
+        });
+      }
+    },
+
+    async loadAuditLogs(page = 1) {
+      const currentUser = window.AuthService ? window.AuthService.getCurrentUser() : null;
+      if (!currentUser || currentUser.role !== 'ADMIN') return;
+
+      this.auditLogState.page = Math.max(1, page);
+      const limit = this.auditLogState.limit;
+      const offset = (this.auditLogState.page - 1) * limit;
+
+      const s = document.getElementById('auditSearchInput')?.value?.trim() || '';
+      const m = document.getElementById('auditModuleFilter')?.value?.trim() || '';
+      const a = document.getElementById('auditActionFilter')?.value?.trim() || '';
+      const st = document.getElementById('auditStatusFilter')?.value?.trim() || '';
+
+      const queryParams = new URLSearchParams({
+        limit: String(limit),
+        offset: String(offset)
+      });
+      if (s) queryParams.set('search', s);
+      if (m) queryParams.set('module', m);
+      if (a) queryParams.set('action', a);
+      if (st) queryParams.set('status', st);
+
+      const tbody = document.getElementById('auditLogsTbody');
+      if (tbody) {
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding:2rem; color:#64748b;">Fetching audit logs from PostgreSQL...</td></tr>';
+      }
+
+      try {
+        const token = window.AuthService ? window.AuthService.getToken() : '';
+        const resp = await fetch(`/api/admin/audit-logs?${queryParams.toString()}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        if (!resp.ok) {
+          throw new Error(`Failed to load audit logs (${resp.status})`);
+        }
+
+        const data = await resp.json();
+        this.auditLogState.logs = data.logs || [];
+        this.auditLogState.totalCount = data.totalCount || 0;
+
+        this.renderAuditLogsTable();
+      } catch (err) {
+        console.error('[Admin UI] Audit logs fetch error:', err);
+        if (tbody) {
+          tbody.innerHTML = `<tr><td colspan="9" style="text-align:center; padding:2rem; color:#ef4444;">Error loading audit logs: ${escapeHtml(err.message)}</td></tr>`;
+        }
+      }
+    },
+
+    renderAuditLogsTable() {
+      const tbody = document.getElementById('auditLogsTbody');
+      if (!tbody) return;
+
+      const { logs, totalCount, page, limit } = this.auditLogState;
+
+      // Update counters & pagination buttons
+      const countEl = document.getElementById('auditLogsCountText');
+      const pageIndicator = document.getElementById('auditPageIndicator');
+      const prevBtn = document.getElementById('btnAuditPrevPage');
+      const nextBtn = document.getElementById('btnAuditNextPage');
+
+      const maxPage = Math.max(1, Math.ceil(totalCount / limit));
+      if (countEl) countEl.textContent = `Showing ${logs.length} of ${totalCount} recorded events`;
+      if (pageIndicator) pageIndicator.textContent = `Page ${page} of ${maxPage}`;
+      if (prevBtn) prevBtn.disabled = (page <= 1);
+      if (nextBtn) nextBtn.disabled = (page >= maxPage);
+
+      if (!logs || logs.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding:2rem; color:#64748b;">No audit logs match current filters.</td></tr>';
+        return;
+      }
+
+      tbody.innerHTML = logs.map(log => {
+        const statusPill = log.status === 'SUCCESS' 
+          ? '<span style="color:#047857; font-weight:600; font-size:0.75rem;">● SUCCESS</span>' 
+          : '<span style="color:#e11d48; font-weight:600; font-size:0.75rem;">● FAILURE</span>';
+
+        const hasChanges = Boolean(log.before_value || log.after_value || (log.metadata && Object.keys(log.metadata).length > 0));
+
+        return `
+          <tr data-log-id="${log.id}">
+            <td style="font-size:0.75rem; color:#64748b; font-family:var(--font-mono);">${formatDateDisplay(log.created_at)}</td>
+            <td><span class="role-pill" style="background:#f1f5f9; color:#475569; font-size:0.7rem;">${escapeHtml(log.module || 'SYSTEM')}</span></td>
+            <td style="font-weight:600; font-size:0.8rem; color:#1e293b;">${escapeHtml(log.action)}</td>
+            <td style="font-family:var(--font-mono); font-size:0.75rem; color:#0284c7;">${escapeHtml(log.entity_id || '-')}</td>
+            <td style="font-size:0.8rem;">
+              <strong>${escapeHtml(log.performed_by_username || 'System')}</strong>
+              <div style="font-size:0.7rem; color:#64748b;">${escapeHtml(log.role || '-')}</div>
+            </td>
+            <td style="font-family:var(--font-mono); font-size:0.75rem; color:#64748b;">${escapeHtml(log.ip_address || '-')}</td>
+            <td>${statusPill}</td>
+            <td style="font-size:0.8rem; color:#334155;">${escapeHtml(log.description || '-')}</td>
+            <td style="text-align:right;">
+              ${hasChanges ? `
+                <button type="button" class="btn btn-secondary btn-sm" onclick="UI.openAuditDetailsModal(${log.id})" style="font-size:0.72rem; padding:2px 8px;">
+                  Inspect
+                </button>
+              ` : '<span style="color:#94a3b8; font-size:0.75rem;">-</span>'}
+            </td>
+          </tr>
+        `;
+      }).join('');
+    },
+
+    openAuditDetailsModal(logId) {
+      const log = (this.auditLogState.logs || []).find(l => l.id === logId);
+      if (!log) return;
+
+      const modal = document.getElementById('modalAuditLogDetails');
+      const titleEl = document.getElementById('auditDetailTitle');
+      const subtitleEl = document.getElementById('auditDetailSubtitle');
+      const bodyEl = document.getElementById('auditDetailBody');
+
+      if (titleEl) titleEl.textContent = `Event #${log.id} — ${log.action}`;
+      if (subtitleEl) subtitleEl.textContent = `${log.module} • ${formatDateDisplay(log.created_at)} by ${log.performed_by_username || 'System'}`;
+
+      let beforeJson = '-';
+      let afterJson = '-';
+      let metaJson = '-';
+
+      try {
+        if (log.before_value) beforeJson = JSON.stringify(typeof log.before_value === 'string' ? JSON.parse(log.before_value) : log.before_value, null, 2);
+      } catch (e) { beforeJson = String(log.before_value); }
+
+      try {
+        if (log.after_value) afterJson = JSON.stringify(typeof log.after_value === 'string' ? JSON.parse(log.after_value) : log.after_value, null, 2);
+      } catch (e) { afterJson = String(log.after_value); }
+
+      try {
+        if (log.metadata) metaJson = JSON.stringify(typeof log.metadata === 'string' ? JSON.parse(log.metadata) : log.metadata, null, 2);
+      } catch (e) { metaJson = String(log.metadata); }
+
+      if (bodyEl) {
+        bodyEl.innerHTML = `
+          <div style="margin-bottom:1rem; padding:0.75rem; background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px;">
+            <div style="font-weight:600; margin-bottom:0.25rem; color:#0f172a;">Description</div>
+            <div style="color:#334155;">${escapeHtml(log.description || '-')}</div>
+            <div style="margin-top:0.5rem; display:flex; gap:1.5rem; font-size:0.78rem; color:#64748b;">
+              <span><strong>Entity:</strong> ${escapeHtml(log.entity_type || '-')} #${escapeHtml(log.entity_id || '-')}</span>
+              <span><strong>Client IP:</strong> ${escapeHtml(log.ip_address || '-')}</span>
+              <span><strong>Status:</strong> ${escapeHtml(log.status || '-')}</span>
+            </div>
+          </div>
+
+          ${(log.before_value || log.after_value) ? `
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:0.75rem; margin-bottom:1rem;">
+              <div>
+                <strong style="color:#b91c1c; font-size:0.8rem;">Before State (Previous)</strong>
+                <pre style="background:#fef2f2; border:1px solid #fecaca; border-radius:6px; padding:0.5rem; font-size:0.75rem; max-height:200px; overflow:auto; margin-top:0.25rem;">${escapeHtml(beforeJson)}</pre>
+              </div>
+              <div>
+                <strong style="color:#047857; font-size:0.8rem;">After State (New)</strong>
+                <pre style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; padding:0.5rem; font-size:0.75rem; max-height:200px; overflow:auto; margin-top:0.25rem;">${escapeHtml(afterJson)}</pre>
+              </div>
+            </div>
+          ` : ''}
+
+          ${(log.metadata && Object.keys(log.metadata).length > 0) ? `
+            <div>
+              <strong style="color:#1e293b; font-size:0.8rem;">Contextual Metadata</strong>
+              <pre style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:6px; padding:0.5rem; font-size:0.75rem; max-height:160px; overflow:auto; margin-top:0.25rem;">${escapeHtml(metaJson)}</pre>
+            </div>
+          ` : ''}
+        `;
+      }
+
+      if (modal) modal.style.display = 'flex';
+    },
+
+    closeAuditDetailsModal() {
+      const modal = document.getElementById('modalAuditLogDetails');
+      if (modal) modal.style.display = 'none';
     },
 
     // =========================================================================

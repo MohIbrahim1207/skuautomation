@@ -7,6 +7,7 @@ const router = express.Router();
 const { query, pool } = require('../db/pool');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const { REQUIRE_UNIT_PRICE } = require('../config/pricing');
+const { logActivity, extractClientIp } = require('../services/activityLogger');
 
 const VALID_STATUSES = ['Available', 'Out of Stock'];
 const VALID_SUPPLY_TYPES = ['Full Size', 'Cut Size'];
@@ -196,6 +197,38 @@ router.post('/', requireAdmin, async (req, res) => {
     );
 
     const r = insertRes.rows[0];
+
+    await logActivity({
+      entityType: 'MASTER_ITEM',
+      entityId: cleanSku,
+      action: 'SKU_CREATED',
+      module: 'MASTER_CATALOG',
+      description: `Created new Master SKU ${cleanSku} (${productName.trim()})`,
+      userId: req.user.id,
+      username: req.user.username,
+      role: req.user.role,
+      ipAddress: extractClientIp(req),
+      status: 'SUCCESS',
+      afterValue: {
+        sku: cleanSku,
+        productName: productName.trim(),
+        itemDescription: itemDescription.trim(),
+        category: category || 'Raw Materials',
+        subCategory: subCategory || null,
+        material: material || null,
+        size: size || null,
+        specification: specification || null,
+        unit: unit || 'Sheet',
+        weightKg: weightNum,
+        unitPrice: priceNum,
+        status: statusVal,
+        supplyType: supplyTypeVal,
+        remarks: remarksVal,
+        brand: brand || 'PT Persada Nusantara Steel'
+      },
+      metadata: { sku: cleanSku, productName: productName.trim() }
+    });
+
     res.status(201).json({
       ...r,
       status: (r.status === 'Out of Stock') ? 'Out of Stock' : 'Available',
@@ -290,8 +323,78 @@ router.put('/:sku', async (req, res) => {
       ]
     );
 
+    const oldItem = existing.rows[0];
     const updated = await query('SELECT * FROM master_items WHERE UPPER(sku) = UPPER($1)', [sku.trim()]);
     const r = updated.rows[0];
+
+    const clientIp = extractClientIp(req);
+    const priceChanged = updatePrice && Number(r.unit_price) !== Number(oldItem.unit_price);
+    const descChanged = (itemDescription !== undefined) && r.item_description !== oldItem.item_description;
+
+    if (priceChanged) {
+      await logActivity({
+        entityType: 'MASTER_ITEM',
+        entityId: r.sku,
+        action: 'PRICE_CHANGED',
+        module: 'MASTER_CATALOG',
+        description: `Unit price for ${r.sku} changed from IDR ${oldItem.unit_price !== null ? Number(oldItem.unit_price).toLocaleString('id-ID') : 'None'} to IDR ${r.unit_price !== null ? Number(r.unit_price).toLocaleString('id-ID') : 'None'}`,
+        userId: req.user.id,
+        username: req.user.username,
+        role: req.user.role,
+        ipAddress: clientIp,
+        status: 'SUCCESS',
+        beforeValue: { unitPrice: oldItem.unit_price !== null ? Number(oldItem.unit_price) : null },
+        afterValue: { unitPrice: r.unit_price !== null ? Number(r.unit_price) : null },
+        metadata: { sku: r.sku, oldPrice: oldItem.unit_price, newPrice: r.unit_price }
+      });
+    }
+
+    if (descChanged) {
+      await logActivity({
+        entityType: 'MASTER_ITEM',
+        entityId: r.sku,
+        action: 'DESCRIPTION_CHANGED',
+        module: 'MASTER_CATALOG',
+        description: `Item description for ${r.sku} updated`,
+        userId: req.user.id,
+        username: req.user.username,
+        role: req.user.role,
+        ipAddress: clientIp,
+        status: 'SUCCESS',
+        beforeValue: { itemDescription: oldItem.item_description },
+        afterValue: { itemDescription: r.item_description },
+        metadata: { sku: r.sku }
+      });
+    }
+
+    if (!priceChanged && !descChanged) {
+      await logActivity({
+        entityType: 'MASTER_ITEM',
+        entityId: r.sku,
+        action: 'SKU_UPDATED',
+        module: 'MASTER_CATALOG',
+        description: `Master Item ${r.sku} updated by ${req.user.username}`,
+        userId: req.user.id,
+        username: req.user.username,
+        role: req.user.role,
+        ipAddress: clientIp,
+        status: 'SUCCESS',
+        beforeValue: {
+          productName: oldItem.product_name,
+          status: oldItem.status,
+          supplyType: oldItem.supply_type,
+          remarks: oldItem.remarks
+        },
+        afterValue: {
+          productName: r.product_name,
+          status: r.status,
+          supplyType: r.supply_type,
+          remarks: r.remarks
+        },
+        metadata: { sku: r.sku }
+      });
+    }
+
     res.json({
       success: true,
       message: 'Master Item updated successfully.',
@@ -468,6 +571,24 @@ router.post('/batch-import', async (req, res) => {
       endSku: insertedRows[insertedRows.length - 1].sku
     });
 
+    await logActivity({
+      entityType: 'MASTER_ITEM',
+      action: 'SKU_BATCH_IMPORTED',
+      module: 'MASTER_CATALOG',
+      description: `Imported ${insertedRows.length} SKUs (${insertedRows[0]?.sku} - ${insertedRows[insertedRows.length - 1]?.sku}) from file: ${fileName || 'Excel'}`,
+      userId: req.user.id,
+      username: req.user.username,
+      role: req.user.role,
+      ipAddress: extractClientIp(req),
+      status: 'SUCCESS',
+      metadata: {
+        count: insertedRows.length,
+        fileName,
+        startSku: insertedRows[0]?.sku,
+        endSku: insertedRows[insertedRows.length - 1]?.sku
+      }
+    });
+
     res.status(201).json({
       success: true,
       message: `Successfully imported ${insertedRows.length} Master Items.`,
@@ -523,7 +644,28 @@ router.delete('/:sku', requireAdmin, async (req, res) => {
       }
     }
 
+    const itemToDelete = existing.rows[0];
     await query('DELETE FROM master_items WHERE UPPER(sku) = UPPER($1)', [sku.trim()]);
+
+    await logActivity({
+      entityType: 'MASTER_ITEM',
+      entityId: itemToDelete.sku,
+      action: 'SKU_DELETED',
+      module: 'MASTER_CATALOG',
+      description: `Administrator ${req.user.username} deleted Master Item ${itemToDelete.sku} (${itemToDelete.product_name})`,
+      userId: req.user.id,
+      username: req.user.username,
+      role: req.user.role,
+      ipAddress: extractClientIp(req),
+      status: 'SUCCESS',
+      beforeValue: {
+        sku: itemToDelete.sku,
+        productName: itemToDelete.product_name,
+        category: itemToDelete.category,
+        unitPrice: itemToDelete.unit_price
+      }
+    });
+
     res.json({ success: true, message: `Master Item '${sku}' deleted successfully.` });
   } catch (err) {
     console.error('[Master Items API] Delete error:', err);

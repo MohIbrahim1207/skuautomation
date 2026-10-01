@@ -11,6 +11,7 @@ const fs = require('fs');
 const bcrypt = require('bcryptjs');
 const { query } = require('./db/pool');
 const { getStorageHealth } = require('./services/cloudinaryService');
+const { migrateAdminOperations } = require('./db/migrations/003_add_admin_operations_audit');
 require('dotenv').config();
 
 const app = express();
@@ -191,6 +192,7 @@ app.use('/api/purchase-requests', require('./routes/purchaseRequests'));
 app.use('/api/documents', require('./routes/documents'));
 app.use('/api/import-submissions', require('./routes/importSubmissions'));
 app.use('/api/ducting-types', require('./routes/ductingTypes'));
+app.use('/api/admin', require('./routes/admin'));
 app.use('/pr', require('./routes/verify'));
 
 // Explicit Master Item Excel Template Download Routes (100% Binary Safe)
@@ -425,6 +427,9 @@ const runStartupMigrations = async () => {
       ALTER TABLE import_submissions ADD COLUMN IF NOT EXISTS template_version VARCHAR(50);
     `);
     console.log('✅ [DB] Verified schema (Status, Supply Type, Remarks, Ducting Specs, Import Submissions)');
+
+    // Run Admin Operations & Audit Trail schema updates & append-only trigger
+    await migrateAdminOperations();
 
     // Ensure initial seed users exist in PostgreSQL (ADMIN: admin, EMPLOYEE: employee)
     await ensureSeedUsers();

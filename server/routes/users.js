@@ -6,6 +6,7 @@ const router = express.Router();
 const bcrypt = require('bcryptjs');
 const { query } = require('../db/pool');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
+const { logActivity, extractClientIp } = require('../services/activityLogger');
 
 // Apply authentication and admin verification across all user management routes
 router.use(authenticateToken);
@@ -15,7 +16,7 @@ router.use(requireAdmin);
 router.get('/', async (req, res) => {
   try {
     const result = await query(
-      `SELECT id, full_name, username, email, role, status, must_change_password, created_at 
+      `SELECT id, full_name, username, email, role, status, must_change_password, last_login_at, created_at 
        FROM users 
        ORDER BY created_at ASC`
     );
@@ -28,6 +29,7 @@ router.get('/', async (req, res) => {
       role: u.role,
       status: u.status,
       mustChangePassword: u.must_change_password,
+      lastLoginAt: u.last_login_at,
       createdAt: u.created_at
     }));
 
@@ -110,6 +112,27 @@ router.post('/', async (req, res) => {
       [nextId, cleanFullName, cleanUsername, cleanEmail || `${cleanUsername}@flowforce.local`, hash, assignedRole, initialStatus]
     );
 
+    await logActivity({
+      entityType: 'USER',
+      entityId: nextId,
+      action: 'USER_CREATED',
+      module: 'USER_MANAGEMENT',
+      description: `Administrator ${req.user.username} created user account ${cleanUsername} (${cleanFullName}, ID: ${nextId})`,
+      userId: req.user.id,
+      username: req.user.username,
+      role: req.user.role,
+      ipAddress: extractClientIp(req),
+      status: 'SUCCESS',
+      afterValue: {
+        id: nextId,
+        fullName: cleanFullName,
+        username: cleanUsername,
+        email: cleanEmail || `${cleanUsername}@flowforce.local`,
+        role: assignedRole,
+        status: initialStatus
+      }
+    });
+
     res.status(201).json({
       id: nextId,
       fullName: cleanFullName,
@@ -170,6 +193,31 @@ router.put('/:id', async (req, res) => {
       [cleanFullName || null, cleanUsername || null, cleanEmail || null, status || null, id]
     );
 
+    await logActivity({
+      entityType: 'USER',
+      entityId: id,
+      action: 'USER_UPDATED',
+      module: 'USER_MANAGEMENT',
+      description: `Administrator ${req.user.username} updated profile for user ${user.username} (${id})`,
+      userId: req.user.id,
+      username: req.user.username,
+      role: req.user.role,
+      ipAddress: extractClientIp(req),
+      status: 'SUCCESS',
+      beforeValue: {
+        fullName: user.full_name,
+        username: user.username,
+        email: user.email,
+        status: user.status
+      },
+      afterValue: {
+        fullName: cleanFullName || user.full_name,
+        username: cleanUsername || user.username,
+        email: cleanEmail || user.email,
+        status: status || user.status
+      }
+    });
+
     res.json({ success: true, message: 'User updated successfully.' });
   } catch (err) {
     console.error('[Users API] Update user error:', err);
@@ -203,6 +251,23 @@ router.patch('/:id/status', async (req, res) => {
     }
 
     await query('UPDATE users SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [status, id]);
+
+    const action = status === 'Active' ? 'USER_ENABLED' : 'USER_DISABLED';
+    await logActivity({
+      entityType: 'USER',
+      entityId: id,
+      action,
+      module: 'USER_MANAGEMENT',
+      description: `Administrator ${req.user.username} set user ${user.username} status to ${status}`,
+      userId: req.user.id,
+      username: req.user.username,
+      role: req.user.role,
+      ipAddress: extractClientIp(req),
+      status: 'SUCCESS',
+      beforeValue: { status: user.status },
+      afterValue: { status }
+    });
+
     res.json({ success: true, message: `User status updated to ${status}.` });
   } catch (err) {
     console.error('[Users API] Status toggle error:', err);
@@ -220,18 +285,68 @@ router.post('/:id/reset-password', async (req, res) => {
   try {
     const hash = await bcrypt.hash(targetPass, 10);
     const result = await query(
-      `UPDATE users SET password_hash = $1, must_change_password = true, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING full_name`,
+      `UPDATE users SET password_hash = $1, must_change_password = true, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING full_name, username`,
       [hash, id]
     );
 
     if (result.rowCount === 0) return res.status(404).json({ error: 'User not found.' });
+    const user = result.rows[0];
+
+    await logActivity({
+      entityType: 'USER',
+      entityId: id,
+      action: 'PASSWORD_RESET',
+      module: 'USER_MANAGEMENT',
+      description: `Administrator ${req.user.username} reset password for user ${user.username} (${user.full_name}, ID: ${id}) with must_change_password required`,
+      userId: req.user.id,
+      username: req.user.username,
+      role: req.user.role,
+      ipAddress: extractClientIp(req),
+      status: 'SUCCESS'
+    });
 
     res.json({
       success: true,
-      message: `Temporary password set for ${result.rows[0].full_name}. User must change it upon next login.`
+      message: `Temporary password set for ${user.full_name}. User must change it upon next login.`
     });
   } catch (err) {
     console.error('[Users API] Reset password error:', err);
+    res.status(500).json({ error: 'Database connection unavailable. Please contact the administrator.' });
+  }
+});
+
+// POST /api/users/:id/force-password-change - Force user to change password on next login
+router.post('/:id/force-password-change', async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const result = await query(
+      `UPDATE users SET must_change_password = true, updated_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING full_name, username`,
+      [id]
+    );
+
+    if (result.rowCount === 0) return res.status(404).json({ error: 'User not found.' });
+    const user = result.rows[0];
+
+    await logActivity({
+      entityType: 'USER',
+      entityId: id,
+      action: 'FORCE_PASSWORD_CHANGE',
+      module: 'USER_MANAGEMENT',
+      description: `Administrator ${req.user.username} flagged user ${user.username} (${user.full_name}) to force password change on next login`,
+      userId: req.user.id,
+      username: req.user.username,
+      role: req.user.role,
+      ipAddress: extractClientIp(req),
+      status: 'SUCCESS'
+    });
+
+    res.json({
+      success: true,
+      message: `Password change required flag set for ${user.full_name}.`
+    });
+  } catch (err) {
+    console.error('[Users API] Force password change error:', err);
     res.status(500).json({ error: 'Database connection unavailable. Please contact the administrator.' });
   }
 });

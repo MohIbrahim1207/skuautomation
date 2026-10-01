@@ -10,7 +10,7 @@ const crypto = require('crypto');
 const { query, pool } = require('../db/pool');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const { generatePrDocuments, getDocumentStorageDir } = require('../services/documentGenerator');
-const { logActivity } = require('../services/activityLogger');
+const { logActivity, extractClientIp } = require('../services/activityLogger');
 const { REQUIRE_UNIT_PRICE } = require('../config/pricing');
 
 function validateDuctingItem(item) {
@@ -498,6 +498,28 @@ router.post('/', async (req, res) => {
 
     await client.query('COMMIT');
 
+    await logActivity({
+      entityType: 'PURCHASE_REQUEST',
+      entityId: String(prId),
+      action: 'PR_CREATED',
+      module: 'PURCHASE_REQUESTS',
+      description: `Purchase Request ${prNumber} created with ${cartItems.length} items and submitted for approval by ${req.user.username}`,
+      userId: req.user.id,
+      username: req.user.username,
+      role: req.user.role,
+      ipAddress: extractClientIp(req),
+      status: 'SUCCESS',
+      afterValue: {
+        prId,
+        prNumber,
+        itemCount: cartItems.length,
+        department,
+        urgency,
+        status: 'PENDING_APPROVAL'
+      },
+      metadata: { prNumber, itemCount: cartItems.length, projectId }
+    });
+
     // Automatically generate PR Excel (.xlsx) and PDF (.pdf) in background
     try {
       await generatePrDocuments(prId);
@@ -801,6 +823,22 @@ router.post('/:id/approve', requireAdmin, async (req, res) => {
       [id, req.user.id, 'Purchase Request approved for procurement']
     );
 
+    await logActivity({
+      entityType: 'PURCHASE_REQUEST',
+      entityId: String(id),
+      action: 'PR_APPROVED',
+      module: 'PURCHASE_REQUESTS',
+      description: `Purchase Request ${pr.pr_number} approved for procurement by ${req.user.fullName || req.user.username}`,
+      userId: req.user.id,
+      username: req.user.username,
+      role: req.user.role,
+      ipAddress: extractClientIp(req),
+      status: 'SUCCESS',
+      beforeValue: { status: pr.status },
+      afterValue: { status: 'APPROVED' },
+      metadata: { prNumber: pr.pr_number, prId: id }
+    });
+
     // Regenerate documents with Approved stamp
     try {
       await generatePrDocuments(id);
@@ -854,6 +892,22 @@ router.post('/:id/reject', requireAdmin, async (req, res) => {
        VALUES ($1, 'REJECTED', $2, $3)`,
       [id, req.user.id, `Rejected: ${rejectionReason.trim()}`]
     );
+
+    await logActivity({
+      entityType: 'PURCHASE_REQUEST',
+      entityId: String(id),
+      action: 'PR_REJECTED',
+      module: 'PURCHASE_REQUESTS',
+      description: `Purchase Request ${pr.pr_number} rejected by ${req.user.fullName || req.user.username}. Reason: ${rejectionReason.trim()}`,
+      userId: req.user.id,
+      username: req.user.username,
+      role: req.user.role,
+      ipAddress: extractClientIp(req),
+      status: 'SUCCESS',
+      beforeValue: { status: pr.status },
+      afterValue: { status: 'REJECTED', rejectionReason: rejectionReason.trim() },
+      metadata: { prNumber: pr.pr_number, prId: id, rejectionReason: rejectionReason.trim() }
+    });
 
     // Regenerate documents with Rejected stamp
     try {
