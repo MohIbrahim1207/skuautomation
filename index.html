@@ -2445,10 +2445,15 @@
             ⚠️ <strong>Validation issues detected:</strong> Please review rows highlighted in red. You must correct required fields before submitting.
           </div>
 
-          <div style="margin-top: 1.25rem; display: flex; justify-content: space-between; align-items: center;">
-            <button type="button" class="btn btn-secondary" id="btnImportBackToStep1">
-              <span>← Back</span>
-            </button>
+          <div style="margin-top: 1.25rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
+            <div style="display: flex; gap: 0.5rem; align-items: center;">
+              <button type="button" class="btn btn-secondary" id="btnImportBackToStep1">
+                <span>← Back</span>
+              </button>
+              <button type="button" class="btn btn-secondary" id="btnDownloadFailedRows" style="display: none; color: #b91c1c; border-color: #fecdd3; background: #fff1f2; font-weight: 600;">
+                <span>📥 Download Failed Rows (0)</span>
+              </button>
+            </div>
             <button type="button" class="btn btn-primary" id="btnImportGoStep3">
               <span>Next: Confirm Import →</span>
             </button>
@@ -2480,6 +2485,10 @@
                 <span class="confirm-val" id="confirmMaterialFamily" style="color: #0284c7; font-weight: 700;">—</span>
               </div>
               <div class="confirm-item">
+                <span class="confirm-lbl">Auto-SKU Allocation:</span>
+                <span class="confirm-val" id="confirmSkuSeries" style="color: #059669; font-weight: 700; font-family: var(--font-mono);">—</span>
+              </div>
+              <div class="confirm-item">
                 <span class="confirm-lbl">Submission Status:</span>
                 <span class="confirm-val" id="confirmStatusText" style="color: #d97706; font-weight: 700;">PENDING ADMIN REVIEW</span>
               </div>
@@ -2493,7 +2502,7 @@
               </div>
               <div class="confirm-item">
                 <span class="confirm-lbl">Integrity Rule:</span>
-                <span class="confirm-val">Duplicate SKU detection &amp; Dimensions validation</span>
+                <span class="confirm-val">Duplicate SKU / Name detection &amp; Dimensions validation</span>
               </div>
             </div>
           </div>

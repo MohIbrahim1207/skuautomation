@@ -32,6 +32,13 @@ function sanitizeRemarks(remarks) {
 }
 
 const { serveTemplateDownload } = require('../services/templateService');
+const {
+  isTextPlaceholder,
+  isNumericPlaceholder,
+  parseIndonesianNumber,
+  normalizeTextForMatching,
+  getItemMatchKey
+} = require('../services/numberUtils');
 
 // GET /api/master-items/template - Download standard Flow Force New SKU Input template
 router.get('/template', serveTemplateDownload);
@@ -459,20 +466,52 @@ router.post('/batch-import', async (req, res) => {
 
     console.log('[8. PostgreSQL Transaction Start]', { itemsToInsert: items.length, nextStartingSku: `FF${currentSeq + 1}` });
 
+    // Load existing items into memory for exact SKU and Product Name + Description matching
+    const allExistingRes = await client.query('SELECT * FROM master_items');
+    const existingSkuMap = new Map();
+    const existingNameDescMap = new Map();
+
+    allExistingRes.rows.forEach(r => {
+      if (r.sku) {
+        const s = r.sku.trim().toUpperCase();
+        if (!existingSkuMap.has(s)) existingSkuMap.set(s, []);
+        existingSkuMap.get(s).push(r);
+      }
+      const key = getItemMatchKey(r.product_name, r.item_description);
+      if (!existingNameDescMap.has(key)) existingNameDescMap.set(key, []);
+      existingNameDescMap.get(key).push(r);
+    });
+
     for (let i = 0; i < items.length; i++) {
       const it = items[i];
-      currentSeq++;
-      const sku = `FF${currentSeq}`;
 
-      const prodName = (it.productName !== undefined && it.productName !== null && String(it.productName).trim() !== '')
+      const cleanSku = (it.sku && !isTextPlaceholder(it.sku)) ? String(it.sku).trim() : '';
+      const prodName = (it.productName !== undefined && it.productName !== null && !isTextPlaceholder(it.productName))
         ? String(it.productName).trim()
         : null;
-
-      const desc = (it.itemDescription !== undefined && it.itemDescription !== null && String(it.itemDescription).trim() !== '')
+      const desc = (it.itemDescription !== undefined && it.itemDescription !== null && !isTextPlaceholder(it.itemDescription))
         ? String(it.itemDescription).trim()
         : null;
 
-      let category = (it.category !== undefined && it.category !== null && String(it.category).trim() !== '')
+      let existingMatch = null;
+      if (cleanSku) {
+        const matches = existingSkuMap.get(cleanSku.toUpperCase()) || [];
+        if (matches.length === 1) {
+          existingMatch = matches[0];
+        } else if (matches.length > 1) {
+          existingMatch = null; // Ambiguous match — create new
+        }
+      } else if (prodName) {
+        const key = getItemMatchKey(prodName, desc);
+        const matches = existingNameDescMap.get(key) || [];
+        if (matches.length === 1) {
+          existingMatch = matches[0];
+        } else if (matches.length > 1) {
+          existingMatch = null; // Ambiguous match — create new
+        }
+      }
+
+      let category = (it.category !== undefined && it.category !== null && !isTextPlaceholder(it.category))
         ? String(it.category).trim()
         : null;
 
@@ -481,50 +520,46 @@ router.post('/batch-import', async (req, res) => {
       if (!category) {
         if (itemSheet && itemSheet.toLowerCase().includes('piping')) category = 'Piping & Fittings';
         else if (itemSheet && itemSheet.toLowerCase().includes('fastener')) category = 'Fasteners';
+        else if (itemSheet && itemSheet.toLowerCase().includes('electrical')) category = 'Electrical Materials';
+        else if (itemSheet && itemSheet.toLowerCase().includes('bought')) category = 'Bought Out Items';
         else category = 'Raw Materials';
       } else if (category.toLowerCase() === 'piping') {
         category = 'Piping & Fittings';
       } else if (category.toLowerCase() === 'fastener' || category.toLowerCase() === 'fasteners') {
         category = 'Fasteners';
+      } else if (category.toLowerCase() === 'electrical' || category.toLowerCase() === 'electrical materials') {
+        category = 'Electrical Materials';
       }
 
-      const subCategory = (it.subCategory !== undefined && it.subCategory !== null && String(it.subCategory).trim() !== '')
+      const subCategory = (it.subCategory !== undefined && it.subCategory !== null && !isTextPlaceholder(it.subCategory))
         ? String(it.subCategory).trim()
         : null;
 
-      const material = (it.material !== undefined && it.material !== null && String(it.material).trim() !== '')
+      const material = (it.material !== undefined && it.material !== null && !isTextPlaceholder(it.material))
         ? String(it.material).trim()
         : null;
 
-      const size = (it.size !== undefined && it.size !== null && String(it.size).trim() !== '')
+      const size = (it.size !== undefined && it.size !== null && !isTextPlaceholder(it.size))
         ? String(it.size).trim()
         : null;
 
-      const specification = (it.specification !== undefined && it.specification !== null && String(it.specification).trim() !== '')
+      const specification = (it.specification !== undefined && it.specification !== null && !isTextPlaceholder(it.specification))
         ? String(it.specification).trim()
         : null;
 
-      const unit = (it.unit !== undefined && it.unit !== null && String(it.unit).trim() !== '')
+      const unit = (it.unit !== undefined && it.unit !== null && !isTextPlaceholder(it.unit))
         ? String(it.unit).trim()
         : null;
 
-      const weight = (it.weightKg !== undefined && it.weightKg !== null && it.weightKg !== '' && !isNaN(parseFloat(it.weightKg)))
-        ? parseFloat(it.weightKg)
-        : null;
+      const parsedWeight = parseIndonesianNumber(it.weightKg, false);
+      const weight = parsedWeight.value;
 
-      const brand = (it.brand !== undefined && it.brand !== null && String(it.brand).trim() !== '')
+      const brand = (it.brand !== undefined && it.brand !== null && !isTextPlaceholder(it.brand))
         ? String(it.brand).trim()
         : null;
 
-      let price = null;
-      if (it.unitPrice !== undefined && it.unitPrice !== null && it.unitPrice !== '') {
-        const pNum = Number(it.unitPrice);
-        if (!isNaN(pNum) && isFinite(pNum)) {
-          price = pNum;
-        } else {
-          price = it.unitPrice;
-        }
-      }
+      const parsedPrice = parseIndonesianNumber(it.unitPrice, true);
+      const price = parsedPrice.value;
 
       const itemStatus = sanitizeStatus(it.status);
       const itemSupplyType = sanitizeSupplyType(it.supplyType);
@@ -533,32 +568,100 @@ router.post('/batch-import', async (req, res) => {
       const rowNumStr = it.excelRowNum ? ` R${it.excelRowNum}` : '';
       const auditSource = `Excel: ${fileName || 'File'} [${it.sourceSheet || sheetName || 'Sheet'}]${rowNumStr} by ${req.user.username || 'User'} (${req.user.id || 'ID'})`;
 
-      const insertRes = await client.query(`
-        INSERT INTO master_items (
-          sku, product_name, item_description, category, sub_category,
-          material, size, specification, unit, weight_kg, status, supply_type, remarks, brand, unit_price, source_sheet
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
-        RETURNING *
-      `, [
-        sku,
-        prodName,
-        desc,
-        category,
-        subCategory,
-        material,
-        size,
-        specification,
-        unit,
-        weight,
-        itemStatus,
-        itemSupplyType,
-        itemRemarks,
-        brand,
-        price,
-        auditSource
-      ]);
+      if (existingMatch) {
+        // Updates must never erase data: skip any blank or placeholder field, keep existing DB value
+        const isReal = (v) => v !== undefined && v !== null && !isTextPlaceholder(v) && String(v).trim() !== '';
 
-      insertedRows.push(insertRes.rows[0]);
+        const updatedDesc = isReal(desc) ? desc : existingMatch.item_description;
+        const updatedCategory = isReal(it.category) ? category : existingMatch.category;
+        const updatedSubCat = isReal(subCategory) ? subCategory : existingMatch.sub_category;
+        const updatedMaterial = isReal(material) ? material : existingMatch.material;
+        const updatedSize = isReal(size) ? size : existingMatch.size;
+        const updatedSpec = isReal(specification) ? specification : existingMatch.specification;
+        const updatedUnit = isReal(unit) ? unit : existingMatch.unit;
+        const updatedWeight = (weight !== null && weight !== undefined) ? weight : existingMatch.weight_kg;
+        const updatedSupplyType = isReal(it.supplyType) ? itemSupplyType : existingMatch.supply_type;
+        const updatedRemarks = isReal(it.remarks) ? itemRemarks : existingMatch.remarks;
+        const updatedBrand = isReal(brand) ? brand : existingMatch.brand;
+        const updatedPrice = (price !== null && price !== undefined) ? price : existingMatch.unit_price;
+        const updatedSourceSheet = isReal(itemSheet) ? itemSheet : existingMatch.source_sheet;
+
+        const updateRes = await client.query(`
+          UPDATE master_items SET
+            item_description = $1,
+            category = $2,
+            sub_category = $3,
+            material = $4,
+            size = $5,
+            specification = $6,
+            unit = $7,
+            weight_kg = $8,
+            supply_type = $9,
+            remarks = $10,
+            brand = $11,
+            unit_price = $12,
+            source_sheet = $13,
+            updated_at = CURRENT_TIMESTAMP
+          WHERE id = $14
+          RETURNING *
+        `, [
+          updatedDesc,
+          updatedCategory,
+          updatedSubCat,
+          updatedMaterial,
+          updatedSize,
+          updatedSpec,
+          updatedUnit,
+          updatedWeight,
+          updatedSupplyType,
+          updatedRemarks,
+          updatedBrand,
+          updatedPrice,
+          updatedSourceSheet,
+          existingMatch.id
+        ]);
+
+        insertedRows.push(updateRes.rows[0]);
+      } else {
+        currentSeq++;
+        const sku = `FF${currentSeq}`;
+
+        const insertRes = await client.query(`
+          INSERT INTO master_items (
+            sku, product_name, item_description, category, sub_category,
+            material, size, specification, unit, weight_kg, status, supply_type, remarks, brand, unit_price, source_sheet
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+          RETURNING *
+        `, [
+          sku,
+          prodName,
+          desc,
+          category,
+          subCategory,
+          material,
+          size,
+          specification,
+          unit || 'Pcs',
+          weight,
+          itemStatus,
+          itemSupplyType,
+          itemRemarks,
+          brand,
+          price,
+          auditSource
+        ]);
+
+        const insertedItem = insertRes.rows[0];
+        insertedRows.push(insertedItem);
+
+        // Update in-memory map
+        const newKey = getItemMatchKey(insertedItem.product_name, insertedItem.item_description);
+        if (!existingNameDescMap.has(newKey)) existingNameDescMap.set(newKey, []);
+        existingNameDescMap.get(newKey).push(insertedItem);
+        if (!existingSkuMap.has(sku)) existingSkuMap.set(sku, []);
+        existingSkuMap.get(sku).push(insertedItem);
+      }
+
       const s = it.sourceSheet || sheetName || 'Default';
       if (sheetMap[s]) sheetMap[s].rowsImported++;
     }

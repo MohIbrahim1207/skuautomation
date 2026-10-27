@@ -1856,6 +1856,10 @@
         this.showStep(2);
       });
 
+      document.getElementById('btnDownloadFailedRows')?.addEventListener('click', () => {
+        this.downloadFailedRows();
+      });
+
       document.getElementById('btnImportConfirmSubmit')?.addEventListener('click', () => {
         this.submitImport();
       });
@@ -2064,6 +2068,119 @@
       }
     },
 
+    isTextPlaceholder(val) {
+      if (val === undefined || val === null) return true;
+      const s = String(val).trim();
+      if (s === '') return true;
+      const lower = s.toLowerCase();
+      return lower === '-' || lower === '—' || lower === '–' || lower === 'n/a';
+    },
+
+    isNumericPlaceholder(val) {
+      if (val === undefined || val === null) return true;
+      const s = String(val).trim();
+      if (s === '') return true;
+      const lower = s.toLowerCase();
+      return ['-', '—', '–', 'n/a', 'none', 'nil', 'null'].includes(lower);
+    },
+
+    parseIndonesianNumber(val, isCurrency = false) {
+      if (val === undefined || val === null) return { value: null, isValid: true };
+      if (typeof val === 'number') {
+        if (isNaN(val) || !isFinite(val) || val < 0) return { value: null, isValid: false };
+        return { value: val, isValid: true };
+      }
+      let s = String(val).trim();
+      if (this.isNumericPlaceholder(s)) return { value: null, isValid: true };
+      s = s.replace(/^(idr|rp\.?)\s*/i, '').replace(/[,-]\s*$/, '').trim();
+      if (this.isNumericPlaceholder(s)) return { value: null, isValid: true };
+
+      if (/[^0-9.,\s]/.test(s)) return { value: null, isValid: false, raw: s };
+      s = s.replace(/\s+/g, '');
+
+      const hasDot = s.includes('.');
+      const hasComma = s.includes(',');
+
+      if (hasDot && hasComma) {
+        const lastDot = s.lastIndexOf('.');
+        const lastComma = s.lastIndexOf(',');
+        if (lastDot < lastComma) {
+          s = s.replace(/\./g, '').replace(',', '.');
+        } else {
+          s = s.replace(/,/g, '');
+        }
+      } else if (hasDot && !hasComma) {
+        if (s.startsWith('0.') || s.startsWith('-0.')) {
+          // Numbers starting with 0. are decimal fractions
+        } else if (!isCurrency) {
+          const dotCount = (s.match(/\./g) || []).length;
+          if (dotCount > 1) {
+            s = s.replace(/\./g, '');
+          }
+        } else {
+          if (/^\d{1,3}(\.\d{3})+$/.test(s)) {
+            s = s.replace(/\./g, '');
+          }
+        }
+      } else if (hasComma && !hasDot) {
+        if (isCurrency && /^\d{1,3}(,\d{3})+$/.test(s)) {
+          s = s.replace(/,/g, '');
+        } else {
+          // For weight and dimensions (!isCurrency), treat "1,250" as decimal 1.25 (Indonesian style), not 1250
+          s = s.replace(',', '.');
+        }
+      }
+
+      const num = Number(s);
+      if (isNaN(num) || !isFinite(num) || num < 0) return { value: null, isValid: false, raw: s };
+      return { value: num, isValid: true };
+    },
+
+    normalizeTextForMatching(str) {
+      if (str === undefined || str === null) return '';
+      return String(str)
+        .trim()
+        .toLowerCase()
+        .replace(/mm\^2|mm²/gi, 'mm2')
+        .replace(/\s+/g, ' ');
+    },
+
+    getItemMatchKey(productName, itemDescription) {
+      const normName = this.normalizeTextForMatching(productName);
+      const normDesc = this.normalizeTextForMatching(itemDescription);
+      return `${normName}|||${normDesc}`;
+    },
+
+    downloadFailedRows() {
+      const failedItems = (this.parsedItems || []).filter(it => it.validationStatus === 'ERROR');
+      if (failedItems.length === 0) {
+        alert('No failed records to download.');
+        return;
+      }
+
+      const rows = failedItems.map(it => ({
+        'Excel Row': it.excelRowNum || '—',
+        'Worksheet': it.sourceSheet || '—',
+        'SKU': it.sku || '',
+        'Product Name': it.productName || '',
+        'Item Description': it.itemDescription || '',
+        'Category': it.category || '',
+        'Subcategory': it.subCategory || '',
+        'Material / Grade': it.material || '',
+        'Size / Dimensions': it.size || '',
+        'Unit': it.unit || '',
+        'Weight (kg)': it.weightKg !== null ? it.weightKg : (it.rawWeight || ''),
+        'Current Unit Price (IDR)': it.unitPrice !== null ? it.unitPrice : (it.rawPrice || ''),
+        'Validation Errors': (it.validationErrors || []).join('; ')
+      }));
+
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Failed Records');
+      const fname = (this.file ? this.file.name.replace(/\.[^.]+$/, '') : 'Import') + '_Failed_Rows.xlsx';
+      XLSX.writeFile(wb, fname);
+    },
+
     parseWorkbook() {
       if (!this.workbook || !this.supportedSheets || this.supportedSheets.length === 0) {
         this.parsedItems = [];
@@ -2075,7 +2192,51 @@
       const allParsed = [];
       const sheetBreakdown = {};
 
-      const existingSkuUpperSet = new Set((this.existingMasterItems || []).map(i => (i.sku || '').toUpperCase().trim()));
+      const existingSkuMap = new Map();
+      const existingNameDescMap = new Map();
+      (this.existingMasterItems || []).forEach(it => {
+        if (it.sku) {
+          const s = it.sku.toUpperCase().trim();
+          if (!existingSkuMap.has(s)) existingSkuMap.set(s, []);
+          existingSkuMap.get(s).push(it);
+        }
+        const key = this.getItemMatchKey(it.productName, it.itemDescription);
+        if (!existingNameDescMap.has(key)) existingNameDescMap.set(key, []);
+        existingNameDescMap.get(key).push(it);
+      });
+
+      // Track within-file duplicates
+      const fileSkuMap = new Map();
+      const fileKeyMap = new Map();
+
+      // Known header clean keys
+      const knownKeyAliases = [
+        'sku', 'itemcode', 'productcode', 'partnumber',
+        'productname', 'product', 'itemname', 'name',
+        'itemdescription', 'description', 'specdetails', 'specificationdetails',
+        'category', 'subcategory', 'subcat',
+        'materialgrade', 'material', 'grade',
+        'nominalsizednnps', 'sizedimensions', 'sizediameter', 'size', 'dimensions', 'diameter', 'nominalsize', 'dn', 'nps',
+        'amm', 'a', 'dima', 'outerdimmm', 'outerdim', 'widthmm', 'width',
+        'bmm', 'b', 'dimb', 'innerdimmm', 'innerdim', 'heightmm', 'height',
+        'cmm', 'c', 'dimc', 'flangethicknessmm', 'flangethk', 'flangethickness',
+        'dmm', 'd', 'dimd', 'webthicknessmm', 'webthk', 'webthickness',
+        'l1mm', 'l1', 'diml1', 'length1mm', 'standardlengthmm', 'lengthmm', 'length',
+        'l2mm', 'l2', 'diml2', 'length2mm', 'cutlengthmm',
+        'standardspecification', 'specificationstandard', 'specification', 'standard', 'spec',
+        'unituom', 'unit', 'uom',
+        'weightkg', 'weightkgpc', 'weight', 'theoreticalweight',
+        'brandmanufacturer', 'manufacturerbrand', 'manufacturer', 'brand', 'maker',
+        'suppliername', 'supplier', 'vendor',
+        'currentunitpriceidr', 'currentunitprice', 'unitpriceidr', 'unitprice', 'price',
+        'supplytype', 'supply', 'type',
+        'fastenertype', 'threadtypepitch', 'thread', 'finishcoating', 'finish', 'coating',
+        'pipefittingtype', 'pipetype', 'fittingtype', 'odmm', 'od', 'outerdiameter',
+        'wallthicknessmm', 'wallthickness', 'wt', 'scheduleclassrating', 'schedule', 'class', 'rating',
+        'endconnection', 'materialtype', 'projectpidifcutsize', 'projectpidifprojectspecific', 'projectpidifcutprojectspecific', 'projectpid', 'project', 'pid',
+        'remarks', 'notes', 'electricaltype', 'modelpartno', 'voltage', 'current', 'power', 'frequency', 'phase', 'iprating', 'mountingconnection'
+      ];
+      const knownCleanKeySet = new Set(knownKeyAliases);
 
       for (const sheetName of this.supportedSheets) {
         const ws = this.workbook.Sheets[sheetName];
@@ -2086,10 +2247,15 @@
 
         const headerRow = rawData[0].map(h => String(h || '').trim());
         const colMap = {};
+        const extraColumns = [];
+
         headerRow.forEach((col, idx) => {
           if (col) {
             const cleanKey = col.toLowerCase().replace(/[^a-z0-9]/g, '');
             colMap[cleanKey] = idx;
+            if (!knownCleanKeySet.has(cleanKey)) {
+              extraColumns.push(col);
+            }
           }
         });
 
@@ -2138,10 +2304,17 @@
           const excelRowNum = r + 1;
 
           const rawSku = getVal(row, ['SKU', 'Item Code', 'Product Code', 'Part Number']);
-          const productName = getVal(row, ['Product Name', 'Product', 'Item Name', 'Name']);
-          const itemDescription = getMultilineVal(row, ['Item Description', 'Description', 'Spec Details', 'Specification Details']);
+          const cleanSku = this.isTextPlaceholder(rawSku) ? '' : rawSku.trim();
+          const isBlankSku = !cleanSku;
+
+          const rawProdName = getVal(row, ['Product Name', 'Product', 'Item Name', 'Name']);
+          const cleanProdName = this.isTextPlaceholder(rawProdName) ? '' : rawProdName.trim();
+
+          const rawDesc = getMultilineVal(row, ['Item Description', 'Description', 'Spec Details', 'Specification Details']);
+          const itemDescription = this.isTextPlaceholder(rawDesc) ? '' : rawDesc.trim();
           
-          let category = getVal(row, ['Category']);
+          let rawCategory = getVal(row, ['Category']);
+          let category = this.isTextPlaceholder(rawCategory) ? '' : rawCategory.trim();
           if (!category) {
             if (this.detectedFamily && this.detectedFamily.category) {
               category = this.detectedFamily.category;
@@ -2173,9 +2346,14 @@
             else if (catLower.includes('paint') || catLower.includes('cut')) category = 'Cut/Paint Materials';
           }
 
-          const subCategory = getVal(row, ['Subcategory', 'Sub Category', 'Sub-Category']);
-          const material = getVal(row, ['Material / Grade', 'Material', 'Grade']);
-          const size = getVal(row, ['Nominal Size / DN / NPS', 'Size / Dimensions', 'Size / Diameter', 'Size', 'Dimensions', 'Diameter', 'Nominal Size', 'DN', 'NPS']);
+          const rawSubCat = getVal(row, ['Subcategory', 'Sub Category', 'Sub-Category']);
+          const subCategory = this.isTextPlaceholder(rawSubCat) ? '' : rawSubCat.trim();
+
+          const rawMaterial = getVal(row, ['Material / Grade', 'Material', 'Grade']);
+          const material = this.isTextPlaceholder(rawMaterial) ? '' : rawMaterial.trim();
+
+          const rawSize = getVal(row, ['Nominal Size / DN / NPS', 'Size / Dimensions', 'Size / Diameter', 'Size', 'Dimensions', 'Diameter', 'Nominal Size', 'DN', 'NPS']);
+          const size = this.isTextPlaceholder(rawSize) ? '' : rawSize.trim();
           
           // Business dimension columns: A, B, C, D, L1, L2
           const dimA = getVal(row, ['A (mm)', 'A', 'Dim A', 'Outer Dim (mm)', 'Outer Dim', 'Width (mm)', 'Width']);
@@ -2185,15 +2363,28 @@
           const dimL1 = getVal(row, ['L1 (mm)', 'L1', 'Dim L1', 'Length 1 (mm)', 'Standard Length (mm)', 'Length (mm)', 'Length']);
           const dimL2 = getVal(row, ['L2 (mm)', 'L2', 'Dim L2', 'Length 2 (mm)', 'Cut Length (mm)']);
 
-          const specification = getVal(row, ['Standard / Specification', 'Specification / Standard', 'Specification', 'Standard', 'Spec']);
-          const unit = getVal(row, ['Unit / UOM', 'Unit', 'UOM']) || 'Sheet';
+          const rawSpec = getVal(row, ['Standard / Specification', 'Specification / Standard', 'Specification', 'Standard', 'Spec']);
+          const specification = this.isTextPlaceholder(rawSpec) ? '' : rawSpec.trim();
 
+          // Mandatory field: UOM (do not silently default to 'Sheet')
+          const rawUnit = getVal(row, ['Unit / UOM', 'Unit', 'UOM']);
+          const unit = this.isTextPlaceholder(rawUnit) ? '' : rawUnit.trim();
+
+          // Numeric fields: parse Indonesian number format and placeholders to null
           const rawWeight = getVal(row, ['Weight (kg)', 'Weight (kg/pc)', 'Weight', 'Theoretical Weight']);
-          const weightKg = (!isNaN(parseFloat(rawWeight)) && parseFloat(rawWeight) > 0) ? parseFloat(rawWeight) : null;
+          const parsedWeight = this.parseIndonesianNumber(rawWeight, false);
+          const weightKg = parsedWeight.value;
 
-          const brand = getVal(row, ['Brand / Manufacturer', 'Manufacturer', 'Brand', 'Maker']);
-          const supplierName = getVal(row, ['Supplier Name', 'Supplier', 'Vendor']);
+          const rawBrand = getVal(row, ['Manufacturer / Brand', 'Brand / Manufacturer', 'Manufacturer', 'Brand', 'Maker']);
+          const brand = this.isTextPlaceholder(rawBrand) ? '' : rawBrand.trim();
+
+          const rawSupplier = getVal(row, ['Supplier Name', 'Supplier', 'Vendor']);
+          const supplierName = this.isTextPlaceholder(rawSupplier) ? '' : rawSupplier.trim();
+
           const rawPrice = getVal(row, ['Current Unit Price (IDR)', 'Current Unit Price', 'Unit Price (IDR)', 'Unit Price', 'Price']);
+          const parsedPrice = this.parseIndonesianNumber(rawPrice, true);
+          const unitPrice = parsedPrice.value;
+
           const rawSupplyType = getVal(row, ['Supply Type', 'Supply', 'Type']);
           const supplyType = (rawSupplyType && rawSupplyType.toLowerCase().includes('cut')) ? 'Cut Size' : 'Full Size';
 
@@ -2208,57 +2399,235 @@
           const endConnection = getVal(row, ['End Connection']);
           const materialType = getVal(row, ['Material Type']);
           const projectPid = getVal(row, ['Project / PID (if cut size)', 'Project / PID (if project-specific)', 'Project / PID (if cut/project-specific)', 'Project / PID', 'Project', 'PID']);
-          const remarks = getVal(row, ['Remarks', 'Notes']);
+          const rawRemarks = getVal(row, ['Remarks', 'Notes']);
+          const remarks = this.isTextPlaceholder(rawRemarks) ? '' : rawRemarks.trim();
 
           // Calculated size string if size is missing
-          const dimParts = [dimA, dimB, dimC, dimD, dimL1].filter(Boolean);
-          const calculatedSize = size || (dimParts.length > 0 ? dimParts.join(' × ') : '—');
+          const cleanDimParts = [dimA, dimB, dimC, dimD, dimL1].filter(d => d && !this.isNumericPlaceholder(d));
+          const calculatedSize = size || (cleanDimParts.length > 0 ? cleanDimParts.join(' × ') : '—');
 
-          // SKU & Validation rules
-          const isBlankSku = !rawSku || rawSku.trim() === '';
-          const cleanSku = rawSku ? rawSku.trim() : '';
-          const isExistingSku = !isBlankSku && existingSkuUpperSet.has(cleanSku.toUpperCase());
+          // Match existing master items:
+          // Match by SKU only (case-insensitive, trimmed).
+          // If no SKU, match only on Product Name + Item Description together (normalized).
+          // If one row matches >1 existing item, show warning ("Ambiguous match — will create new") and do not update anything.
+          let isExistingItem = false;
+          let matchedSku = '';
+          let matchedItem = null;
+          let isAmbiguous = false;
+
+          if (!isBlankSku) {
+            const matches = existingSkuMap.get(cleanSku.toUpperCase()) || [];
+            if (matches.length === 1) {
+              isExistingItem = true;
+              matchedItem = matches[0];
+              matchedSku = matches[0].sku;
+            } else if (matches.length > 1) {
+              isAmbiguous = true;
+            }
+          } else if (cleanProdName) {
+            const key = this.getItemMatchKey(cleanProdName, itemDescription);
+            const matches = existingNameDescMap.get(key) || [];
+            if (matches.length === 1) {
+              isExistingItem = true;
+              matchedItem = matches[0];
+              matchedSku = matches[0].sku;
+            } else if (matches.length > 1) {
+              isAmbiguous = true;
+            }
+          }
+
+          // In-file duplicate check:
+          // Rows with same Product Name but different Description are separate new items.
+          // Only flag exact duplicates (same name + same description, or same non-blank SKU).
+          let isFileDuplicate = false;
+          if (!isBlankSku) {
+            if (fileSkuMap.has(cleanSku.toUpperCase())) {
+              isFileDuplicate = true;
+            } else {
+              fileSkuMap.set(cleanSku.toUpperCase(), excelRowNum);
+            }
+          } else if (cleanProdName) {
+            const key = this.getItemMatchKey(cleanProdName, itemDescription);
+            if (fileKeyMap.has(key)) {
+              isFileDuplicate = true;
+            } else {
+              fileKeyMap.set(key, excelRowNum);
+            }
+          }
+
+          // Compute field changes (old -> new) for Update rows
+          const changes = [];
+          if (isExistingItem && matchedItem) {
+            const isReal = (v) => v !== undefined && v !== null && !this.isTextPlaceholder(v) && String(v).trim() !== '';
+
+            // Description
+            if (isReal(itemDescription)) {
+              const oldVal = (matchedItem.itemDescription || '').trim();
+              const newVal = itemDescription.trim();
+              if (oldVal !== newVal) {
+                changes.push({ field: 'Description', oldVal: oldVal || '—', newVal });
+              }
+            }
+
+            // Category
+            if (isReal(rawCategory) && category) {
+              const oldVal = (matchedItem.category || '').trim();
+              const newVal = category.trim();
+              if (oldVal.toLowerCase() !== newVal.toLowerCase()) {
+                changes.push({ field: 'Category', oldVal: oldVal || '—', newVal });
+              }
+            }
+
+            // Subcategory
+            if (isReal(subCategory)) {
+              const oldVal = (matchedItem.subCategory || '').trim();
+              const newVal = subCategory.trim();
+              if (oldVal !== newVal) {
+                changes.push({ field: 'Subcategory', oldVal: oldVal || '—', newVal });
+              }
+            }
+
+            // Material
+            if (isReal(material)) {
+              const oldVal = (matchedItem.material || '').trim();
+              const newVal = material.trim();
+              if (oldVal !== newVal) {
+                changes.push({ field: 'Material', oldVal: oldVal || '—', newVal });
+              }
+            }
+
+            // Size
+            if (isReal(size)) {
+              const oldVal = (matchedItem.size || '').trim();
+              const newVal = size.trim();
+              if (oldVal !== newVal) {
+                changes.push({ field: 'Size', oldVal: oldVal || '—', newVal });
+              }
+            }
+
+            // Specification
+            if (isReal(specification)) {
+              const oldVal = (matchedItem.specification || '').trim();
+              const newVal = specification.trim();
+              if (oldVal !== newVal) {
+                changes.push({ field: 'Specification', oldVal: oldVal || '—', newVal });
+              }
+            }
+
+            // Unit
+            if (isReal(unit)) {
+              const oldVal = (matchedItem.unit || '').trim();
+              const newVal = unit.trim();
+              if (oldVal.toLowerCase() !== newVal.toLowerCase()) {
+                changes.push({ field: 'Unit', oldVal: oldVal || '—', newVal });
+              }
+            }
+
+            // Weight
+            if (weightKg !== null && weightKg !== undefined) {
+              const oldNum = matchedItem.weightKg !== null && matchedItem.weightKg !== undefined ? Number(matchedItem.weightKg) : null;
+              const newNum = Number(weightKg);
+              if (oldNum !== newNum) {
+                changes.push({
+                  field: 'Weight',
+                  oldVal: oldNum !== null ? `${oldNum} kg` : '—',
+                  newVal: `${newNum} kg`
+                });
+              }
+            }
+
+            // Unit Price
+            if (unitPrice !== null && unitPrice !== undefined) {
+              const oldNum = matchedItem.unitPrice !== null && matchedItem.unitPrice !== undefined ? Number(matchedItem.unitPrice) : null;
+              const newNum = Number(unitPrice);
+              if (oldNum !== newNum) {
+                changes.push({
+                  field: 'Price',
+                  oldVal: oldNum !== null ? `IDR ${oldNum.toLocaleString('id-ID')}` : '—',
+                  newVal: `IDR ${newNum.toLocaleString('id-ID')}`
+                });
+              }
+            }
+
+            // Supply Type
+            if (isReal(rawSupplyType)) {
+              const oldVal = (matchedItem.supplyType || '').trim();
+              const newVal = supplyType;
+              if (oldVal.toLowerCase() !== newVal.toLowerCase()) {
+                changes.push({ field: 'Supply Type', oldVal: oldVal || '—', newVal });
+              }
+            }
+
+            // Brand
+            if (isReal(brand)) {
+              const oldVal = (matchedItem.brand || '').trim();
+              const newVal = brand.trim();
+              if (oldVal !== newVal) {
+                changes.push({ field: 'Brand', oldVal: oldVal || '—', newVal });
+              }
+            }
+
+            // Remarks
+            if (isReal(remarks)) {
+              const oldVal = (matchedItem.remarks || '').trim();
+              const newVal = remarks.trim();
+              if (oldVal !== newVal) {
+                changes.push({ field: 'Remarks', oldVal: oldVal || '—', newVal });
+              }
+            }
+          }
 
           const validationErrors = [];
           const validationWarnings = [];
 
-          if (!productName || productName.trim() === '') {
+          // 1. Mandatory Product Name
+          if (!cleanProdName) {
             validationErrors.push('Missing Product Name');
           }
 
-          const isMaterialOptional = (this.detectedFamily && (this.detectedFamily.familySlug === 'bought-out-items' || this.detectedFamily.familySlug === 'electrical-materials')) ||
-                                     this.selectedFamily === 'bought-out-items' || this.selectedFamily === 'electrical-materials' ||
-                                     category === 'Bought Out Items' || category === 'Electrical Materials';
-          if (!isMaterialOptional && (!material || material.trim() === '')) {
-            validationWarnings.push('Missing Material / Grade');
+          // 2. Mandatory UOM
+          if (!unit) {
+            validationErrors.push('Missing UOM');
           }
 
-          if (isBlankSku) {
-            validationWarnings.push('NEW ITEM — SKU TO BE ASSIGNED');
-          } else if (isExistingSku) {
-            validationWarnings.push('Existing SKU found — requires Admin review.');
+          // 3. Price & Weight validation
+          let priceError = false;
+          if (!parsedPrice.isValid) {
+            validationErrors.push('Invalid Unit Price');
+            priceError = true;
+          }
+          let weightError = false;
+          if (!parsedWeight.isValid) {
+            validationErrors.push('Invalid Weight');
+            weightError = true;
           }
 
-          if (rawPrice !== undefined && rawPrice !== null && String(rawPrice).trim() !== '') {
-            const pNum = Number(String(rawPrice).replace(/[^0-9.-]/g, ''));
-            if (isNaN(pNum) || pNum < 0) {
-              validationErrors.push('Invalid Unit Price');
-            }
-          }
-          if (rawWeight !== undefined && rawWeight !== null && String(rawWeight).trim() !== '') {
-            const wNum = Number(String(rawWeight).replace(/[^0-9.-]/g, ''));
-            if (isNaN(wNum) || wNum < 0) {
-              validationErrors.push('Invalid Weight');
-            }
-          }
-
-          // Check dimension values for illegal characters
+          // 4. Dimension illegal character checks
           [dimA, dimB, dimC, dimD, dimL1, dimL2].forEach((dVal, dIdx) => {
-            if (dVal && /[<>{}\\]/.test(dVal)) {
+            if (dVal && !this.isNumericPlaceholder(dVal) && /[<>{}\\]/.test(dVal)) {
               const dNames = ['A', 'B', 'C', 'D', 'L1', 'L2'];
               validationErrors.push(`Invalid Dimension ${dNames[dIdx]}`);
             }
           });
+
+          // SKU & existing item notices
+          if (isAmbiguous) {
+            validationWarnings.push('Ambiguous match — will create new');
+          } else if (isExistingItem) {
+            const changeCount = changes.length;
+            validationWarnings.push(`Existing item (${matchedSku}) — will update record${changeCount > 0 ? ` (${changeCount} field${changeCount > 1 ? 's' : ''} to change)` : ''}.`);
+          } else if (isBlankSku) {
+            validationWarnings.push('NEW ITEM — SKU TO BE ASSIGNED');
+          }
+
+          if (isFileDuplicate) {
+            validationWarnings.push('Duplicate record within file (same Product Name & Description)');
+          }
+
+          // Extra columns notice as warning
+          if (extraColumns.length > 0 && r === 1) {
+            validationWarnings.push(`Extra column(s) detected: ${extraColumns.join(', ')} (optional/ignored)`);
+          }
 
           const validationStatus = validationErrors.length > 0 ? 'ERROR' : (validationWarnings.length > 0 ? 'WARNING' : 'VALID');
 
@@ -2267,8 +2636,15 @@
             sourceSheet: sheetName,
             sku: cleanSku,
             isBlankSku,
-            isExistingSku,
-            productName,
+            isExistingSku: isExistingItem,
+            isExistingItem,
+            matchedSku,
+            matchedItem,
+            isAmbiguous,
+            isFileDuplicate,
+            changes,
+            productName: cleanProdName,
+            rawProductName: rawProdName,
             itemDescription,
             category,
             subCategory,
@@ -2276,20 +2652,25 @@
             size: calculatedSize,
             specification,
             unit,
+            rawUnit,
             weightKg,
+            rawWeight,
+            weightError,
             brand,
             supplierName,
-            unitPrice: rawPrice,
+            unitPrice,
+            rawPrice,
+            priceError,
             supplyType,
             materialType,
             projectPid,
             remarks,
-            dimA,
-            dimB,
-            dimC,
-            dimD,
-            dimL1,
-            dimL2,
+            dimA: this.isNumericPlaceholder(dimA) ? '' : dimA,
+            dimB: this.isNumericPlaceholder(dimB) ? '' : dimB,
+            dimC: this.isNumericPlaceholder(dimC) ? '' : dimC,
+            dimD: this.isNumericPlaceholder(dimD) ? '' : dimD,
+            dimL1: this.isNumericPlaceholder(dimL1) ? '' : dimL1,
+            dimL2: this.isNumericPlaceholder(dimL2) ? '' : dimL2,
             pipeFittingType,
             od,
             wallThickness,
@@ -2313,10 +2694,12 @@
       this.parsedItems = allParsed;
       this.sheetBreakdown = sheetBreakdown;
       this.validationErrorsCount = allParsed.filter(it => it.validationStatus === 'ERROR').length;
+      this.validItemsCount = allParsed.filter(it => it.validationStatus !== 'ERROR').length;
 
       console.log('[3. Parsed Rows Across All Sheets]', {
-        totalGenuinePopulatedRows: this.parsedItems.length,
-        validationErrorsCount: this.validationErrorsCount,
+        totalRows: this.parsedItems.length,
+        validRows: this.validItemsCount,
+        errorRows: this.validationErrorsCount,
         sheetBreakdown: this.sheetBreakdown
       });
     },
@@ -2327,8 +2710,19 @@
       const breakdownEl = document.getElementById('previewSheetBreakdownDisplay');
       const btnStep3 = document.getElementById('btnImportGoStep3');
       const errorNotice = document.getElementById('importPreviewErrorNotice');
+      const btnDownloadFailed = document.getElementById('btnDownloadFailedRows');
+      const summaryHeaderEl = document.getElementById('previewHeaderSummary');
+
+      const readyCount = this.parsedItems.filter(it => it.validationStatus === 'VALID').length;
+      const warningCount = this.parsedItems.filter(it => it.validationStatus === 'WARNING').length;
+      const errorCount = this.parsedItems.filter(it => it.validationStatus === 'ERROR').length;
+      const validCount = readyCount + warningCount;
 
       if (rowCountEl) rowCountEl.textContent = this.parsedItems.length;
+
+      if (summaryHeaderEl) {
+        summaryHeaderEl.innerHTML = `Found <strong style="color:var(--primary-500);">${this.parsedItems.length}</strong> records: <span style="color:#059669; font-weight:700;">${readyCount} ready</span> • <span style="color:#b45309; font-weight:700;">${warningCount} warnings</span> • <span style="color:${errorCount > 0 ? '#e11d48' : '#64748b'}; font-weight:700;">${errorCount} errors</span>`;
+      }
 
       const famNameEl = document.getElementById('previewFamilyNameText');
       const catTextEl = document.getElementById('previewCategoryText');
@@ -2344,16 +2738,51 @@
       }
 
       if (errorNotice) {
-        if (this.validationErrorsCount > 0) {
+        if (errorCount > 0) {
+          const errorMap = {};
+          this.parsedItems.forEach(it => {
+            (it.validationErrors || []).forEach(e => {
+              errorMap[e] = (errorMap[e] || 0) + 1;
+            });
+          });
+          const reasonsStr = Object.entries(errorMap)
+            .map(([k, v]) => `<strong>${escapeHtml(k)}</strong> (${v} row${v > 1 ? 's' : ''})`)
+            .join(', ');
+
           errorNotice.style.display = 'block';
-          errorNotice.innerHTML = `⚠️ <strong>${this.validationErrorsCount} item(s) contain validation errors:</strong> Missing required fields (such as Product Name) or invalid inputs are highlighted in red below. Please resolve them before proceeding.`;
+          errorNotice.style.background = '#fff1f2';
+          errorNotice.style.borderColor = '#fecdd3';
+          errorNotice.style.color = '#be123c';
+          errorNotice.innerHTML = `⚠️ <strong>${errorCount} record(s) contain validation errors:</strong> ${reasonsStr}.<br><span style="color:#475569; font-size:0.82rem; margin-top:3px; display:inline-block;">You can proceed to import the <strong>${validCount} valid record(s)</strong> (${errorCount} invalid rows will be skipped), or download the failed rows below.</span>`;
+        } else if (warningCount > 0) {
+          errorNotice.style.display = 'block';
+          errorNotice.style.background = '#fffbeb';
+          errorNotice.style.borderColor = '#fde68a';
+          errorNotice.style.color = '#b45309';
+          errorNotice.innerHTML = `ℹ️ <strong>All ${this.parsedItems.length} record(s) ready for import</strong> (${readyCount} ready, ${warningCount} with informational updates/SKU assignment notices).`;
         } else {
           errorNotice.style.display = 'none';
         }
       }
 
+      if (btnDownloadFailed) {
+        if (errorCount > 0) {
+          btnDownloadFailed.style.display = 'inline-flex';
+          const span = btnDownloadFailed.querySelector('span');
+          if (span) span.textContent = `📥 Download Failed Rows (${errorCount})`;
+        } else {
+          btnDownloadFailed.style.display = 'none';
+        }
+      }
+
       if (btnStep3) {
-        btnStep3.disabled = (this.parsedItems.length === 0 || this.validationErrorsCount > 0);
+        btnStep3.disabled = (validCount === 0);
+        const span = btnStep3.querySelector('span') || btnStep3;
+        if (errorCount > 0) {
+          span.textContent = `Next: Import ${validCount} Valid Records (${errorCount} skipped) →`;
+        } else {
+          span.textContent = `Next: Confirm Import (${validCount}) →`;
+        }
       }
 
       if (!tbody) return;
@@ -2364,31 +2793,91 @@
       }
 
       tbody.innerHTML = this.parsedItems.map((it, idx) => {
-        const prodNameDisplay = (it.productName && it.productName.trim()) ? escapeHtml(it.productName.trim()) : '<span style="color:#ef4444; font-weight:700;">[Required] Missing</span>';
-        const descDisplay = (it.itemDescription && it.itemDescription.trim()) ? escapeHtml(it.itemDescription.trim()) : '—';
+        // Product Name cell with highlighting
+        let prodNameDisplay = '';
+        if (it.productName && it.productName.trim()) {
+          prodNameDisplay = escapeHtml(it.productName.trim());
+        } else {
+          prodNameDisplay = '<span style="color:#ef4444; font-weight:700;">[Required] Missing</span>';
+        }
+        const prodNameCellStyle = !it.productName ? 'border: 2px solid #ef4444; background: #fef2f2;' : '';
+        const prodNameTitle = !it.productName ? 'Field "Product Name" is mandatory' : '';
+
+        // Unit cell with highlighting
+        let unitDisplay = '';
+        if (it.unit && it.unit.trim()) {
+          unitDisplay = escapeHtml(it.unit.trim());
+        } else {
+          unitDisplay = '<span style="color:#ef4444; font-weight:700;">[Required] Missing</span>';
+        }
+        const unitCellStyle = !it.unit ? 'border: 2px solid #ef4444; background: #fef2f2;' : '';
+        const unitTitle = !it.unit ? 'Field "UOM / Unit" is mandatory' : '';
+
+        let descDisplay = (it.itemDescription && it.itemDescription.trim()) ? escapeHtml(it.itemDescription.trim()) : '—';
+        if (it.isExistingItem && (it.changes || []).some(c => c.field === 'Description')) {
+          const ch = it.changes.find(c => c.field === 'Description');
+          descDisplay = `<span style="color:#059669; font-weight:600;">${descDisplay}</span><div style="font-size:0.7rem; color:#94a3b8; text-decoration:line-through;" title="Existing database value">${escapeHtml(ch.oldVal)}</div>`;
+        }
+
         const subCatDisplay = (it.subCategory && it.subCategory.trim()) ? escapeHtml(it.subCategory.trim()) : '—';
         const matDisplay = (it.material && it.material.trim()) ? escapeHtml(it.material.trim()) : '—';
         const sizeDisplay = (it.size && it.size.trim()) ? escapeHtml(it.size.trim()) : '—';
-        const unitDisplay = (it.unit && it.unit.trim()) ? escapeHtml(it.unit.trim()) : 'Sheet';
-        const weightDisplay = it.weightKg ? `${it.weightKg} kg` : '—';
         const remarksDisplay = (it.remarks && it.remarks.trim()) ? escapeHtml(it.remarks.trim()) : '—';
 
+        // Price display and cell style
         let priceDisplay = '—';
-        if (it.unitPrice !== undefined && it.unitPrice !== null && String(it.unitPrice).trim() !== '') {
-          const numPrice = Number(String(it.unitPrice).replace(/[^0-9.-]/g, ''));
-          if (!isNaN(numPrice) && isFinite(numPrice)) {
-            priceDisplay = `IDR ${numPrice.toLocaleString('id-ID')}`;
-          } else {
-            priceDisplay = escapeHtml(String(it.unitPrice).trim());
+        let priceCellStyle = '';
+        let priceTitle = '';
+        if (it.priceError) {
+          priceDisplay = `<span style="color:#ef4444; font-weight:700;">${escapeHtml(String(it.rawPrice))}</span>`;
+          priceCellStyle = 'border: 2px solid #ef4444; background: #fef2f2;';
+          priceTitle = 'Invalid Unit Price format';
+        } else if (it.unitPrice !== null && it.unitPrice !== undefined) {
+          priceDisplay = `IDR ${it.unitPrice.toLocaleString('id-ID')}`;
+          if (it.isExistingItem && (it.changes || []).some(c => c.field === 'Price')) {
+            const ch = it.changes.find(c => c.field === 'Price');
+            priceDisplay = `<span style="color:#059669; font-weight:700;">${priceDisplay}</span><div style="font-size:0.68rem; color:#94a3b8; text-decoration:line-through;" title="Existing database price">${escapeHtml(ch.oldVal)}</div>`;
           }
         }
 
-        // SKU display
+        // Weight display and cell style
+        let weightDisplay = '—';
+        let weightCellStyle = '';
+        let weightTitle = '';
+        if (it.weightError) {
+          weightDisplay = `<span style="color:#ef4444; font-weight:700;">${escapeHtml(String(it.rawWeight))}</span>`;
+          weightCellStyle = 'border: 2px solid #ef4444; background: #fef2f2;';
+          weightTitle = 'Invalid Weight value';
+        } else if (it.weightKg !== null && it.weightKg !== undefined) {
+          weightDisplay = `${it.weightKg} kg`;
+          if (it.isExistingItem && (it.changes || []).some(c => c.field === 'Weight')) {
+            const ch = it.changes.find(c => c.field === 'Weight');
+            weightDisplay = `<span style="color:#059669; font-weight:700;">${weightDisplay}</span><div style="font-size:0.68rem; color:#94a3b8; text-decoration:line-through;" title="Existing database weight">${escapeHtml(ch.oldVal)}</div>`;
+          }
+        }
+
+        // SKU display with old -> new changes for Update rows
         let skuDisplay = '';
-        if (it.isBlankSku) {
-          skuDisplay = `<span class="badge" style="background:#fef3c7; color:#b45309; border:1px solid #fde68a; font-size:0.72rem; font-weight:700;">NEW ITEM — SKU TO BE ASSIGNED</span>`;
-        } else if (it.isExistingSku) {
-          skuDisplay = `<span style="font-family:var(--font-mono); font-weight:700; color:#b45309;">${escapeHtml(it.sku)}</span> <span class="badge" style="background:#fee2e2; color:#b91c1c; font-size:0.68rem;">Existing</span>`;
+        if (it.isExistingItem) {
+          const changeList = it.changes || [];
+          const changeTooltip = changeList.map(c => `${c.field}: ${c.oldVal} → ${c.newVal}`).join('\n') || 'No fields modified';
+          const changeBadge = changeList.length > 0
+            ? `<span class="badge" style="background:#fef3c7; color:#b45309; border:1px solid #fde68a; font-size:0.68rem; font-weight:700; cursor:pointer;" title="${escapeHtml(changeTooltip)}">Update (${changeList.length} change${changeList.length > 1 ? 's' : ''})</span>`
+            : `<span class="badge" style="background:#f1f5f9; color:#64748b; border:1px solid #cbd5e1; font-size:0.68rem; font-weight:600;" title="No fields changed">Update (no changes)</span>`;
+
+          const changesHtml = changeList.length > 0
+            ? `<div style="font-size:0.68rem; color:#b45309; line-height:1.25; margin-top:3px; max-width:200px;" title="${escapeHtml(changeTooltip)}">${changeList.map(c => `<div><strong>${escapeHtml(c.field)}:</strong> <span style="text-decoration:line-through; color:#94a3b8;">${escapeHtml(String(c.oldVal))}</span> → <span style="color:#059669; font-weight:600;">${escapeHtml(String(c.newVal))}</span></div>`).join('')}</div>`
+            : '';
+
+          skuDisplay = `
+            <span style="font-family:var(--font-mono); font-weight:700; color:#b45309;">${escapeHtml(it.matchedSku || it.sku)}</span>
+            <div style="margin-top:2px;">${changeBadge}</div>
+            ${changesHtml}
+          `;
+        } else if (it.isAmbiguous) {
+          skuDisplay = `<span class="badge" style="background:#fef3c7; color:#b45309; border:1px solid #fde68a; font-size:0.68rem; font-weight:700;" title="Ambiguous match: multiple catalog items match — will create new">Ambiguous match — will create new</span>`;
+        } else if (it.isBlankSku) {
+          skuDisplay = `<span class="badge" style="background:#f1f5f9; color:#475569; border:1px solid #cbd5e1; font-size:0.72rem; font-weight:700;">NEW ITEM — AUTO-SKU</span>`;
         } else {
           skuDisplay = `<span style="font-family:var(--font-mono); font-weight:700; color:var(--text-main);">${escapeHtml(it.sku)}</span>`;
         }
@@ -2415,14 +2904,14 @@
           <tr style="${rowBg}">
             <td style="color:var(--text-dim); font-family:var(--font-mono);">${idx + 1}</td>
             <td>${skuDisplay}</td>
-            <td style="font-weight:600; color:var(--text-main);">${prodNameDisplay}</td>
+            <td style="font-weight:600; color:var(--text-main); ${prodNameCellStyle}" title="${escapeHtml(prodNameTitle)}">${prodNameDisplay}</td>
             <td style="color:var(--text-muted); white-space:pre-wrap; max-width:260px;">${descDisplay}</td>
             <td><span class="category-pill" style="font-size:0.72rem;">${subCatDisplay}</span></td>
             <td><span style="font-weight:600;">${matDisplay}</span></td>
             <td style="font-family:var(--font-mono); font-size:0.78rem;">${sizeDisplay}</td>
-            <td><span style="font-weight:600; font-family:var(--font-mono);">${unitDisplay}</span></td>
-            <td style="font-family:var(--font-mono); font-size:0.78rem;">${weightDisplay}</td>
-            <td style="font-family:var(--font-mono); font-weight:600; color:var(--text-main);">${priceDisplay}</td>
+            <td style="${unitCellStyle}" title="${escapeHtml(unitTitle)}"><span style="font-weight:600; font-family:var(--font-mono);">${unitDisplay}</span></td>
+            <td style="font-family:var(--font-mono); font-size:0.78rem; ${weightCellStyle}" title="${escapeHtml(weightTitle)}">${weightDisplay}</td>
+            <td style="font-family:var(--font-mono); font-weight:600; color:var(--text-main); ${priceCellStyle}" title="${escapeHtml(priceTitle)}">${priceDisplay}</td>
             <td>${supplyBadge}</td>
             <td style="color:var(--text-muted); font-size:0.78rem;">${remarksDisplay}</td>
             <td>${statusBadge}</td>
@@ -2432,15 +2921,41 @@
     },
 
     proceedToConfirmation() {
-      if (this.parsedItems.length === 0) {
+      if (!this.parsedItems || this.parsedItems.length === 0) {
         alert('No items to import.');
         return;
       }
 
-      if (this.validationErrorsCount > 0) {
-        alert(`Cannot proceed: ${this.validationErrorsCount} record(s) contain validation errors. Please fix required fields or re-upload your Excel file.`);
+      // Allow partial import: filter only valid/warning items
+      const validItems = this.parsedItems.filter(it => it.validationStatus !== 'ERROR');
+      if (validItems.length === 0) {
+        alert(`Cannot proceed: All ${this.parsedItems.length} records contain validation errors. Please correct required fields (Product Name, UOM) or download the failed rows.`);
         return;
       }
+
+      this.itemsToSubmit = validItems;
+
+      const newItems = validItems.filter(it => !it.isExistingItem);
+      const updateItems = validItems.filter(it => it.isExistingItem);
+
+      // Determine next starting sequential SKU from existing catalog
+      let maxSeq = 4235;
+      (this.existingMasterItems || []).forEach(it => {
+        const m = (it.sku || '').match(/^FF([0-9]+)$/i);
+        if (m) {
+          const num = parseInt(m[1], 10);
+          if (num > maxSeq) maxSeq = num;
+        }
+      });
+
+      const startSku = `FF${maxSeq + 1}`;
+      const endSku = `FF${maxSeq + newItems.length}`;
+      const skuSeriesText = newItems.length > 0
+        ? `${startSku} – ${endSku} (${newItems.length} new sequential SKU${newItems.length > 1 ? 's' : ''}${updateItems.length > 0 ? `, ${updateItems.length} updates` : ''})`
+        : `Updating ${updateItems.length} existing record(s) (no new SKUs assigned)`;
+
+      const confirmSkuSeriesEl = document.getElementById('confirmSkuSeries');
+      if (confirmSkuSeriesEl) confirmSkuSeriesEl.textContent = skuSeriesText;
 
       const currentUser = window.AuthService ? window.AuthService.getCurrentUser() : null;
       const isAdmin = currentUser && currentUser.role === 'ADMIN';
@@ -2455,7 +2970,8 @@
       const confirmStatusText = document.getElementById('confirmStatusText');
       const btnImportSubmitText = document.getElementById('btnImportSubmitText');
 
-      if (confirmRowCount) confirmRowCount.textContent = this.parsedItems.length;
+      const skippedNote = this.validationErrorsCount > 0 ? ` (${this.validationErrorsCount} invalid row(s) skipped)` : '';
+      if (confirmRowCount) confirmRowCount.textContent = `${validItems.length}${skippedNote}`;
       if (confirmFileName) confirmFileName.textContent = this.file ? this.file.name : 'Excel File';
       if (confirmSheetName) {
         const breakdownStr = Object.entries(this.sheetBreakdown || {})
@@ -2475,13 +2991,13 @@
 
       if (isAdmin) {
         if (confirmBadgeLabel) confirmBadgeLabel.textContent = 'Company Catalog Staging';
-        if (confirmHeading) confirmHeading.innerHTML = `You are about to stage <span style="color: var(--primary-500); font-weight: 800;">${this.parsedItems.length}</span> items for Review`;
+        if (confirmHeading) confirmHeading.innerHTML = `You are about to stage <span style="color: var(--primary-500); font-weight: 800;">${validItems.length}</span> items for Review${skippedNote}`;
         if (confirmSubtext) confirmSubtext.textContent = 'Records will be recorded in company staging for review and verification before final commit to the Master Catalog.';
         if (confirmStatusText) confirmStatusText.textContent = 'PENDING REVIEW';
         if (btnImportSubmitText) btnImportSubmitText.textContent = 'Submit for Review & Staging 🚀';
       } else {
         if (confirmBadgeLabel) confirmBadgeLabel.textContent = 'Controlled Staging Submission';
-        if (confirmHeading) confirmHeading.innerHTML = `You are about to submit <span style="color: var(--primary-500); font-weight: 800;">${this.parsedItems.length}</span> items for Admin Review`;
+        if (confirmHeading) confirmHeading.innerHTML = `You are about to submit <span style="color: var(--primary-500); font-weight: 800;">${validItems.length}</span> items for Admin Review${skippedNote}`;
         if (confirmSubtext) confirmSubtext.textContent = 'Your imported materials will be staged as a pending submission (IMP-xxxx). Administrator review and approval is required before adding to the Master Catalog.';
         if (confirmStatusText) confirmStatusText.textContent = 'PENDING ADMIN REVIEW';
         if (btnImportSubmitText) btnImportSubmitText.textContent = 'Submit for Admin Review 🚀';
@@ -2502,12 +3018,14 @@
         const currentUser = window.AuthService ? window.AuthService.getCurrentUser() : null;
         const isAdmin = currentUser && currentUser.role === 'ADMIN';
 
+        const itemsToSubmit = this.itemsToSubmit || (this.parsedItems || []).filter(it => it.validationStatus !== 'ERROR');
+
         const payload = {
           fileName: this.file ? this.file.name : 'Upload.xlsx',
           sheetName: this.supportedSheets ? this.supportedSheets.join(', ') : 'Multi-Sheet Import',
           materialFamily: this.detectedFamily ? this.detectedFamily.familySlug : this.selectedFamily,
           templateVersion: this.detectedFamily ? this.detectedFamily.version : '1.0',
-          items: this.parsedItems
+          items: itemsToSubmit
         };
 
         console.log('[6. Staging Import Submission Sent]', {

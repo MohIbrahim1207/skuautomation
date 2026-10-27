@@ -15,6 +15,13 @@ const {
   getFamilyBySlug,
   TEMPLATE_VERSION
 } = require('../services/templateService');
+const {
+  isTextPlaceholder,
+  isNumericPlaceholder,
+  parseIndonesianNumber,
+  normalizeTextForMatching,
+  getItemMatchKey
+} = require('../services/numberUtils');
 
 // Helper: Format Import ID (e.g. IMP-0001)
 function formatImportId(seq) {
@@ -72,9 +79,25 @@ router.post('/', authenticateToken, async (req, res) => {
     const nextSeq = parseInt(maxSubRes.rows[0].max_seq, 10) + 1;
     const importId = formatImportId(nextSeq);
 
-    // 2. Fetch existing active master SKUs to check duplicates
-    const existingSkusRes = await client.query('SELECT sku FROM master_items');
-    const existingSkuSet = new Set(existingSkusRes.rows.map(r => r.sku.toUpperCase().trim()));
+    // 2. Fetch existing active master items to check duplicates/updates
+    const existingSkusRes = await client.query('SELECT id, sku, product_name, item_description FROM master_items');
+    const existingSkuMap = new Map();
+    const existingNameDescMap = new Map();
+
+    existingSkusRes.rows.forEach(r => {
+      if (r.sku) {
+        const s = r.sku.trim().toUpperCase();
+        if (!existingSkuMap.has(s)) existingSkuMap.set(s, []);
+        existingSkuMap.get(s).push(r);
+      }
+      const key = getItemMatchKey(r.product_name, r.item_description);
+      if (!existingNameDescMap.has(key)) existingNameDescMap.set(key, []);
+      existingNameDescMap.get(key).push(r);
+    });
+
+    // In-file duplicate trackers
+    const fileSkuMap = new Map();
+    const fileKeyMap = new Map();
 
     // 3. Create Import Submission Header
     const subInsertRes = await client.query(`
@@ -105,38 +128,86 @@ router.post('/', authenticateToken, async (req, res) => {
     for (let i = 0; i < items.length; i++) {
       const it = items[i];
       const rowNum = it.rowNumber || (i + 1);
-      const rawSku = String(it.sku || '').trim();
+      const rawSku = isTextPlaceholder(it.sku) ? '' : String(it.sku || '').trim();
       const isBlankSku = !rawSku;
-      const isDuplicate = !isBlankSku && existingSkuSet.has(rawSku.toUpperCase());
+      const cleanProdName = isTextPlaceholder(it.productName) ? '' : String(it.productName).trim();
+      const cleanDesc = isTextPlaceholder(it.itemDescription) ? '' : String(it.itemDescription).trim();
 
-      // Validation logic
+      let isDuplicate = false;
+      let matchedSku = null;
+      let isAmbiguous = false;
+
+      // 1. Matching existing items:
+      // Match by SKU only (case-insensitive, trimmed).
+      // If no SKU, match only on Product Name + Item Description together (normalized).
+      // If one row matches more than one existing item, show warning ("Ambiguous match — will create new") and don't update anything.
+      if (!isBlankSku) {
+        const matches = existingSkuMap.get(rawSku.toUpperCase()) || [];
+        if (matches.length === 1) {
+          isDuplicate = true;
+          matchedSku = matches[0].sku;
+        } else if (matches.length > 1) {
+          isAmbiguous = true;
+        }
+      } else if (cleanProdName) {
+        const key = getItemMatchKey(cleanProdName, cleanDesc);
+        const matches = existingNameDescMap.get(key) || [];
+        if (matches.length === 1) {
+          isDuplicate = true;
+          matchedSku = matches[0].sku;
+        } else if (matches.length > 1) {
+          isAmbiguous = true;
+        }
+      }
+
+      // 2. In-file duplicate check:
+      // Rows with same Product Name but different Description are separate new items.
+      // Only flag exact duplicates (same name + same description, or same non-blank SKU).
+      let isFileDuplicate = false;
+      if (!isBlankSku) {
+        if (fileSkuMap.has(rawSku.toUpperCase())) {
+          isFileDuplicate = true;
+        } else {
+          fileSkuMap.set(rawSku.toUpperCase(), rowNum);
+        }
+      } else if (cleanProdName) {
+        const key = getItemMatchKey(cleanProdName, cleanDesc);
+        if (fileKeyMap.has(key)) {
+          isFileDuplicate = true;
+        } else {
+          fileKeyMap.set(key, rowNum);
+        }
+      }
+
+      // Validation logic: Only Product Name and UOM are mandatory
       const errors = [];
-      if (!it.productName || String(it.productName).trim() === '') {
+      if (!cleanProdName) {
         errors.push('Missing Product Name');
       }
 
-      // Material is required for metals, but optional for bought-out/electrical
-      const isMaterialOptional = materialFamily === 'bought-out-items' || materialFamily === 'electrical-materials';
-      if (!isMaterialOptional && (!it.material || String(it.material).trim() === '')) {
-        errors.push('Missing Material / Grade');
-      }
-      if (it.unitPrice !== undefined && it.unitPrice !== null && String(it.unitPrice).trim() !== '') {
-        const pNum = Number(it.unitPrice);
-        if (isNaN(pNum) || pNum < 0) {
-          errors.push('Invalid Unit Price');
-        }
-      }
-      if (it.weightKg !== undefined && it.weightKg !== null && String(it.weightKg).trim() !== '') {
-        const wNum = Number(it.weightKg);
-        if (isNaN(wNum) || wNum < 0) {
-          errors.push('Invalid Weight');
-        }
+      const cleanUnit = isTextPlaceholder(it.unit) ? '' : String(it.unit).trim();
+      if (!cleanUnit) {
+        errors.push('Missing UOM');
       }
 
-      // Check dimension A, B, C, D, L1, L2 if provided
+      // Parse unit price (Indonesian format aware; null if empty/placeholder)
+      const parsedPrice = parseIndonesianNumber(it.unitPrice, true);
+      if (!parsedPrice.isValid) {
+        errors.push('Invalid Unit Price');
+      }
+      const price = parsedPrice.value; // null or numeric
+
+      // Parse weight (null if empty/placeholder)
+      const parsedWeight = parseIndonesianNumber(it.weightKg, false);
+      if (!parsedWeight.isValid) {
+        errors.push('Invalid Weight');
+      }
+      const weight = parsedWeight.value; // null or numeric
+
+      // Check dimension A, B, C, D, L1, L2 if provided (skip numeric placeholders)
       const dims = ['dimA', 'dimB', 'dimC', 'dimD', 'dimL1', 'dimL2'];
       dims.forEach(d => {
-        if (it[d] !== undefined && it[d] !== null && String(it[d]).trim() !== '') {
+        if (it[d] !== undefined && it[d] !== null && !isNumericPlaceholder(it[d])) {
           const val = String(it[d]).trim();
           if (/[<>{}\\]/.test(val)) {
             errors.push(`Invalid ${d.replace('dim', 'Dimension ')}`);
@@ -144,24 +215,33 @@ router.post('/', authenticateToken, async (req, res) => {
         }
       });
 
-      if (isDuplicate) {
-        errors.push('Existing SKU found — requires Admin review.');
+      if (isAmbiguous) {
+        errors.push('Ambiguous match — will create new');
+      } else if (isDuplicate) {
+        errors.push(`Existing item found (${matchedSku}) — will update record.`);
       }
 
-      const validationStatus = errors.length > 0 ? (errors.some(e => !e.includes('Existing SKU found')) ? 'INVALID' : 'WARNING') : 'VALID';
+      if (isFileDuplicate) {
+        errors.push('Duplicate record within file (same name & description)');
+      }
+
+      const hasBlockingErrors = errors.some(e => 
+        !e.startsWith('Existing item found') && 
+        !e.startsWith('Ambiguous match') && 
+        !e.startsWith('Duplicate record within file')
+      );
+      const isWarning = isDuplicate || isAmbiguous || isFileDuplicate;
+      const validationStatus = hasBlockingErrors ? 'INVALID' : (isWarning ? 'WARNING' : 'VALID');
       const validationError = errors.join('; ');
 
-      let price = null;
-      if (it.unitPrice !== undefined && it.unitPrice !== null && String(it.unitPrice).trim() !== '') {
-        const pNum = Number(it.unitPrice);
-        if (!isNaN(pNum) && isFinite(pNum) && pNum >= 0) price = pNum;
-      }
-
-      let weight = null;
-      if (it.weightKg !== undefined && it.weightKg !== null && String(it.weightKg).trim() !== '') {
-        const wNum = Number(it.weightKg);
-        if (!isNaN(wNum) && isFinite(wNum) && wNum >= 0) weight = wNum;
-      }
+      const cleanCategory = isTextPlaceholder(it.category) ? (familyDef ? familyDef.category : 'Raw Materials') : String(it.category).trim();
+      const cleanSubCat = isTextPlaceholder(it.subCategory) ? '' : String(it.subCategory).trim();
+      const cleanMaterial = isTextPlaceholder(it.material) ? '' : String(it.material).trim();
+      const cleanSize = isTextPlaceholder(it.size) ? '' : String(it.size).trim();
+      const cleanSpec = isTextPlaceholder(it.specification) ? '' : String(it.specification).trim();
+      const cleanBrand = isTextPlaceholder(it.brand) ? '' : String(it.brand).trim();
+      const cleanSupplier = isTextPlaceholder(it.supplierName) ? '' : String(it.supplierName).trim();
+      const cleanRemarks = isTextPlaceholder(it.remarks) ? '' : String(it.remarks).trim();
 
       await client.query(`
         INSERT INTO import_submission_items (
@@ -202,26 +282,26 @@ router.post('/', authenticateToken, async (req, res) => {
         rowNum,
         it.sourceSheet || 'Sheet1',
         rawSku || '',
-        it.productName ? String(it.productName).trim() : '',
-        it.itemDescription ? String(it.itemDescription).trim() : '',
-        it.category || (familyDef ? familyDef.category : 'Raw Materials'),
-        it.subCategory ? String(it.subCategory).trim() : '',
-        it.material ? String(it.material).trim() : '',
-        it.size ? String(it.size).trim() : '',
-        it.specification ? String(it.specification).trim() : '',
-        it.unit ? String(it.unit).trim() : 'Sheet',
+        cleanProdName,
+        cleanDesc,
+        cleanCategory,
+        cleanSubCat,
+        cleanMaterial,
+        cleanSize,
+        cleanSpec,
+        cleanUnit,
         weight,
         price,
         it.supplyType === 'Cut Size' ? 'Cut Size' : 'Full Size',
-        it.brand ? String(it.brand).trim() : '',
-        it.supplierName ? String(it.supplierName).trim() : '',
-        it.remarks ? String(it.remarks).trim() : '',
-        it.dimA || it.a || '',
-        it.dimB || it.b || '',
-        it.dimC || it.c || '',
-        it.dimD || it.d || '',
-        it.dimL1 || it.l1 || '',
-        it.dimL2 || it.l2 || '',
+        cleanBrand,
+        cleanSupplier,
+        cleanRemarks,
+        (it.dimA && !isNumericPlaceholder(it.dimA)) ? String(it.dimA).trim() : '',
+        (it.dimB && !isNumericPlaceholder(it.dimB)) ? String(it.dimB).trim() : '',
+        (it.dimC && !isNumericPlaceholder(it.dimC)) ? String(it.dimC).trim() : '',
+        (it.dimD && !isNumericPlaceholder(it.dimD)) ? String(it.dimD).trim() : '',
+        (it.dimL1 && !isNumericPlaceholder(it.dimL1)) ? String(it.dimL1).trim() : '',
+        (it.dimL2 && !isNumericPlaceholder(it.dimL2)) ? String(it.dimL2).trim() : '',
         validationStatus,
         validationError,
         isDuplicate
@@ -573,6 +653,9 @@ router.post('/:id/approve', authenticateToken, requireAdmin, async (req, res) =>
   try {
     await client.query('BEGIN');
 
+    // Advisory lock prevents concurrent SKU allocation race conditions
+    await client.query('SELECT pg_advisory_xact_lock(987654321)');
+
     const subRes = await client.query(`SELECT * FROM import_submissions WHERE ${isNumeric ? 'id = $1' : 'import_id = $1'} FOR UPDATE`, [isNumeric ? parseInt(id, 10) : id]);
     if (subRes.rowCount === 0) {
       await client.query('ROLLBACK');
@@ -609,60 +692,167 @@ router.post('/:id/approve', authenticateToken, requireAdmin, async (req, res) =>
     let currentSeq = Math.max(parseInt(maxRes.rows[0].max_seq, 10), 4235);
     const insertedMasterItems = [];
 
+    // Fetch existing active master items for exact SKU or Product Name + Description matching
+    const allExistingRes = await client.query('SELECT * FROM master_items');
+    const existingSkuMap = new Map();
+    const existingNameDescMap = new Map();
+
+    allExistingRes.rows.forEach(r => {
+      if (r.sku) {
+        const s = r.sku.trim().toUpperCase();
+        if (!existingSkuMap.has(s)) existingSkuMap.set(s, []);
+        existingSkuMap.get(s).push(r);
+      }
+      const key = getItemMatchKey(r.product_name, r.item_description);
+      if (!existingNameDescMap.has(key)) existingNameDescMap.set(key, []);
+      existingNameDescMap.get(key).push(r);
+    });
+
     for (const it of itemsRes.rows) {
-      currentSeq++;
-      const assignedSku = `FF${currentSeq}`;
+      let existingMatch = null;
+      const cleanSku = (it.sku && !isTextPlaceholder(it.sku)) ? it.sku.trim() : '';
+      const cleanName = (it.product_name && !isTextPlaceholder(it.product_name)) ? it.product_name.trim() : '';
+      const cleanDesc = (it.item_description && !isTextPlaceholder(it.item_description)) ? it.item_description.trim() : '';
 
-      const insertRes = await client.query(`
-        INSERT INTO master_items (
-          sku,
-          product_name,
-          item_description,
-          category,
-          sub_category,
-          material,
-          size,
-          specification,
-          unit,
-          weight_kg,
-          status,
-          supply_type,
-          remarks,
-          brand,
-          unit_price,
-          source_sheet
-        ) VALUES (
-          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
-          $11, $12, $13, $14, $15, $16
-        )
-        RETURNING *
-      `, [
-        assignedSku,
-        it.product_name,
-        it.item_description || '',
-        it.category || 'Raw Materials',
-        it.sub_category || '',
-        it.material || '',
-        it.size || '',
-        it.specification || 'PT Persada Nusantara Steel Standard',
-        it.unit || 'Sheet',
-        it.weight_kg,
-        'Available',
-        it.supply_type || 'Full Size',
-        it.remarks || '',
-        it.brand || '',
-        it.unit_price,
-        it.source_sheet || submission.file_name
-      ]);
+      if (cleanSku) {
+        const matches = existingSkuMap.get(cleanSku.toUpperCase()) || [];
+        if (matches.length === 1) {
+          existingMatch = matches[0];
+        } else if (matches.length > 1) {
+          existingMatch = null; // Ambiguous match — will create new
+        }
+      } else if (cleanName) {
+        const key = getItemMatchKey(cleanName, cleanDesc);
+        const matches = existingNameDescMap.get(key) || [];
+        if (matches.length === 1) {
+          existingMatch = matches[0];
+        } else if (matches.length > 1) {
+          existingMatch = null; // Ambiguous match — will create new
+        }
+      }
 
-      insertedMasterItems.push(insertRes.rows[0]);
+      if (existingMatch) {
+        // Updates must never erase data: skip any blank or placeholder field, keep existing DB value
+        const isReal = (v) => v !== undefined && v !== null && !isTextPlaceholder(v) && String(v).trim() !== '';
 
-      // Record assigned master SKU back to staging item
-      await client.query(`
-        UPDATE import_submission_items
-        SET assigned_master_sku = $1
-        WHERE id = $2
-      `, [assignedSku, it.id]);
+        const updatedDesc = isReal(it.item_description) ? String(it.item_description).trim() : existingMatch.item_description;
+        const updatedCategory = isReal(it.category) ? String(it.category).trim() : existingMatch.category;
+        const updatedSubCat = isReal(it.sub_category) ? String(it.sub_category).trim() : existingMatch.sub_category;
+        const updatedMaterial = isReal(it.material) ? String(it.material).trim() : existingMatch.material;
+        const updatedSize = isReal(it.size) ? String(it.size).trim() : existingMatch.size;
+        const updatedSpec = isReal(it.specification) ? String(it.specification).trim() : existingMatch.specification;
+        const updatedUnit = isReal(it.unit) ? String(it.unit).trim() : existingMatch.unit;
+        const updatedWeight = (it.weight_kg !== null && it.weight_kg !== undefined) ? it.weight_kg : existingMatch.weight_kg;
+        const updatedSupplyType = isReal(it.supply_type) ? String(it.supply_type).trim() : existingMatch.supply_type;
+        const updatedRemarks = isReal(it.remarks) ? String(it.remarks).trim() : existingMatch.remarks;
+        const updatedBrand = isReal(it.brand) ? String(it.brand).trim() : existingMatch.brand;
+        const updatedPrice = (it.unit_price !== null && it.unit_price !== undefined) ? it.unit_price : existingMatch.unit_price;
+        const updatedSourceSheet = isReal(it.source_sheet) ? String(it.source_sheet).trim() : existingMatch.source_sheet;
+
+        const updateRes = await client.query(`
+          UPDATE master_items SET
+            item_description = $1,
+            category = $2,
+            sub_category = $3,
+            material = $4,
+            size = $5,
+            specification = $6,
+            unit = $7,
+            weight_kg = $8,
+            supply_type = $9,
+            remarks = $10,
+            brand = $11,
+            unit_price = $12,
+            source_sheet = $13,
+            updated_at = CURRENT_TIMESTAMP
+          WHERE id = $14
+          RETURNING *
+        `, [
+          updatedDesc,
+          updatedCategory,
+          updatedSubCat,
+          updatedMaterial,
+          updatedSize,
+          updatedSpec,
+          updatedUnit,
+          updatedWeight,
+          updatedSupplyType,
+          updatedRemarks,
+          updatedBrand,
+          updatedPrice,
+          updatedSourceSheet,
+          existingMatch.id
+        ]);
+
+        insertedMasterItems.push(updateRes.rows[0]);
+
+        await client.query(`
+          UPDATE import_submission_items
+          SET assigned_master_sku = $1
+          WHERE id = $2
+        `, [existingMatch.sku, it.id]);
+      } else {
+        currentSeq++;
+        const assignedSku = `FF${currentSeq}`;
+
+        const insertRes = await client.query(`
+          INSERT INTO master_items (
+            sku,
+            product_name,
+            item_description,
+            category,
+            sub_category,
+            material,
+            size,
+            specification,
+            unit,
+            weight_kg,
+            status,
+            supply_type,
+            remarks,
+            brand,
+            unit_price,
+            source_sheet
+          ) VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+            $11, $12, $13, $14, $15, $16
+          )
+          RETURNING *
+        `, [
+          assignedSku,
+          cleanName,
+          cleanDesc,
+          it.category || 'Raw Materials',
+          it.sub_category || '',
+          it.material || '',
+          it.size || '',
+          it.specification || 'PT Persada Nusantara Steel Standard',
+          it.unit || 'Pcs',
+          it.weight_kg !== null ? it.weight_kg : null,
+          'Available',
+          it.supply_type || 'Full Size',
+          it.remarks || '',
+          it.brand || '',
+          it.unit_price !== null ? it.unit_price : null,
+          it.source_sheet || submission.file_name
+        ]);
+
+        const insertedItem = insertRes.rows[0];
+        insertedMasterItems.push(insertedItem);
+
+        // Update in-memory index for subsequent items
+        const newKey = getItemMatchKey(insertedItem.product_name, insertedItem.item_description);
+        if (!existingNameDescMap.has(newKey)) existingNameDescMap.set(newKey, []);
+        existingNameDescMap.get(newKey).push(insertedItem);
+        if (!existingSkuMap.has(assignedSku)) existingSkuMap.set(assignedSku, []);
+        existingSkuMap.get(assignedSku).push(insertedItem);
+
+        await client.query(`
+          UPDATE import_submission_items
+          SET assigned_master_sku = $1
+          WHERE id = $2
+        `, [assignedSku, it.id]);
+      }
     }
 
     // Update submission status to APPROVED
