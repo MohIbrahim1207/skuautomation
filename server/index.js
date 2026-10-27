@@ -70,20 +70,11 @@ const ensureSeedUsers = async () => {
         params.push('Active');
       }
 
-      const knownAdminPasses = ['admin123', 'FlowForce2026!', 'admin', 'Admin123!', 'admin@123', 'flowforce_secure_password'];
-      let adminPassMatched = false;
-      for (const pass of knownAdminPasses) {
-        if (admin.password_hash && await bcrypt.compare(pass, admin.password_hash)) {
-          adminPassMatched = true;
-          break;
-        }
-      }
-
-      if (!admin.password_hash || !admin.password_hash.startsWith('$2') || !adminPassMatched) {
+      if (!admin.password_hash || !admin.password_hash.startsWith('$2')) {
         const adminHash = await bcrypt.hash('admin123', 10);
         updates.push(`password_hash = $${idx++}`);
         params.push(adminHash);
-        console.log('✅ [DB] Restored Admin password to admin123');
+        console.log('✅ [DB] Initialized Admin password to default seed');
       }
 
       if (updates.length > 0) {

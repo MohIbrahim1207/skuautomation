@@ -16,6 +16,26 @@
   window.REQUIRE_UNIT_PRICE = REQUIRE_UNIT_PRICE;
 
   // =========================================================================
+  // SHARED CATEGORY NORMALIZATION HELPER
+  // Canonical names: 'Raw Materials', 'Fasteners', 'Piping & Fittings',
+  // 'Electrical Materials', 'Ducting', 'Bought Out Items', 'Flat Bar', 'Cut/Paint Materials'
+  // =========================================================================
+  function normalizeCategory(cat) {
+    if (!cat) return '';
+    const s = String(cat).trim().toLowerCase();
+    if (s.includes('electr')) return 'Electrical Materials';
+    if (s.includes('fasten')) return 'Fasteners';
+    if (s.includes('piping') || s.includes('pipe') || s.includes('fitting')) return 'Piping & Fittings';
+    if (s.includes('duct')) return 'Ducting';
+    if (s.includes('flat bar') || s.includes('flat-bar') || s === 'flatbar') return 'Flat Bar';
+    if (s.includes('bought')) return 'Bought Out Items';
+    if (s.includes('paint') || s.includes('cut')) return 'Cut/Paint Materials';
+    if (s.includes('raw') || s.includes('steel') || s.includes('plate') || s.includes('section')) return 'Raw Materials';
+    return String(cat).trim();
+  }
+  window.normalizeCategory = normalizeCategory;
+
+  // =========================================================================
   // 1. DATA SERVICE - ABSTRACTED STORAGE LAYER
   // Ready for local storage or seamless Google Sheets + Apps Script integration
   // =========================================================================
@@ -2317,33 +2337,12 @@
           let category = this.isTextPlaceholder(rawCategory) ? '' : rawCategory.trim();
           if (!category) {
             if (this.detectedFamily && this.detectedFamily.category) {
-              category = this.detectedFamily.category;
-            } else if (sheetName.toLowerCase().includes('piping')) {
-              category = 'Piping Materials';
-            } else if (sheetName.toLowerCase().includes('fastener')) {
-              category = 'Fasteners';
-            } else if (sheetName.toLowerCase().includes('bought')) {
-              category = 'Bought Out Items';
-            } else if (sheetName.toLowerCase().includes('electrical')) {
-              category = 'Electrical Materials';
-            } else if (sheetName.toLowerCase().includes('duct')) {
-              category = 'Ducting';
-            } else if (sheetName.toLowerCase().includes('flat bar')) {
-              category = 'Flat Bar';
-            } else if (sheetName.toLowerCase().includes('paint') || sheetName.toLowerCase().includes('cut')) {
-              category = 'Cut/Paint Materials';
+              category = normalizeCategory(this.detectedFamily.category);
             } else {
-              category = (this.familyConfig[this.selectedFamily] && this.familyConfig[this.selectedFamily].category) || 'Raw Materials';
+              category = normalizeCategory(sheetName || (this.familyConfig[this.selectedFamily] && this.familyConfig[this.selectedFamily].category) || 'Raw Materials');
             }
           } else {
-            const catLower = category.toLowerCase();
-            if (catLower.includes('piping')) category = 'Piping Materials';
-            else if (catLower.includes('fastener')) category = 'Fasteners';
-            else if (catLower.includes('bought')) category = 'Bought Out Items';
-            else if (catLower.includes('electrical')) category = 'Electrical Materials';
-            else if (catLower.includes('duct')) category = 'Ducting';
-            else if (catLower.includes('flat bar')) category = 'Flat Bar';
-            else if (catLower.includes('paint') || catLower.includes('cut')) category = 'Cut/Paint Materials';
+            category = normalizeCategory(category);
           }
 
           const rawSubCat = getVal(row, ['Subcategory', 'Sub Category', 'Sub-Category']);
@@ -2735,6 +2734,72 @@
         breakdownEl.innerHTML = Object.entries(this.sheetBreakdown).map(([sheet, count]) => {
           return `<span style="background: rgba(16, 185, 129, 0.12); color: #059669; border: 1px solid rgba(16, 185, 129, 0.3); font-size: 0.78rem; font-weight: 600; padding: 2px 8px; border-radius: 9999px;">📄 ${escapeHtml(sheet)}: <strong>${count}</strong></span>`;
         }).join('');
+      }
+
+      // Category / Sheet Mismatch Detection & Warning
+      const mismatchNotice = document.getElementById('importCategoryMismatchNotice');
+      if (mismatchNotice) {
+        const selectedConf = this.familyConfig[this.selectedFamily] || this.familyConfig['raw-materials'];
+        let detectedConf = this.detectedFamily ? this.familyConfig[this.detectedFamily.familySlug] : null;
+
+        // Fallback: detect from supportedSheets or file name
+        if (!detectedConf && this.supportedSheets) {
+          const sLower = this.supportedSheets.map(s => s.toLowerCase());
+          const fLower = (this.file ? this.file.name : '').toLowerCase();
+          if (sLower.some(s => s.includes('electr')) || fLower.includes('electr')) {
+            detectedConf = this.familyConfig['electrical-materials'];
+          } else if (sLower.some(s => s.includes('fasten')) || fLower.includes('fasten')) {
+            detectedConf = this.familyConfig['fasteners'];
+          } else if (sLower.some(s => s.includes('piping') || s.includes('pipe')) || fLower.includes('pipe')) {
+            detectedConf = this.familyConfig['piping-materials'];
+          } else if (sLower.some(s => s.includes('duct')) || fLower.includes('duct')) {
+            detectedConf = this.familyConfig['ducting'];
+          }
+        }
+
+        const isMismatch = detectedConf && (normalizeCategory(detectedConf.category) !== normalizeCategory(selectedConf.category));
+
+        if (isMismatch) {
+          const sheetNames = (this.supportedSheets || []).join(', ') || 'Sheet';
+          mismatchNotice.style.display = 'block';
+          mismatchNotice.innerHTML = `
+            <div style="display: flex; align-items: flex-start; gap: 0.75rem;">
+              <span style="font-size: 1.3rem; line-height: 1;">⚠️</span>
+              <div style="flex: 1;">
+                <strong style="color: #92400e; font-size: 0.9rem; display: block; margin-bottom: 0.2rem;">
+                  Import Category Mismatch Detected
+                </strong>
+                <p style="margin: 0 0 0.5rem 0; font-size: 0.82rem; color: #78350f; line-height: 1.4;">
+                  The uploaded file appears to be a <strong>${escapeHtml(detectedConf.name)}</strong> template (Worksheet: <em>"${escapeHtml(sheetNames)}"</em>), but your selected category is <strong>${escapeHtml(selectedConf.name)}</strong>.<br>
+                  Submitting under "${escapeHtml(selectedConf.name)}" would misclassify these materials in the Master Catalog.
+                </p>
+                <button type="button" class="btn btn-sm btn-primary" id="btnFixCategoryMismatch" style="font-size: 0.8rem; padding: 0.3rem 0.75rem; background: #d97706; border-color: #b45309; color: #ffffff; font-weight: 600;">
+                  ⚡ Switch Import Category to "${escapeHtml(detectedConf.name)}"
+                </button>
+              </div>
+            </div>
+          `;
+          const btnFix = document.getElementById('btnFixCategoryMismatch');
+          if (btnFix) {
+            btnFix.onclick = () => {
+              const targetSlug = Object.keys(this.familyConfig).find(k => this.familyConfig[k] === detectedConf) || 'electrical-materials';
+              this.selectedFamily = targetSlug;
+              const selEl = document.getElementById('selImportTemplateFamily');
+              if (selEl) selEl.value = targetSlug;
+              this.detectedFamily = {
+                familySlug: targetSlug,
+                familyName: detectedConf.name,
+                category: detectedConf.category,
+                version: '1.0'
+              };
+              this.parseWorkbook();
+              this.renderPreviewTable();
+              UI.showToast('Category Aligned', `Updated import category to ${detectedConf.name}.`);
+            };
+          }
+        } else {
+          mismatchNotice.style.display = 'none';
+        }
       }
 
       if (errorNotice) {
@@ -4877,18 +4942,7 @@
     currentCategory: 'Raw Materials',
 
     openCategory(categoryName) {
-      let targetCat = categoryName || 'Raw Materials';
-      if (targetCat.toLowerCase().includes('piping')) {
-        targetCat = 'Piping & Fittings';
-      } else if (targetCat.toLowerCase().includes('fastener')) {
-        targetCat = 'Fasteners';
-      } else if (targetCat.toLowerCase().includes('electric')) {
-        targetCat = 'Electrical';
-      } else if (targetCat.toLowerCase().includes('raw')) {
-        targetCat = 'Raw Materials';
-      } else if (targetCat.toLowerCase().includes('duct')) {
-        targetCat = 'Ducting';
-      }
+      let targetCat = normalizeCategory(categoryName || 'Raw Materials');
 
       if (targetCat === 'Ducting') {
         if (window.DuctingWorkflowController && typeof window.DuctingWorkflowController.open === 'function') {
@@ -4938,7 +4992,7 @@
         if (searchInput) searchInput.placeholder = 'Search Piping by SKU, Product Name, Size, Schedule, Standard...';
         if (navLabel) navLabel.textContent = '🚰 Piping & Fittings';
         if (supplyTh) supplyTh.textContent = 'Supply Type';
-      } else if (targetCat === 'Electrical') {
+      } else if (targetCat === 'Electrical Materials') {
         if (titleEl) titleEl.textContent = 'Electrical Master Catalog';
         if (subtitleEl) subtitleEl.textContent = 'Single source of truth for Electrical procurement specifications';
         if (specEl) specEl.textContent = 'Electrical & Instrumentation Specifications';
@@ -5516,24 +5570,26 @@
       if (elNavPrCount) elNavPrCount.textContent = userPrs.length;
       if (elNavSkuCount) elNavSkuCount.textContent = masterItems.length;
 
-      // Actual Category Counts from PostgreSQL Database
-      const rawMaterialsCount = masterItems.filter(i => (i.category || '').trim().toLowerCase() === 'raw materials').length;
-      const fastenersCount = masterItems.filter(i => (i.category || '').trim().toLowerCase() === 'fasteners').length;
-      const pipingCount = masterItems.filter(i => {
-        const cat = (i.category || '').trim().toLowerCase();
-        return cat === 'piping & fittings' || cat === 'piping';
-      }).length;
-      const electricalCount = masterItems.filter(i => (i.category || '').trim().toLowerCase() === 'electrical').length;
+      // Actual Category Items from PostgreSQL Database using shared normalizeCategory
+      const rawMaterialsItems = masterItems.filter(i => normalizeCategory(i.category) === 'Raw Materials');
+      const fastenersItems = masterItems.filter(i => normalizeCategory(i.category) === 'Fasteners');
+      const pipingItems = masterItems.filter(i => normalizeCategory(i.category) === 'Piping & Fittings');
+      const electricalItems = masterItems.filter(i => normalizeCategory(i.category) === 'Electrical Materials');
 
       const elCatRaw = document.getElementById('catCountRawMaterials');
       const elCatFasteners = document.getElementById('catCountFasteners');
       const elCatPiping = document.getElementById('catCountPiping');
       const elCatElectrical = document.getElementById('catCountElectrical');
 
-      if (elCatRaw) elCatRaw.textContent = `${rawMaterialsCount} Items`;
-      if (elCatFasteners) elCatFasteners.textContent = `${fastenersCount} Items`;
-      if (elCatPiping) elCatPiping.textContent = `${pipingCount} Items`;
-      if (elCatElectrical) elCatElectrical.textContent = `${electricalCount} Items`;
+      if (elCatRaw) elCatRaw.textContent = `${rawMaterialsItems.length} Items`;
+      if (elCatFasteners) elCatFasteners.textContent = `${fastenersItems.length} Items`;
+      if (elCatPiping) elCatPiping.textContent = `${pipingItems.length} Items`;
+      if (elCatElectrical) elCatElectrical.textContent = `${electricalItems.length} Items`;
+
+      // Reset nav tab label when returning to / displaying Dashboard
+      const elNavCatalogLabel = document.getElementById('navCatalogLabel');
+      if (elNavCatalogLabel) elNavCatalogLabel.textContent = '📦 Master Catalog';
+      if (elNavSkuCount) elNavSkuCount.textContent = masterItems.length;
 
       // Admin Operational Operations & System Health Ribbon
       const adminSec = document.getElementById('adminDashboardSection');
@@ -6392,14 +6448,11 @@
         return;
       }
 
-      // 2. Category-Specific Scope: Filter by Active Category
-      const currentCat = this.currentCategory || 'Raw Materials';
+      // 2. Category-Specific Scope: Filter by Active Category using shared normalizeCategory
+      const targetCat = normalizeCategory(this.currentCategory || 'Raw Materials');
+      const currentCat = targetCat;
       const categoryItems = masterItems.filter(item => {
-        const itemCat = (item.category || 'Raw Materials').trim();
-        if (currentCat === 'Piping & Fittings') {
-          return itemCat.toLowerCase() === 'piping & fittings' || itemCat.toLowerCase() === 'piping';
-        }
-        return itemCat.toLowerCase() === currentCat.toLowerCase();
+        return normalizeCategory(item.category) === targetCat;
       });
 
       console.log('[10. Catalog UI Table Render]', {
@@ -6410,6 +6463,8 @@
 
       // 3. Category Empty State (e.g. Electrical when 0 imported)
       if (!categoryItems || categoryItems.length === 0) {
+        const navBadge = document.getElementById('navCatalogBadge');
+        if (navBadge) navBadge.textContent = 0;
         if (countEl) countEl.innerHTML = `Showing <strong>0</strong> of <strong>0</strong> Master Items`;
         if (filterChipsContainer) filterChipsContainer.innerHTML = '';
         const canCreateSku = window.PermissionService ? window.PermissionService.can('CAN_CREATE_SKU') : false;
@@ -6510,7 +6565,7 @@
         countEl.innerHTML = `Showing <strong>${filtered.length}</strong> of <strong>${categoryItems.length}</strong> Master Items`;
       }
       const navBadge = document.getElementById('navCatalogBadge');
-      if (navBadge) navBadge.textContent = masterItems.length;
+      if (navBadge) navBadge.textContent = categoryItems.length;
 
       const canEditDescription = window.PermissionService ? window.PermissionService.can('CAN_EDIT_ITEM_DESCRIPTION') : false;
       const canEditPrice = window.PermissionService ? window.PermissionService.can('CAN_EDIT_PRICE') : false;
