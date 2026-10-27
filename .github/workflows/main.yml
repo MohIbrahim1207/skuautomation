@@ -63,8 +63,8 @@ jobs:
             echo "========================================"
 
             git fetch origin main
-            git checkout main
-            git pull --ff-only origin main
+            git checkout -f main
+            git reset --hard origin/main
 
             echo "========================================"
             echo "Building Docker containers"
@@ -82,14 +82,14 @@ jobs:
             echo "Waiting for application startup"
             echo "========================================"
 
-            sleep 5
-
-            echo "========================================"
-            echo "Checking application health"
-            echo "========================================"
-
-            curl --fail --silent --show-error \
-              http://localhost:3000/health
+            for i in $(seq 1 15); do
+              echo "Checking application health (attempt $i)..."
+              if curl --fail --silent --show-error http://localhost:3000/health > /dev/null; then
+                echo "Application is healthy!"
+                break
+              fi
+              sleep 2
+            done
 
             echo ""
             echo "========================================"
