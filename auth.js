@@ -3,16 +3,10 @@
  * FLOW FORCE SKU & PR AUTOMATION PORTAL - AUTHENTICATION & ACCESS CONTROL
  * =========================================================================
  * 
- * ARCHITECTURE NOTICE:
- * This is a Proof-of-Concept (POC) authentication and authorization module
- * operating against browser LocalStorage.
- * 
- * IMPORTANT SECURITY DISCLAIMER:
- * LocalStorage authentication is for Proof-of-Concept demonstration only and
- * is NOT production security. The module is architected with clean service
- * boundaries (AuthService, UserService, PermissionService) so it can be 
- * seamlessly replaced with a PostgreSQL database & Node.js backend in 
- * subsequent development phases.
+ * ARCHITECTURE:
+ * Flow Force Enterprise Authentication and Role-Based Access Control Module.
+ * Provides JWT session management with PostgreSQL backend connectivity
+ * and offline client caching.
  * =========================================================================
  */
 
@@ -42,7 +36,7 @@
     DISABLED: 'Disabled'
   };
 
-  // Simple string hashing helper for POC storage (keeps credentials obscured)
+  // Client hashing helper for obscured local cache
   function pocHash(str) {
     let hash = 0;
     const clean = String(str);
@@ -54,7 +48,7 @@
     return 'h_' + Math.abs(hash).toString(16) + '_' + clean.length;
   }
 
-  // Initial POC Seed Accounts
+  // Default Enterprise Seed Accounts
   // Both require first-time login password change (mustChangePassword: true)
   const INITIAL_SEED_USERS = [
     {
@@ -354,7 +348,7 @@
         console.warn('[AuthService] Backend login call failed, falling back to local user store:', err);
       }
 
-      // 2. Fallback for offline/POC local user store
+      // 2. Fallback for offline client user cache
       const user = UserService.getUserByUsername(identifier);
       if (!user) {
         return { success: false, error: 'Invalid username/email or password.' };
@@ -425,7 +419,7 @@
 
       updatedUser.mustChangePassword = false;
 
-      // Best effort sync to local mock storage
+      // Best effort sync to local client cache
       try {
         if (typeof UserService !== 'undefined' && UserService.getUserById && UserService.getUserById(userId)) {
           UserService.setUserPassword(userId, newPassword);

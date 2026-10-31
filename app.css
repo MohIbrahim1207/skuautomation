@@ -2866,44 +2866,54 @@ html {
   animation: fadeInModal 0.25s ease-out;
 }
 
-.login-brand-placeholder {
-  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+.login-brand-header {
+  background: var(--bg-surface-subtle);
   border-bottom: 1px solid var(--border-subtle);
   padding: 2rem 2rem 1.5rem;
   text-align: center;
 }
 
-.login-logo-badge {
+.login-logo-tile {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
-  font-weight: 800;
-  font-size: 1.4rem;
-  letter-spacing: 0.5px;
-  color: var(--primary-700);
+  justify-content: center;
+  padding: 6px 14px;
+  border-radius: var(--radius-md);
+  margin-bottom: 0.5rem;
+  transition: all var(--motion-fast);
 }
 
-.login-logo-mark {
-  font-size: 1.35rem;
+[data-theme="dark"] .login-logo-tile {
+  background: #ffffff;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+
+.login-logo-img {
+  height: 42px;
+  max-width: 220px;
+  width: auto;
+  object-fit: contain;
+  display: block;
 }
 
 .login-brand-tagline {
-  font-size: 0.76rem;
+  font-size: 0.78rem;
   color: var(--text-muted);
-  margin-top: 4px;
+  margin-top: 6px;
+  font-weight: var(--font-medium);
 }
 
 .login-portal-tag {
   display: inline-block;
-  font-size: 0.78rem;
+  font-size: 0.75rem;
   font-weight: 600;
-  color: var(--primary-600);
-  background: #ffffff;
-  border: 1px solid #bae6fd;
-  padding: 3px 10px;
+  color: var(--brand-600);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  padding: 3px 12px;
   border-radius: 20px;
   margin-top: 10px;
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-xs);
 }
 
 .login-card-body {
@@ -2951,23 +2961,26 @@ html {
   margin-top: 0.5rem;
 }
 
-.login-poc-disclaimer {
+.login-security-notice {
   margin-top: 1.75rem;
-  padding-top: 1.25rem;
-  border-top: 1px dashed var(--border-default);
+  padding: 1rem;
+  background: var(--bg-surface-subtle);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
   text-align: center;
-  font-size: 0.74rem;
-  color: var(--text-dim);
-  line-height: 1.4;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  line-height: 1.5;
 }
 
-.login-poc-disclaimer .poc-badge {
+.login-security-notice .security-badge {
   display: inline-block;
   font-size: 0.65rem;
   font-weight: 700;
-  background: #e0f2fe;
-  color: #0369a1;
-  padding: 2px 6px;
+  background: var(--brand-50);
+  color: var(--brand-700);
+  border: 1px solid var(--brand-200);
+  padding: 2px 8px;
   border-radius: 4px;
   letter-spacing: 0.5px;
   margin-bottom: 6px;

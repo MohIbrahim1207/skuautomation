@@ -7,19 +7,19 @@
 
 :root {
   /* -------------------------------------------------------------------------
-     1. BRAND PALETTE (Flow Force Sky / Ocean 50–950)
+     1. BRAND PALETTE (Flow Force Scarlet Red 50–950, Exact Logo Hex #ed1b24)
      ------------------------------------------------------------------------- */
-  --brand-50:  #f0f9ff;
-  --brand-100: #e0f2fe;
-  --brand-200: #bae6fd;
-  --brand-300: #7dd3fc;
-  --brand-400: #38bdf8;
-  --brand-500: #0ea5e9;
-  --brand-600: #0284c7; /* Primary Flow Force Brand Hue */
-  --brand-700: #0369a1;
-  --brand-800: #075985;
-  --brand-900: #0c4a6e;
-  --brand-950: #082f49;
+  --brand-50:  #fef2f2;
+  --brand-100: #fee2e2;
+  --brand-200: #fecaca;
+  --brand-300: #fca5a5;
+  --brand-400: #f87171;
+  --brand-500: #ed1b24; /* Flow Force Logo Exact Red (#ed1b24) */
+  --brand-600: #dc141c; /* Primary Action & Buttons */
+  --brand-700: #b91017;
+  --brand-800: #991117;
+  --brand-900: #7f1418;
+  --brand-950: #450608;
 
   /* Primary Aliases */
   --primary-50:  var(--brand-50);
@@ -197,9 +197,9 @@
   --sidebar-text: #334155;
   --sidebar-text-muted: #64748b;
   --sidebar-item-hover: #f1f5f9;
-  --sidebar-item-active-bg: rgba(2, 132, 199, 0.08);
-  --sidebar-item-active-text: #0284c7;
-  --sidebar-item-active-bar: #0284c7;
+  --sidebar-item-active-bg: rgba(237, 27, 36, 0.08);
+  --sidebar-item-active-text: #dc141c;
+  --sidebar-item-active-bar: #ed1b24;
   --sidebar-badge-bg: #f1f5f9;
   --sidebar-badge-text: #475569;
 
@@ -215,7 +215,7 @@
   --border-subtle: #f1f5f9;
   --border-default: #e2e8f0;
   --border-strong: #cbd5e1;
-  --border-focus: #0284c7;
+  --border-focus: #ed1b24;
 
   /* Text Hierarchy */
   --text-primary: #0f172a;
@@ -230,7 +230,7 @@
   --shadow-md: 0 4px 6px -1px rgba(15, 23, 42, 0.07), 0 2px 4px -2px rgba(15, 23, 42, 0.04);
   --shadow-lg: 0 10px 15px -3px rgba(15, 23, 42, 0.08), 0 4px 6px -4px rgba(15, 23, 42, 0.03);
   --shadow-xl: 0 20px 25px -5px rgba(15, 23, 42, 0.09), 0 8px 10px -6px rgba(15, 23, 42, 0.03);
-  --shadow-focus: 0 0 0 3px rgba(2, 132, 199, 0.22);
+  --shadow-focus: 0 0 0 3px rgba(237, 27, 36, 0.22);
   --shadow-command: 0 25px 50px -12px rgba(15, 23, 42, 0.25);
 
   /* Legacy Bridge Aliases */
@@ -264,9 +264,9 @@ html[data-theme="dark"],
   --sidebar-text: #94a3b8 !important;
   --sidebar-text-muted: #64748b !important;
   --sidebar-item-hover: #1e293b !important;
-  --sidebar-item-active-bg: rgba(56, 189, 248, 0.12) !important;
-  --sidebar-item-active-text: #38bdf8 !important;
-  --sidebar-item-active-bar: #38bdf8 !important;
+  --sidebar-item-active-bg: rgba(237, 27, 36, 0.16) !important;
+  --sidebar-item-active-text: #f87171 !important;
+  --sidebar-item-active-bar: #ed1b24 !important;
   --sidebar-badge-bg: #1e293b !important;
   --sidebar-badge-text: #94a3b8 !important;
 
@@ -282,7 +282,7 @@ html[data-theme="dark"],
   --border-subtle: #1e293b !important;
   --border-default: #334155 !important;
   --border-strong: #475569 !important;
-  --border-focus: #38bdf8 !important;
+  --border-focus: #f87171 !important;
 
   /* Text Hierarchy */
   --text-primary: #f8fafc !important;
@@ -297,15 +297,15 @@ html[data-theme="dark"],
   --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.65), 0 2px 4px -2px rgba(0, 0, 0, 0.45) !important;
   --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.7), 0 4px 6px -4px rgba(0, 0, 0, 0.5) !important;
   --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.8), 0 8px 10px -6px rgba(0, 0, 0, 0.6) !important;
-  --shadow-focus: 0 0 0 3px rgba(56, 189, 248, 0.35) !important;
+  --shadow-focus: 0 0 0 3px rgba(237, 27, 36, 0.35) !important;
   --shadow-command: 0 25px 50px -12px rgba(0, 0, 0, 0.7) !important;
 
   /* Semantic Overrides for Dark Mode */
-  --brand-50:  #082f49 !important;
-  --brand-100: #0c4a6e !important;
-  --brand-400: #7dd3fc !important;
-  --brand-500: #38bdf8 !important;
-  --brand-600: #0ea5e9 !important;
+  --brand-50:  #450608 !important;
+  --brand-100: #7f1418 !important;
+  --brand-400: #f87171 !important;
+  --brand-500: #ed1b24 !important;
+  --brand-600: #dc141c !important;
 
   --emerald-50:  #064e3b !important;
   --emerald-100: #065f46 !important;

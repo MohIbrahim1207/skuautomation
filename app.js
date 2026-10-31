@@ -1,7 +1,7 @@
 /**
  * Enterprise SKU & Purchase Request Automation Engine
  * Single Source of Truth: Master Item Catalog
- * Proof-of-Concept for RAW MATERIALS (50 Verified Items: FF4186 - FF4235)
+ * Production Platform: Flow Force Indonesia
  */
 
 (function () {
@@ -37,7 +37,7 @@
 
   // =========================================================================
   // 1. DATA SERVICE - ABSTRACTED STORAGE LAYER
-  // Ready for local storage or seamless Google Sheets + Apps Script integration
+  // Enterprise Data Layer for Master Catalogue and Purchase Requests
   // =========================================================================
   const STORAGE_KEYS = {
     MASTER_ITEMS: 'sku_auto_master_items_v1',
@@ -49,9 +49,7 @@
   const DEFAULT_CONFIG = {
     skuPrefix: 'FF',
     skuNextNumber: 4236,
-    skuAutoGenerate: true,
-    storageDriver: 'localStorage', // 'localStorage' | 'googleAppsScript'
-    googleAppsScriptUrl: ''
+    skuAutoGenerate: true
   };
 
   const DataService = {
@@ -5113,7 +5111,14 @@
         userRoleEl.className = `role-pill ${user.role === 'ADMIN' ? 'role-admin' : 'role-employee'}`;
       }
       if (userAvatarEl) {
-        const initials = (user.fullName || user.username).charAt(0).toUpperCase();
+        const nameStr = (user.fullName || user.username || '').trim();
+        const parts = nameStr.split(/\s+/).filter(Boolean);
+        let initials = 'SA';
+        if (parts.length >= 2) {
+          initials = (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+        } else if (parts.length === 1) {
+          initials = parts[0].slice(0, 2).toUpperCase();
+        }
         userAvatarEl.textContent = initials;
       }
 
@@ -5403,24 +5408,6 @@
         });
       }
 
-      // Reset Catalog button
-      const btnResetCatalog = document.getElementById('btnResetCatalog');
-      if (btnResetCatalog) {
-        btnResetCatalog.addEventListener('click', async () => {
-          if (!window.PermissionService || !window.PermissionService.can('CAN_ACCESS_SETTINGS')) {
-            this.showAccessDeniedModal('Access Denied — Administrator permission required.');
-            return;
-          }
-          if (confirm('Are you sure you want to reset the Master Catalog to the verified 50 items (FF4186 - FF4235)? Any newly created trial SKUs and PRs will be refreshed.')) {
-            await DataService.resetToDefault50();
-            this.showToast('Catalog Reset', 'Master Catalog successfully restored to 50 verified reference items.');
-            this.updateDashboardStats();
-            this.renderMasterCatalogTable();
-            this.renderPRRegisterTable();
-            this.loadSettingsUI();
-          }
-        });
-      }
 
       // Print Voucher Button
       const btnPrintVoucher = document.getElementById('btnPrintVoucher');
@@ -9962,7 +9949,7 @@
     },
 
     // =========================================================================
-    // 7. SYSTEM SETTINGS & GOOGLE SHEETS SETUP
+    // 7. SYSTEM SETTINGS & SKU NUMBERING ENGINE
     // =========================================================================
     loadSettingsUI() {
       if (window.PermissionService && !window.PermissionService.can('CAN_ACCESS_SETTINGS')) {
@@ -9971,13 +9958,34 @@
       const cfg = DataService.getConfig();
       const prefixInput = document.getElementById('cfgSkuPrefix');
       const nextNumInput = document.getElementById('cfgNextNum');
-      const driverSelect = document.getElementById('cfgDriver');
-      const apiUrlInput = document.getElementById('cfgApiUrl');
 
-      if (prefixInput) prefixInput.value = cfg.skuPrefix;
-      if (nextNumInput) nextNumInput.value = cfg.skuNextNumber;
-      if (driverSelect) driverSelect.value = cfg.storageDriver;
-      if (apiUrlInput) apiUrlInput.value = cfg.googleAppsScriptUrl || '';
+      if (prefixInput) prefixInput.value = cfg.skuPrefix || 'FF';
+      if (nextNumInput) nextNumInput.value = cfg.skuNextNumber || 4236;
+
+      const updateSkuPreview = () => {
+        const prefix = (prefixInput ? prefixInput.value.trim() : '') || 'FF';
+        const nextNum = parseInt(nextNumInput ? nextNumInput.value : 4236, 10) || 4236;
+        const previewEl = document.getElementById('skuPreviewCode');
+        const rangeEl = document.getElementById('skuCurrentReference');
+        if (previewEl) {
+          previewEl.textContent = `${prefix}-${nextNum}`;
+        }
+        if (rangeEl) {
+          const startNum = Math.max(1, nextNum - 50);
+          const endNum = Math.max(1, nextNum - 1);
+          rangeEl.textContent = `${prefix}-${startNum} — ${prefix}-${endNum}`;
+        }
+      };
+
+      if (prefixInput && !prefixInput._boundPreview) {
+        prefixInput._boundPreview = true;
+        prefixInput.addEventListener('input', updateSkuPreview);
+      }
+      if (nextNumInput && !nextNumInput._boundPreview) {
+        nextNumInput._boundPreview = true;
+        nextNumInput.addEventListener('input', updateSkuPreview);
+      }
+      updateSkuPreview();
 
       if (window.DuctingConfigController) {
         window.DuctingConfigController.loadTypes();
@@ -9991,17 +9999,14 @@
       }
       const prefix = document.getElementById('cfgSkuPrefix').value.trim() || 'FF';
       const nextNum = parseInt(document.getElementById('cfgNextNum').value, 10) || 4236;
-      const driver = document.getElementById('cfgDriver').value;
-      const apiUrl = document.getElementById('cfgApiUrl').value.trim();
 
       DataService.saveConfig({
         skuPrefix: prefix,
-        skuNextNumber: nextNum,
-        storageDriver: driver,
-        googleAppsScriptUrl: apiUrl
+        skuNextNumber: nextNum
       });
 
-      this.showToast('Settings Saved', 'SKU Generation and Storage configurations updated.');
+      this.showToast('Settings Saved', `SKU numbering updated: next item will be generated with ${prefix}-${nextNum}.`);
+      this.loadSettingsUI();
     },
 
     closeModal(modalId) {

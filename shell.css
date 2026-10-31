@@ -77,44 +77,37 @@ body.is-login .app-shell {
   min-width: 0;
   text-decoration: none;
   cursor: pointer;
+  flex: 1;
 }
 
-.sidebar-logo-icon {
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius-sm);
-  background: linear-gradient(135deg, var(--brand-500) 0%, var(--brand-700) 100%);
-  display: flex;
+.sidebar-logo-tile {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #ffffff;
-  font-weight: var(--font-bold);
-  font-size: var(--text-md);
-  box-shadow: 0 2px 6px rgba(2, 132, 199, 0.35);
-  flex-shrink: 0;
+  transition: all var(--motion-fast);
 }
 
-.sidebar-brand-text {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  transition: opacity var(--motion-fast);
-  white-space: nowrap;
+.sidebar-logo-full {
+  height: 28px;
+  max-width: 150px;
+  width: auto;
+  object-fit: contain;
+  display: block;
 }
 
-.brand-title {
-  font-size: var(--text-sm);
-  font-weight: var(--font-bold);
-  letter-spacing: 0.04em;
-  color: var(--text-primary);
-  line-height: 1.2;
+.sidebar-logo-mark {
+  height: 28px;
+  width: 28px;
+  object-fit: contain;
+  display: none;
 }
 
-.brand-subtitle {
-  font-size: var(--text-2xs);
-  color: var(--text-muted);
-  font-weight: var(--font-medium);
-  letter-spacing: 0.02em;
+/* In dark mode: put logo on a white rounded tile so it stays readable */
+[data-theme="dark"] .sidebar-logo-tile {
+  background: #ffffff;
+  padding: 4px 8px;
+  border-radius: var(--radius-md);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
 }
 
 .sidebar-toggle-btn {
@@ -150,68 +143,21 @@ body.is-login .app-shell {
   display: block;
 }
 
-.app-sidebar.sidebar-collapsed .sidebar-brand-text {
+/* Collapsed sidebar: show only mark, hide full logo */
+.app-sidebar.sidebar-collapsed .sidebar-logo-full {
   display: none;
 }
 
-/* Sidebar Quick Search Pill */
-.sidebar-search-action {
-  padding: var(--space-3) var(--space-3) var(--space-2);
-  flex-shrink: 0;
+.app-sidebar.sidebar-collapsed .sidebar-logo-mark {
+  display: block;
 }
 
-.sidebar-search-btn {
-  width: 100%;
-  height: 36px;
-  background-color: var(--topbar-search-bg);
-  border: 1px solid var(--topbar-search-border);
-  border-radius: var(--radius-sm);
-  padding: 0 var(--space-3);
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  color: var(--topbar-search-text);
-  font-size: var(--text-xs);
-  cursor: pointer;
-  transition: border-color var(--motion-fast), background-color var(--motion-fast), box-shadow var(--motion-fast);
-}
-
-.sidebar-search-btn:hover {
-  border-color: var(--brand-400);
-  background-color: var(--bg-surface);
-  box-shadow: var(--shadow-sm);
-}
-
-.sidebar-search-btn svg,
-.sidebar-search-btn i {
-  width: 15px;
-  height: 15px;
-  flex-shrink: 0;
-}
-
-.sidebar-kbd {
-  margin-left: auto;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  padding: 1px 5px;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-default);
-  border-radius: 4px;
-  color: var(--text-muted);
-}
-
-.app-sidebar.sidebar-collapsed .sidebar-search-action {
-  padding: var(--space-3) var(--space-2);
-}
-
-.app-sidebar.sidebar-collapsed .sidebar-search-btn {
+.app-sidebar.sidebar-collapsed .sidebar-logo-group {
   justify-content: center;
-  padding: 0;
 }
 
-.app-sidebar.sidebar-collapsed .sidebar-search-btn .search-label,
-.app-sidebar.sidebar-collapsed .sidebar-search-btn .sidebar-kbd {
-  display: none;
+.app-sidebar.sidebar-collapsed .sidebar-logo-tile {
+  padding: 4px;
 }
 
 /* Sidebar Navigation Items */
@@ -410,6 +356,7 @@ body.is-login .app-shell {
   align-items: center;
   gap: var(--space-3);
   min-width: 0;
+  flex-shrink: 0;
 }
 
 #mobileDrawerBtn,
@@ -451,7 +398,8 @@ body.is-login .app-shell {
 /* Center: Global Search Trigger */
 .topbar-center {
   flex: 1;
-  max-width: 480px;
+  min-width: 0;
+  max-width: 440px;
   display: flex;
   justify-content: center;
 }
@@ -491,6 +439,10 @@ body.is-login .app-shell {
 .search-text {
   flex: 1;
   text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .search-kbd {

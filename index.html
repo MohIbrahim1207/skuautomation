@@ -4,6 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Flow Force — Enterprise SKU &amp; Purchase Request Portal</title>
+  <link rel="icon" type="image/x-icon" href="favicon.ico">
+  <link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="assets/favicon-192x192.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="assets/apple-touch-icon.png">
   <link rel="stylesheet" href="tokens.css">
   <link rel="stylesheet" href="shell.css">
   <link rel="stylesheet" href="app.css">
@@ -15,14 +19,13 @@
        ========================================================================= -->
   <div id="view-login" class="login-view-wrapper" style="display: none;">
     <div class="login-card-box">
-      <!-- Flow Force Logo Placeholder Only (No external images) -->
-      <div class="login-brand-placeholder">
-        <div class="login-logo-badge">
-          <span class="login-logo-mark">⚡</span>
-          <span class="login-logo-text">FLOW FORCE</span>
+      <!-- Flow Force Official Brand Header -->
+      <div class="login-brand-header">
+        <div class="login-logo-tile">
+          <img src="assets/flow-force-logo.png" alt="Flow Force Indonesia" class="login-logo-img">
         </div>
         <div class="login-brand-tagline">Bulk Material Handling &amp; Processing Equipment Specialists</div>
-        <div class="login-portal-tag">Enterprise SKU &amp; PR Automation Portal</div>
+        <div class="login-portal-tag">Enterprise SKU &amp; Purchase Request Portal</div>
       </div>
 
       <div class="login-card-body">
@@ -50,11 +53,11 @@
           </button>
         </form>
 
-        <div class="login-poc-disclaimer">
-          <div class="poc-badge">POC AUTHENTICATION ACTIVE</div>
+        <div class="login-security-notice">
+          <div class="security-badge">AUTHORIZED ENTERPRISE ACCESS ONLY</div>
           <p>
-            Role-Based Access Control: <strong>ADMIN</strong> &amp; <strong>EMPLOYEE</strong> accounts active.<br>
-            Demo credentials require personal password change upon initial login.
+            Role-Based Access Control enforced for <strong>ADMIN</strong> &amp; <strong>EMPLOYEE</strong> accounts.<br>
+            All catalogue operations and purchase requests are monitored and audited.
           </p>
         </div>
       </div>
@@ -78,25 +81,15 @@
     <aside class="app-sidebar" id="appSidebar">
       <!-- Sidebar Brand Header -->
       <div class="sidebar-brand-box">
-        <div class="sidebar-logo-group" onclick="UI.switchView('dashboard')">
-          <div class="sidebar-logo-icon">⚡</div>
-          <div class="sidebar-brand-text">
-            <span class="brand-title">FLOW FORCE</span>
-            <span class="brand-subtitle">Enterprise SKU &amp; PR</span>
+        <div class="sidebar-logo-group" onclick="UI.switchView('dashboard')" title="Go to Dashboard">
+          <div class="sidebar-logo-tile">
+            <img src="assets/flow-force-logo.png" alt="Flow Force Indonesia" class="sidebar-logo-full">
+            <img src="assets/flow-force-icon.png" alt="Flow Force" class="sidebar-logo-mark">
           </div>
         </div>
         <button type="button" class="sidebar-toggle-btn" id="btnToggleSidebar" title="Toggle Sidebar (Ctrl+B)">
           <i data-lucide="panel-left-close" class="toggle-icon-close"></i>
           <i data-lucide="panel-left-open" class="toggle-icon-open"></i>
-        </button>
-      </div>
-
-      <!-- Quick Search Action -->
-      <div class="sidebar-search-action">
-        <button type="button" class="sidebar-search-btn" onclick="CommandPalette.open()" title="Quick search &amp; actions (Ctrl+K)">
-          <i data-lucide="search"></i>
-          <span class="search-label">Quick Actions...</span>
-          <kbd class="sidebar-kbd">⌘K</kbd>
         </button>
       </div>
 
@@ -164,7 +157,7 @@
       <div class="sidebar-footer">
         <div class="system-status-indicator">
           <span class="status-pulse-dot"></span>
-          <span class="status-text">Flow Force Core v2.0</span>
+          <span class="status-text">Flow Force v2.0.0</span>
         </div>
       </div>
     </aside>
@@ -187,10 +180,10 @@
 
         <!-- Center: Command Palette Trigger Search Bar -->
         <div class="topbar-center">
-          <button type="button" class="topbar-search-bar" onclick="CommandPalette.open()" title="Open Command Palette (Ctrl+K)">
+          <button type="button" class="topbar-search-bar" onclick="CommandPalette.open()" title="Open Command Palette">
             <i data-lucide="search" class="search-icon"></i>
-            <span class="search-text">Search SKUs, PRs, actions...</span>
-            <kbd class="search-kbd">Ctrl K</kbd>
+            <span class="search-text">Search SKUs, PRs…</span>
+            <kbd class="search-kbd" id="searchKbdShortcut">Ctrl K</kbd>
           </button>
         </div>
 
@@ -223,7 +216,7 @@
 
           <!-- User Profile Widget -->
           <div class="header-user-widget" id="headerUserWidget">
-            <span class="user-avatar" id="headerUserAvatar">A</span>
+            <span class="user-avatar" id="headerUserAvatar">SA</span>
             <div class="header-user-stack">
               <div class="user-name-line">
                 <span class="user-name" id="headerUserName">System Administrator</span>
@@ -250,9 +243,9 @@
          ======================================================================= -->
     <section id="view-dashboard" class="view-section active">
       <div class="dashboard-header">
-        <h2 class="dashboard-title">Material Procurement & SKU Management</h2>
+        <h2 class="dashboard-title">Material Procurement &amp; SKU Management</h2>
         <p class="dashboard-desc">
-          Automated SKU verification and Purchase Request generation system. Browse master items, verify technical specifications, and generate standardized purchase requests directly linked to approved company catalog items.
+          Manage your item catalogue and purchase requests.
         </p>
       </div>
 
@@ -676,58 +669,132 @@
       <div class="section-head">
         <div>
           <h2>System Configuration</h2>
-          <div class="section-tagline">SKU Numbering rules and backend storage driver settings</div>
+          <div class="section-tagline">Master item numbering rules, company profile, and connected enterprise infrastructure</div>
         </div>
       </div>
 
+      <!-- Section 1: SKU Numbering Engine -->
       <div class="settings-card">
-        <h3>1. Company SKU Generation Engine</h3>
-        <p class="settings-desc">
-          Configure default SKU prefix and sequence numbers. Current company standard uses FF-series sequential numbering (e.g. FF4186–FF4235).
-        </p>
+        <div class="settings-card-header">
+          <div class="settings-card-title-group">
+            <div>
+              <h3 style="margin: 0; font-size: 1.15rem; font-weight: 700; color: var(--text-main);">1. SKU Numbering Engine</h3>
+              <p class="settings-desc" style="margin-top: 0.35rem; margin-bottom: 0;">
+                Configure master catalogue item numbering rules. New items are sequentially numbered following the active prefix.
+              </p>
+            </div>
+          </div>
+        </div>
 
-        <form id="formSettings">
+        <form id="formSettings" style="margin-top: 1rem;">
           <div class="form-grid">
             <div class="form-group">
-              <label class="form-label">SKU Prefix <span class="req">*</span></label>
+              <label class="form-label" for="cfgSkuPrefix">SKU Prefix <span class="req">*</span></label>
               <input type="text" id="cfgSkuPrefix" class="form-input" value="FF" required>
-              <span class="form-hint">Company prefix (e.g., "FF" for standard raw materials)</span>
+              <span class="form-hint">Standard prefix for master catalogue inventory (e.g. "FF")</span>
             </div>
 
             <div class="form-group">
-              <label class="form-label">Next Sequence Number <span class="req">*</span></label>
-              <input type="number" id="cfgNextNum" class="form-input" value="4236" required>
-              <span class="form-hint">Next suggested number for newly created master items</span>
+              <label class="form-label" for="cfgNextNum">Next Sequence Number <span class="req">*</span></label>
+              <input type="number" id="cfgNextNum" class="form-input" value="4236" min="1" required>
+              <span class="form-hint">Next sequential ID assigned to newly registered items</span>
             </div>
+          </div>
 
-            <div class="form-group span-2">
-              <label class="form-label">Storage Adapter (Seamless Google Sheets Migration)</label>
-              <select id="cfgDriver" class="form-select">
-                <option value="localStorage">Local Storage (Active Proof-of-Concept Mode)</option>
-                <option value="googleAppsScript">Google Sheets + Google Apps Script Web App Endpoint</option>
-              </select>
-              <span class="form-hint">The application is architected to switch to Google Sheets + Google Apps Script Web App without altering UI components.</span>
+          <div class="sku-preview-banner" style="margin-top: 1.25rem; padding: 0.85rem 1rem; background: var(--bg-surface-subtle); border: 1px solid var(--border-default); border-radius: var(--radius-md); display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap;">
+            <div>
+              <div style="font-size: var(--text-xs); color: var(--text-muted); font-weight: var(--font-medium);">Next Generated SKU Preview:</div>
+              <div style="font-family: var(--font-mono); font-size: var(--text-base); font-weight: var(--font-bold); color: var(--brand-600);" id="skuPreviewCode">FF-4236</div>
             </div>
-
-            <div class="form-group span-2">
-              <label class="form-label">Google Apps Script Web App URL (Optional / Future Deployment)</label>
-              <input type="url" id="cfgApiUrl" class="form-input" placeholder="https://script.google.com/macros/s/.../exec">
+            <div style="font-size: var(--text-xs); color: var(--text-secondary);" id="skuPreviewRange">
+              Current registered sequence reference: <strong id="skuCurrentReference">FF-4186 — FF-4235</strong>
             </div>
           </div>
 
           <div style="margin-top: 1.5rem; display: flex; gap: 1rem;">
-            <button type="submit" class="btn btn-primary">Save Settings</button>
-            <button type="button" class="btn btn-danger" id="btnResetCatalog">Reset to Default 50 Items</button>
+            <button type="submit" class="btn btn-primary" id="btnSaveSettings">
+              <i data-lucide="save"></i>
+              <span>Save Changes</span>
+            </button>
           </div>
         </form>
       </div>
 
-      <!-- 2. Master Ducting Standard Drawings Management & Removal Requests -->
+      <!-- Section 2: Company Profile -->
+      <div class="settings-card" style="margin-top: 1.5rem;">
+        <div class="settings-card-header">
+          <div>
+            <h3 style="margin: 0; font-size: 1.15rem; font-weight: 700; color: var(--text-main);">2. Company Profile</h3>
+            <p class="settings-desc" style="margin-top: 0.35rem; margin-bottom: 0;">
+              Corporate identification for official Purchase Requests, technical specifications, and generated documentation.
+            </p>
+          </div>
+        </div>
+
+        <div class="company-profile-grid" style="display: grid; grid-template-columns: auto 1fr; gap: 1.5rem; align-items: center; margin-top: 1rem; padding: 1.25rem; background: var(--bg-surface-subtle); border: 1px solid var(--border-default); border-radius: var(--radius-md);">
+          <div class="company-logo-preview" style="padding: 12px 20px; background: #ffffff; border-radius: var(--radius-md); border: 1px solid var(--border-default); display: flex; align-items: center; justify-content: center; min-width: 160px; min-height: 70px;">
+            <img src="assets/flow-force-logo.png" alt="PT. Flow Force Indonesia" style="max-height: 42px; width: auto; object-fit: contain;">
+          </div>
+          <div class="company-details">
+            <div style="font-size: var(--text-lg); font-weight: var(--font-bold); color: var(--text-primary); margin-bottom: 4px;">PT. Flow Force Indonesia</div>
+            <div style="font-size: var(--text-sm); color: var(--text-secondary); margin-bottom: 6px;">Bulk Material Handling &amp; Processing Equipment Specialists</div>
+            <div style="font-size: var(--text-xs); color: var(--text-muted); display: flex; gap: 1.5rem; flex-wrap: wrap;">
+              <span><strong>System:</strong> Enterprise SKU &amp; Purchase Request Portal</span>
+              <span><strong>Version:</strong> v2.0.0 Production</span>
+              <span><strong>Legal Entity:</strong> Indonesian Industrial Manufacturing</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Section 3: Storage Infrastructure -->
+      <div class="settings-card" style="margin-top: 1.5rem;">
+        <div class="settings-card-header">
+          <div>
+            <h3 style="margin: 0; font-size: 1.15rem; font-weight: 700; color: var(--text-main);">3. Storage &amp; Asset Infrastructure</h3>
+            <p class="settings-desc" style="margin-top: 0.35rem; margin-bottom: 0;">
+              Status of persistent document repositories, technical drawings, and media assets.
+            </p>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1rem; margin-top: 1rem;">
+          <div class="storage-status-card" style="padding: 1rem 1.25rem; background: var(--bg-surface-subtle); border: 1px solid var(--border-default); border-radius: var(--radius-md);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+              <span style="font-size: var(--text-xs); font-weight: var(--font-semibold); color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">Media &amp; CDN Storage</span>
+              <span class="badge badge-emerald" id="storageCloudinaryBadge" style="display: inline-flex; align-items: center; gap: 4px;">
+                <span class="status-dot-emerald" style="width: 6px; height: 6px; border-radius: 50%; background: var(--emerald-500); display: inline-block;"></span>
+                Cloudinary Connected
+              </span>
+            </div>
+            <div style="font-size: var(--text-sm); font-weight: var(--font-semibold); color: var(--text-primary);">Cloudinary Asset Management</div>
+            <div style="font-size: var(--text-xs); color: var(--text-muted); margin-top: 4px;">
+              Technical drawing snapshots, equipment item images, and PR attachment storage.
+            </div>
+          </div>
+
+          <div class="storage-status-card" style="padding: 1rem 1.25rem; background: var(--bg-surface-subtle); border: 1px solid var(--border-default); border-radius: var(--radius-md);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+              <span style="font-size: var(--text-xs); font-weight: var(--font-semibold); color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em;">Database &amp; Audit Storage</span>
+              <span class="badge badge-emerald" style="display: inline-flex; align-items: center; gap: 4px;">
+                <span class="status-dot-emerald" style="width: 6px; height: 6px; border-radius: 50%; background: var(--emerald-500); display: inline-block;"></span>
+                PostgreSQL Operational
+              </span>
+            </div>
+            <div style="font-size: var(--text-sm); font-weight: var(--font-semibold); color: var(--text-primary);">Relational Data Storage</div>
+            <div style="font-size: var(--text-xs); color: var(--text-muted); margin-top: 4px;">
+              ACID transaction log, master catalogue, purchase requests, and user permissions.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 4. Master Ducting Standard Drawings Management & Removal Requests -->
       <div class="settings-card" id="cardDuctingConfig" style="margin-top: 1.5rem;">
         <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 1rem; margin-bottom: 0.75rem;">
           <div>
             <h3 style="margin: 0; font-size: 1.15rem; font-weight: 700; color: var(--text-main);">
-              2. Ducting Standard Drawings &amp; Version Management
+              4. Ducting Standard Drawings &amp; Version Management
             </h3>
             <p class="settings-desc" style="margin-top: 0.35rem; margin-bottom: 0;">
               Production standard engineering reference drawings for all Ducting types. Both Admins and Employees may upload and replace standard drawings or request removal. Drawing removal requires Admin approval. Historical PRs permanently preserve their original snapshot version.

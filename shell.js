@@ -572,6 +572,20 @@
     SidebarManager.init();
     CommandPalette.init();
 
+    // Platform-specific keyboard shortcut hint (Mac: ⌘K, Windows/Other: Ctrl K)
+    const isMac = /(Mac|iPhone|iPod|iPad)/i.test(
+      (typeof navigator !== 'undefined' && (navigator.platform || navigator.userAgent)) || ''
+    );
+    const shortcutLabel = isMac ? '⌘K' : 'Ctrl K';
+    const searchKbd = document.getElementById('searchKbdShortcut');
+    if (searchKbd) {
+      searchKbd.textContent = shortcutLabel;
+    }
+    const topbarSearchBar = document.querySelector('.topbar-search-bar');
+    if (topbarSearchBar) {
+      topbarSearchBar.setAttribute('title', `Open Command Palette (${shortcutLabel})`);
+    }
+
     // Initialize Lucide Icons
     if (window.lucide && typeof window.lucide.createIcons === 'function') {
       window.lucide.createIcons();
