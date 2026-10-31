@@ -9987,6 +9987,35 @@
       }
       updateSkuPreview();
 
+      // Populate live storage diagnostics from /api/health
+      fetch('/api/health')
+        .then(res => res.json())
+        .then(data => {
+          const badge = document.getElementById('storageCloudinaryBadge');
+          const text = document.getElementById('storageCloudinaryText');
+          const title = document.getElementById('storageCloudinaryTitle');
+          const desc = document.getElementById('storageCloudinaryDesc');
+          const isConfigured = data?.storage?.isCloudinaryConfigured === true || data?.drawingStorageMode === 'CLOUDINARY';
+
+          if (badge && text && title && desc) {
+            if (isConfigured) {
+              badge.className = 'badge-status badge-emerald';
+              text.textContent = 'Cloudinary Connected';
+              title.textContent = 'Cloudinary Asset Management';
+              desc.innerHTML = 'Cloudinary CDN active for technical drawing snapshots and equipment attachments.';
+            } else {
+              badge.className = 'badge-status badge-amber';
+              text.textContent = 'Not Configured (Local Disk)';
+              title.textContent = 'Local Persistent Storage';
+              const localPath = data?.storage?.localStorageDir || './storage';
+              desc.innerHTML = `Using local disk fallback (<code>${escapeHtml(localPath)}</code>). Cloudinary API credentials not detected.`;
+            }
+          }
+        })
+        .catch(err => {
+          console.warn('[Settings] Storage health query:', err);
+        });
+
       if (window.DuctingConfigController) {
         window.DuctingConfigController.loadTypes();
       }

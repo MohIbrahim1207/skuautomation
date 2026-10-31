@@ -290,6 +290,58 @@ body.is-login .app-shell {
   color: var(--amber-800);
 }
 
+/* Status Pill Badges (Settings, Telemetry, Storage) */
+.badge-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: var(--radius-full);
+  font-size: var(--text-2xs);
+  font-weight: var(--font-semibold);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+
+.badge-status .status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.badge-status.badge-emerald {
+  background: var(--emerald-50);
+  color: var(--emerald-700);
+  border: 1px solid var(--emerald-200);
+}
+
+.badge-status.badge-emerald .status-dot {
+  background: var(--emerald-500);
+}
+
+.badge-status.badge-amber {
+  background: var(--amber-50);
+  color: var(--amber-700);
+  border: 1px solid var(--amber-300);
+}
+
+.badge-status.badge-amber .status-dot {
+  background: var(--amber-500);
+}
+
+[data-theme="dark"] .badge-status.badge-emerald {
+  background: rgba(16, 185, 129, 0.16);
+  color: #34d399;
+  border-color: rgba(16, 185, 129, 0.35);
+}
+
+[data-theme="dark"] .badge-status.badge-amber {
+  background: rgba(245, 158, 11, 0.16);
+  color: #fbbf24;
+  border-color: rgba(245, 158, 11, 0.35);
+}
+
 /* Sidebar Footer */
 .sidebar-footer {
   padding: var(--space-3) var(--space-4);
