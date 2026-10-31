@@ -17,19 +17,19 @@
   --border-subtle: #e2e8f0;
   --border-default: #cbd5e1;
   --border-highlight: #94a3b8;
-  --border-active: #0284c7;
+  --border-active: var(--brand-500, #ed1b24);
 
   --text-main: #0f172a;
   --text-muted: #475569;
   --text-dim: #64748b;
   --text-inverse: #ffffff;
 
-  --primary-50: #f0f9ff;
-  --primary-100: #e0f2fe;
-  --primary-400: #0284c7;
-  --primary-500: #0ea5e9;
-  --primary-600: #0284c7;
-  --primary-700: #0369a1;
+  --primary-50: var(--brand-50, #fff1f2);
+  --primary-100: var(--brand-100, #ffe1e2);
+  --primary-400: var(--brand-400, #f87171);
+  --primary-500: var(--brand-500, #ed1b24);
+  --primary-600: var(--brand-600, #dc141c);
+  --primary-700: var(--brand-700, #b91017);
 
   --accent-emerald: #059669;
   --accent-emerald-bg: rgba(16, 185, 129, 0.12);
@@ -446,21 +446,21 @@ html {
   transition: background var(--transition-fast);
 }
 
-/* Active Category Card: RAW MATERIALS */
+/* Active Category Card: Brand Red Accent */
 .category-card.active-category {
-  background: linear-gradient(180deg, #ffffff, #f0f9ff);
-  border: 1.5px solid rgba(2, 132, 199, 0.35);
-  box-shadow: 0 8px 24px rgba(2, 132, 199, 0.12);
+  background: var(--bg-surface);
+  border: 1.5px solid rgba(237, 27, 36, 0.35);
+  box-shadow: 0 8px 24px rgba(237, 27, 36, 0.08);
 }
 
 .category-card.active-category::before {
-  background: linear-gradient(90deg, var(--primary-500), var(--primary-400));
+  background: linear-gradient(90deg, var(--brand-600), var(--brand-500));
 }
 
 .category-card.active-category:hover {
   transform: translateY(-4px);
-  border-color: var(--primary-400);
-  box-shadow: 0 12px 30px rgba(14, 165, 233, 0.2);
+  border-color: var(--brand-500);
+  box-shadow: 0 12px 30px rgba(237, 27, 36, 0.16);
 }
 
 .category-card-top {
@@ -532,7 +532,7 @@ html {
 }
 
 .category-card-meta strong {
-  color: var(--primary-400);
+  color: var(--brand-600);
   font-family: var(--font-mono);
 }
 
@@ -609,7 +609,7 @@ html {
   position: relative;
 }
 
-.search-icon {
+.search-box-wrapper .search-icon {
   position: absolute;
   left: 14px;
   top: 50%;
@@ -815,15 +815,15 @@ html {
 }
 
 .btn-primary {
-  background: var(--primary-600);
+  background: var(--brand-600);
   color: #fff;
-  box-shadow: 0 2px 8px rgba(2, 132, 199, 0.35);
+  box-shadow: 0 2px 8px rgba(237, 27, 36, 0.28);
 }
 
 .btn-primary:hover {
-  background: var(--primary-500);
+  background: var(--brand-500);
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(2, 132, 199, 0.5);
+  box-shadow: 0 4px 12px rgba(237, 27, 36, 0.4);
 }
 
 .btn-secondary {

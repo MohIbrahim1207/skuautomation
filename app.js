@@ -4963,6 +4963,11 @@
       this.initUserManagement();
       this.initAuditLogs();
 
+      if (!this._hashListenerAttached) {
+        this._hashListenerAttached = true;
+        window.addEventListener('hashchange', () => this.handleUrlHashRoute());
+      }
+
       const currentUser = window.AuthService ? window.AuthService.getCurrentUser() : null;
       const currentToken = window.AuthService && typeof window.AuthService.getToken === 'function' ? window.AuthService.getToken() : '';
       if (!currentUser || !currentToken) {
@@ -4980,21 +4985,56 @@
         if (currentUser.role === 'ADMIN') {
           this.renderUsersTable();
         }
+        this.handleUrlHashRoute();
       }
     },
 
-    currentCategory: 'Raw Materials',
+    currentCategory: (function() {
+      try {
+        return localStorage.getItem('flowforce_last_catalog_category') || 'All';
+      } catch (e) {
+        return 'All';
+      }
+    })(),
 
-    openCategory(categoryName) {
-      let targetCat = normalizeCategory(categoryName || 'Raw Materials');
-
-      if (targetCat === 'Ducting') {
-        if (window.DuctingWorkflowController && typeof window.DuctingWorkflowController.open === 'function') {
-          window.DuctingWorkflowController.open();
-        } else if (typeof DuctingWorkflowController !== 'undefined' && typeof DuctingWorkflowController.open === 'function') {
-          DuctingWorkflowController.open();
+    handleUrlHashRoute() {
+      const hash = window.location.hash || '';
+      if (!hash) return;
+      if (hash.startsWith('#catalog')) {
+        const parts = hash.split('/');
+        const slug = (parts[1] || '').trim().toLowerCase();
+        let cat = 'All';
+        if (slug === 'raw-materials' || slug === 'raw') cat = 'Raw Materials';
+        else if (slug === 'fasteners') cat = 'Fasteners';
+        else if (slug === 'piping-fittings' || slug === 'piping') cat = 'Piping & Fittings';
+        else if (slug === 'electrical' || slug === 'electrical-materials') cat = 'Electrical Materials';
+        else if (slug === 'all') cat = 'All';
+        else {
+          try {
+            cat = localStorage.getItem('flowforce_last_catalog_category') || 'All';
+          } catch (e) {
+            cat = 'All';
+          }
         }
-        return;
+        this.switchCatalogCategory(cat, false);
+      } else {
+        const view = hash.replace(/^#/, '');
+        if (view && ['dashboard', 'prs', 'projects', 'settings', 'my-imports', 'import-review', 'users', 'audit-logs'].includes(view)) {
+          this.switchView(view);
+        }
+      }
+    },
+
+    switchCatalogCategory(rawCat, updateHash = true) {
+      let targetCat = rawCat || 'All';
+      if (targetCat !== 'All') {
+        targetCat = normalizeCategory(targetCat);
+        if (targetCat === 'Ducting') {
+          if (typeof DuctingWorkflowController !== 'undefined' && DuctingWorkflowController.open) {
+            DuctingWorkflowController.open();
+          }
+          return;
+        }
       }
 
       if (targetCat === 'Raw Materials') {
@@ -5012,6 +5052,9 @@
       this.currentCategory = targetCat;
       this.searchQuery = '';
       this.activeSubcategoryFilter = 'ALL';
+      try {
+        localStorage.setItem('flowforce_last_catalog_category', targetCat);
+      } catch (e) {}
 
       const searchInput = document.getElementById('catalogSearchInput');
       if (searchInput) searchInput.value = '';
@@ -5022,39 +5065,102 @@
       const navLabel = document.getElementById('navCatalogLabel');
       const supplyTh = document.getElementById('catalogSupplyTypeTh');
 
-      if (targetCat === 'Fasteners') {
+      // Preserve clean label without emojis
+      if (navLabel) navLabel.textContent = 'Master Catalog';
+
+      if (targetCat === 'All') {
+        if (titleEl) titleEl.textContent = 'Master Item Catalog';
+        if (subtitleEl) subtitleEl.textContent = 'Single source of truth for approved engineering procurement materials';
+        if (specEl) specEl.textContent = 'Flow Force Master Engineering Catalogue • All Categories';
+        if (searchInput) searchInput.placeholder = 'Search all categories by SKU, Product Name, Category, Material, Size, or Spec...';
+        if (supplyTh) supplyTh.textContent = 'Supply Type / Spec';
+      } else if (targetCat === 'Fasteners') {
         if (titleEl) titleEl.textContent = 'Fasteners Master Catalog';
         if (subtitleEl) subtitleEl.textContent = 'Single source of truth for Fastener procurement specifications';
         if (specEl) specEl.textContent = 'Fasteners Procurement Standard • DIN / ISO Specifications';
         if (searchInput) searchInput.placeholder = 'Search Fasteners by SKU, Product Name, Material, Size, Standard...';
-        if (navLabel) navLabel.textContent = '🔩 Fasteners';
         if (supplyTh) supplyTh.textContent = 'Bolt Length';
       } else if (targetCat === 'Piping & Fittings') {
         if (titleEl) titleEl.textContent = 'Piping & Fittings Master Catalog';
         if (subtitleEl) subtitleEl.textContent = 'Single source of truth for Piping & Fittings procurement specifications';
         if (specEl) specEl.textContent = 'Process Piping & Fittings Standard • ASTM / ASME Specifications';
         if (searchInput) searchInput.placeholder = 'Search Piping by SKU, Product Name, Size, Schedule, Standard...';
-        if (navLabel) navLabel.textContent = '🚰 Piping & Fittings';
         if (supplyTh) supplyTh.textContent = 'Supply Type';
       } else if (targetCat === 'Electrical Materials') {
         if (titleEl) titleEl.textContent = 'Electrical Master Catalog';
         if (subtitleEl) subtitleEl.textContent = 'Single source of truth for Electrical procurement specifications';
         if (specEl) specEl.textContent = 'Electrical & Instrumentation Specifications';
         if (searchInput) searchInput.placeholder = 'Search Electrical by SKU, Product Name, Material, Size, Specification...';
-        if (navLabel) navLabel.textContent = '⚡ Electrical';
         if (supplyTh) supplyTh.textContent = 'Supply Type';
       } else {
         this.currentCategory = 'Raw Materials';
+        targetCat = 'Raw Materials';
         if (titleEl) titleEl.textContent = 'Raw Materials Master Catalog';
         if (subtitleEl) subtitleEl.textContent = 'Single source of truth for raw material procurement specifications';
         if (specEl) specEl.textContent = 'Single Source of Truth • PT Persada Nusantara Steel Specifications';
         if (searchInput) searchInput.placeholder = 'Search by SKU (e.g. FF4186), Product Name, Material, Size, or Spec...';
-        if (navLabel) navLabel.textContent = '📦 Raw Materials';
         if (supplyTh) supplyTh.textContent = 'Supply Type';
       }
 
-      this.switchView('catalog');
-      this.renderMasterCatalogTable();
+      // Sync active state on tabs and sidebar subnav
+      document.querySelectorAll('#catalogCategoryTabs .catalog-cat-tab').forEach(tab => {
+        const cat = tab.getAttribute('data-category');
+        if (cat === targetCat || (targetCat === 'Electrical Materials' && (cat === 'Electrical' || cat === 'Electrical Materials'))) {
+          tab.classList.add('active');
+        } else {
+          tab.classList.remove('active');
+        }
+      });
+
+      document.querySelectorAll('#catalogSubnav .sidebar-subnav-item').forEach(item => {
+        const cat = item.getAttribute('data-category');
+        if (cat === targetCat || (targetCat === 'Electrical Materials' && (cat === 'Electrical' || cat === 'Electrical Materials'))) {
+          item.classList.add('active');
+        } else {
+          item.classList.remove('active');
+        }
+      });
+
+      // Expand sidebar group
+      const catalogGroup = document.getElementById('sidebarGroupCatalog');
+      if (catalogGroup) catalogGroup.classList.add('expanded');
+
+      // Update URL hash
+      if (updateHash) {
+        let slug = 'all';
+        if (targetCat === 'Raw Materials') slug = 'raw-materials';
+        else if (targetCat === 'Fasteners') slug = 'fasteners';
+        else if (targetCat === 'Piping & Fittings') slug = 'piping-fittings';
+        else if (targetCat === 'Electrical Materials') slug = 'electrical';
+        const newHash = `#catalog/${slug}`;
+        if (window.location.hash !== newHash) {
+          window.location.hash = newHash;
+        }
+      }
+
+      // Update breadcrumb
+      const crumbCategory = (targetCat === 'All') ? null : (targetCat === 'Electrical Materials' ? 'Electrical' : targetCat);
+      if (window.BreadcrumbManager) {
+        BreadcrumbManager.set('Master Catalog', crumbCategory);
+      }
+
+      if (this.currentTab !== 'catalog') {
+        this.switchView('catalog');
+      } else {
+        this.renderMasterCatalogTable();
+      }
+    },
+
+    openCategory(categoryName) {
+      if (categoryName === 'Ducting') {
+        if (window.DuctingWorkflowController && typeof window.DuctingWorkflowController.open === 'function') {
+          window.DuctingWorkflowController.open();
+        } else if (typeof DuctingWorkflowController !== 'undefined' && typeof DuctingWorkflowController.open === 'function') {
+          DuctingWorkflowController.open();
+        }
+        return;
+      }
+      this.switchCatalogCategory(categoryName, true);
     },
 
     openExcelImportModal() {
@@ -5297,7 +5403,12 @@
         btn.addEventListener('click', (e) => {
           e.preventDefault();
           const target = btn.getAttribute('data-view-target');
-          this.switchView(target);
+          if (target === 'catalog') {
+            const cat = this.currentCategory || 'All';
+            this.switchCatalogCategory(cat, true);
+          } else {
+            this.switchView(target);
+          }
         });
       });
 
@@ -5505,6 +5616,13 @@
 
       this.currentTab = viewName;
 
+      if (viewName !== 'catalog') {
+        const targetHash = `#${viewName}`;
+        if (window.location.hash !== targetHash) {
+          window.location.hash = targetHash;
+        }
+      }
+
       // Update Nav Buttons
       document.querySelectorAll('[data-view-target]').forEach(btn => {
         if (btn.getAttribute('data-view-target') === viewName) {
@@ -5643,7 +5761,7 @@
 
       // Reset nav tab label when returning to / displaying Dashboard
       const elNavCatalogLabel = document.getElementById('navCatalogLabel');
-      if (elNavCatalogLabel) elNavCatalogLabel.textContent = '📦 Master Catalog';
+      if (elNavCatalogLabel) elNavCatalogLabel.textContent = 'Master Catalog';
       if (elNavSkuCount) elNavSkuCount.textContent = masterItems.length;
 
       // Admin Operational Operations & System Health Ribbon
@@ -6663,35 +6781,64 @@
         return;
       }
 
-      // 2. Category-Specific Scope: Filter by Active Category using shared normalizeCategory
-      const targetCat = normalizeCategory(this.currentCategory || 'Raw Materials');
+      // 2. Update Category Tab Counts & Sidebar Badge
+      const countAll = masterItems.length;
+      const countRaw = masterItems.filter(i => normalizeCategory(i.category) === 'Raw Materials').length;
+      const countFasteners = masterItems.filter(i => normalizeCategory(i.category) === 'Fasteners').length;
+      const countPiping = masterItems.filter(i => normalizeCategory(i.category) === 'Piping & Fittings').length;
+      const countElectrical = masterItems.filter(i => normalizeCategory(i.category) === 'Electrical Materials').length;
+
+      const elTabAll = document.getElementById('tabCountAll');
+      const elTabRaw = document.getElementById('tabCountRaw');
+      const elTabFasteners = document.getElementById('tabCountFasteners');
+      const elTabPiping = document.getElementById('tabCountPiping');
+      const elTabElectrical = document.getElementById('tabCountElectrical');
+
+      if (elTabAll) elTabAll.textContent = countAll;
+      if (elTabRaw) elTabRaw.textContent = countRaw;
+      if (elTabFasteners) elTabFasteners.textContent = countFasteners;
+      if (elTabPiping) elTabPiping.textContent = countPiping;
+      if (elTabElectrical) elTabElectrical.textContent = countElectrical;
+
+      // Master Catalog badge in sidebar always displays total SKU count (651)
+      const navBadge = document.getElementById('navCatalogBadge');
+      if (navBadge) navBadge.textContent = masterItems.length;
+
+      // 3. Category-Specific Scope: All items vs single category
+      const isAllCategory = (this.currentCategory === 'All');
+      const targetCat = isAllCategory ? 'All' : normalizeCategory(this.currentCategory || 'Raw Materials');
       const currentCat = targetCat;
-      const categoryItems = masterItems.filter(item => {
-        return normalizeCategory(item.category) === targetCat;
-      });
+      const categoryItems = isAllCategory
+        ? masterItems
+        : masterItems.filter(item => normalizeCategory(item.category) === targetCat);
+
+      // Show/hide Category column header
+      const thCategory = document.getElementById('catalogCategoryTh');
+      if (thCategory) {
+        thCategory.style.display = isAllCategory ? '' : 'none';
+      }
 
       console.log('[10. Catalog UI Table Render]', {
         category: currentCat,
+        isAllCategory,
         renderedCategoryRows: categoryItems.length,
         totalCatalogItems: masterItems.length
       });
 
-      // 3. Category Empty State (e.g. Electrical when 0 imported)
+      // 4. Category Empty State
       if (!categoryItems || categoryItems.length === 0) {
-        const navBadge = document.getElementById('navCatalogBadge');
-        if (navBadge) navBadge.textContent = 0;
         if (countEl) countEl.innerHTML = `Showing <strong>0</strong> of <strong>0</strong> Master Items`;
         if (filterChipsContainer) filterChipsContainer.innerHTML = '';
         const canCreateSku = window.PermissionService ? window.PermissionService.can('CAN_CREATE_SKU') : false;
         tbody.innerHTML = `
           <tr>
-            <td colspan="11" style="text-align:center; padding: 3.5rem 1.5rem; color: var(--text-muted);">
+            <td colspan="${isAllCategory ? 14 : 13}" style="text-align:center; padding: 3.5rem 1.5rem; color: var(--text-muted);">
               <div style="font-size: 2.5rem; margin-bottom: 0.75rem;">📦</div>
               <strong style="font-size: 1.15rem; color: var(--text-main); display: block; margin-bottom: 0.5rem;">
-                No ${escapeHtml(currentCat)} Master Items have been imported yet.
+                No ${isAllCategory ? 'Master Items' : escapeHtml(currentCat) + ' Master Items'} have been imported yet.
               </strong>
               <p style="font-size:0.9rem; margin-bottom: 1.25rem; color: var(--text-muted);">
-                Single source of truth for ${escapeHtml(currentCat)} procurement specifications. Import an Excel template or create a new SKU to begin.
+                Single source of truth for ${isAllCategory ? 'approved procurement materials' : escapeHtml(currentCat) + ' procurement specifications'}. Import an Excel template or create a new SKU to begin.
               </p>
               ${canCreateSku ? `
                 <div style="display: flex; gap: 0.75rem; justify-content: center;">
@@ -6709,7 +6856,7 @@
         return;
       }
 
-      // Calculate Subcategory Breakdown for filter chips within this category
+      // Calculate Subcategory Breakdown for filter chips within this view
       const subcategories = {};
       categoryItems.forEach(item => {
         const sub = item.subCategory || 'Other';
@@ -6720,7 +6867,7 @@
       if (filterChipsContainer) {
         let chipsHtml = `
           <button class="filter-chip ${this.activeSubcategoryFilter === 'ALL' ? 'active' : ''}" data-subcat="ALL">
-            All ${escapeHtml(currentCat)} <span class="chip-count">${categoryItems.length}</span>
+            ${isAllCategory ? 'All Items' : `All ${escapeHtml(currentCat)}`} <span class="chip-count">${categoryItems.length}</span>
           </button>
         `;
         Object.keys(subcategories).sort().forEach(sub => {
@@ -6749,10 +6896,11 @@
         if (this.activeSubcategoryFilter !== 'ALL' && item.subCategory !== this.activeSubcategoryFilter) {
           return false;
         }
-        // Search text match
+        // Search text match across all categories
         if (!q) return true;
         const searchCorpus = [
           item.sku,
+          item.category || '',
           item.productName,
           item.itemDescription || '',
           item.subCategory,
@@ -6773,14 +6921,13 @@
       const isFastenersCat = (this.currentCategory || '').trim().toLowerCase() === 'fasteners';
       const supplyTh = document.getElementById('catalogSupplyTypeTh');
       if (supplyTh) {
-        supplyTh.textContent = isFastenersCat ? 'Bolt Length' : 'Supply Type';
+        supplyTh.textContent = isFastenersCat ? 'Bolt Length' : (isAllCategory ? 'Supply Type / Spec' : 'Supply Type');
       }
 
       if (countEl) {
         countEl.innerHTML = `Showing <strong>${filtered.length}</strong> of <strong>${categoryItems.length}</strong> Master Items`;
       }
-      const navBadge = document.getElementById('navCatalogBadge');
-      if (navBadge) navBadge.textContent = categoryItems.length;
+      if (navBadge) navBadge.textContent = masterItems.length;
 
       const canEditDescription = window.PermissionService ? window.PermissionService.can('CAN_EDIT_ITEM_DESCRIPTION') : false;
       const canEditPrice = window.PermissionService ? window.PermissionService.can('CAN_EDIT_PRICE') : false;
@@ -6791,9 +6938,9 @@
       if (filtered.length === 0) {
         tbody.innerHTML = `
           <tr>
-            <td colspan="13" style="text-align:center; padding: 3rem 1rem; color: var(--text-muted);">
+            <td colspan="${isAllCategory ? 14 : 13}" style="text-align:center; padding: 3rem 1rem; color: var(--text-muted);">
               <div style="font-size: 2rem; margin-bottom: 0.5rem;">🔍</div>
-              <strong>No ${escapeHtml(currentCat)} records found matching "${escapeHtml(this.searchQuery)}"</strong>
+              <strong>No ${isAllCategory ? 'items' : escapeHtml(currentCat) + ' records'} found matching "${escapeHtml(this.searchQuery)}"</strong>
               <p style="font-size:0.85rem; margin-top:0.25rem;">Try adjusting your search or contact Engineering for new material verification.</p>
               ${canCreateSku ? '<button class="btn btn-primary btn-sm" style="margin-top:1rem;" onclick="UI.openNewSkuModal()">+ Create New SKU</button>' : ''}
             </td>
@@ -6817,6 +6964,11 @@
             <td>
               <span class="sku-badge">${escapeHtml(item.sku)}</span>
             </td>
+            ${isAllCategory ? `
+              <td class="cell-category">
+                <span class="badge-category">${escapeHtml(item.category || 'Raw Materials')}</span>
+              </td>
+            ` : ''}
             <td>
               <div style="font-weight: 600; color: var(--text-main); display: flex; align-items: center; flex-wrap: wrap;">
                 <span>${escapeHtml(item.productName || '—')}</span>
@@ -7366,7 +7518,7 @@
     // =========================================================================
     _skuUploadedFile: null,
 
-    openNewSkuModal() {
+    openNewSkuModal(prefCategory) {
       if (!window.PermissionService || !window.PermissionService.can('CAN_CREATE_SKU')) {
         this.showAccessDeniedModal('Access Denied — Administrator permission required.');
         return;
@@ -7416,7 +7568,20 @@
       const unitSel = document.getElementById('newSkuUnit');
       if (unitSel) unitSel.value = 'Sheet';
       const catSel = document.getElementById('newSkuCategory');
-      if (catSel) catSel.value = this.currentCategory || 'Raw Materials';
+      let targetCat = prefCategory || this.currentCategory || 'Raw Materials';
+      if (targetCat === 'All') targetCat = 'Raw Materials';
+      if (catSel) {
+        if (targetCat.includes('Electr')) {
+          const opt = Array.from(catSel.options).find(o => o.value.includes('Electr'));
+          catSel.value = opt ? opt.value : 'Electrical';
+        } else {
+          catSel.value = targetCat;
+        }
+        if (!catSel.value && catSel.options.length > 0) {
+          catSel.selectedIndex = 0;
+        }
+        catSel.dispatchEvent(new Event('change'));
+      }
 
       // Set next SKU
       const skuInput = document.getElementById('newSkuCode');
@@ -9968,12 +10133,12 @@
         const previewEl = document.getElementById('skuPreviewCode');
         const rangeEl = document.getElementById('skuCurrentReference');
         if (previewEl) {
-          previewEl.textContent = `${prefix}-${nextNum}`;
+          previewEl.textContent = `${prefix}${nextNum}`;
         }
         if (rangeEl) {
           const startNum = Math.max(1, nextNum - 50);
           const endNum = Math.max(1, nextNum - 1);
-          rangeEl.textContent = `${prefix}-${startNum} — ${prefix}-${endNum}`;
+          rangeEl.textContent = `${prefix}${startNum} — ${prefix}${endNum}`;
         }
       };
 

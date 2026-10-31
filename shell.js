@@ -100,6 +100,24 @@
         drawerOverlay.addEventListener('click', () => this.closeMobileDrawer());
       }
 
+      // Expandable catalog subnav in sidebar
+      const catalogChevron = document.getElementById('catalogNavChevron');
+      const catalogGroup = document.getElementById('sidebarGroupCatalog');
+      const navBtnCatalog = document.getElementById('navBtnCatalog');
+
+      if (catalogChevron && catalogGroup) {
+        catalogChevron.addEventListener('click', (e) => {
+          e.stopPropagation();
+          catalogGroup.classList.toggle('expanded');
+        });
+      }
+
+      if (navBtnCatalog && catalogGroup) {
+        navBtnCatalog.addEventListener('click', () => {
+          catalogGroup.classList.add('expanded');
+        });
+      }
+
       // Keyboard shortcut: Ctrl+B to toggle sidebar
       window.addEventListener('keydown', (e) => {
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
@@ -142,7 +160,7 @@
   const BreadcrumbManager = {
     viewTitles: {
       'dashboard': 'Dashboard',
-      'catalog': 'Item Catalogue',
+      'catalog': 'Master Catalog',
       'prs': 'Purchase Requests',
       'projects': 'Project Library',
       'import-review': 'Import Review',
@@ -164,7 +182,11 @@
 
     updateFromView(viewName, subTitle = null) {
       const title = this.viewTitles[viewName] || (viewName.charAt(0).toUpperCase() + viewName.slice(1));
-      this.set(title, subTitle);
+      let sub = subTitle;
+      if (viewName === 'catalog' && !sub && window.UI && window.UI.currentCategory) {
+        sub = window.UI.currentCategory;
+      }
+      this.set(title, sub);
     }
   };
 
@@ -256,7 +278,7 @@
         {
           id: 'nav-catalog',
           section: 'Navigation',
-          title: 'Item Catalogue',
+          title: 'Master Catalog',
           icon: 'package',
           action: () => { window.UI && window.UI.switchView('catalog'); }
         },
@@ -633,7 +655,27 @@
         window.UI.openCategory = function (categoryName) {
           const result = origOpenCategory.apply(this, arguments);
           if (BreadcrumbManager) {
-            BreadcrumbManager.set('Item Catalogue', categoryName);
+            BreadcrumbManager.set('Master Catalog', categoryName);
+          }
+          if (window.lucide && typeof window.lucide.createIcons === 'function') {
+            setTimeout(() => window.lucide.createIcons(), 50);
+          }
+          return result;
+        };
+      }
+
+      const origSwitchCatalogCat = window.UI.switchCatalogCategory;
+      if (origSwitchCatalogCat) {
+        window.UI.switchCatalogCategory = function (categoryName, updateHash) {
+          const result = origSwitchCatalogCat.apply(this, arguments);
+          let displayCat = categoryName;
+          if (categoryName === 'Electrical Materials' || categoryName === 'Electrical') {
+            displayCat = 'Electrical';
+          } else if (categoryName === 'All') {
+            displayCat = null;
+          }
+          if (BreadcrumbManager) {
+            BreadcrumbManager.set('Master Catalog', displayCat);
           }
           if (window.lucide && typeof window.lucide.createIcons === 'function') {
             setTimeout(() => window.lucide.createIcons(), 50);

@@ -100,11 +100,36 @@
           <i data-lucide="layout-dashboard"></i>
           <span class="nav-item-text">Dashboard</span>
         </button>
-        <button type="button" class="sidebar-nav-item" data-view-target="catalog" id="navBtnCatalog">
-          <i data-lucide="package"></i>
-          <span class="nav-item-text" id="navCatalogLabel">Master Catalog</span>
-          <span class="sidebar-badge badge-brand" id="navCatalogBadge">50</span>
-        </button>
+        <div class="sidebar-nav-group expanded" id="sidebarGroupCatalog">
+          <button type="button" class="sidebar-nav-item sidebar-nav-expandable" data-view-target="catalog" id="navBtnCatalog">
+            <i data-lucide="package"></i>
+            <span class="nav-item-text" id="navCatalogLabel">Master Catalog</span>
+            <span class="sidebar-badge badge-brand" id="navCatalogBadge">651</span>
+            <i data-lucide="chevron-down" class="nav-chevron" id="catalogNavChevron"></i>
+          </button>
+          <div class="sidebar-subnav" id="catalogSubnav">
+            <button type="button" class="sidebar-subnav-item active" data-category="All" onclick="UI.switchCatalogCategory('All')">
+              <span class="subnav-dot"></span>
+              <span class="subnav-text">All Items</span>
+            </button>
+            <button type="button" class="sidebar-subnav-item" data-category="Raw Materials" onclick="UI.switchCatalogCategory('Raw Materials')">
+              <span class="subnav-dot"></span>
+              <span class="subnav-text">Raw Materials</span>
+            </button>
+            <button type="button" class="sidebar-subnav-item" data-category="Fasteners" onclick="UI.switchCatalogCategory('Fasteners')">
+              <span class="subnav-dot"></span>
+              <span class="subnav-text">Fasteners</span>
+            </button>
+            <button type="button" class="sidebar-subnav-item" data-category="Piping & Fittings" onclick="UI.switchCatalogCategory('Piping & Fittings')">
+              <span class="subnav-dot"></span>
+              <span class="subnav-text">Piping &amp; Fittings</span>
+            </button>
+            <button type="button" class="sidebar-subnav-item" data-category="Electrical Materials" onclick="UI.switchCatalogCategory('Electrical Materials')">
+              <span class="subnav-dot"></span>
+              <span class="subnav-text">Electrical</span>
+            </button>
+          </div>
+        </div>
         <button type="button" class="sidebar-nav-item" data-view-target="prs" id="sidebarNavPrs">
           <i data-lucide="clipboard-list"></i>
           <span class="nav-item-text">PR Register</span>
@@ -181,7 +206,7 @@
         <!-- Center: Command Palette Trigger Search Bar -->
         <div class="topbar-center">
           <button type="button" class="topbar-search-bar" onclick="CommandPalette.open()" title="Open Command Palette">
-            <i data-lucide="search" class="search-icon"></i>
+            <i data-lucide="search" class="topbar-search-icon"></i>
             <span class="search-text">Search SKUs, PRs…</span>
             <kbd class="search-kbd" id="searchKbdShortcut">Ctrl K</kbd>
           </button>
@@ -353,22 +378,6 @@
             <div class="kpi-icon rose">🗑️</div>
           </div>
         </div>
-
-        <!-- Compact Recent Activity Card -->
-        <div class="recent-activity-card" id="recentActivityCard">
-          <div class="recent-activity-card-header">
-            <div class="recent-activity-card-title">
-              <span class="recent-activity-card-icon">🕒</span>
-              <h3>Recent activity</h3>
-            </div>
-            <a href="javascript:void(0)" class="recent-activity-card-link" onclick="UI.switchView('audit-logs')">
-              View all activity &rarr;
-            </a>
-          </div>
-          <div class="recent-activity-card-body" id="recentActivityList">
-            <div class="activity-empty-state">Loading recent activity...</div>
-          </div>
-        </div>
       </div>
 
       <!-- Category Section -->
@@ -521,27 +530,35 @@
          VIEW 2: RAW MATERIALS MASTER CATALOG (50 ROWS TABLE)
          ======================================================================= -->
     <section id="view-catalog" class="view-section">
-      <div class="section-head">
-        <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
-          <button class="btn btn-secondary btn-sm" id="btnBackToCategories" onclick="UI.switchView('dashboard')" style="display: inline-flex; align-items: center; gap: 0.4rem; padding: 6px 14px; font-weight: 600;">
-            <span>← Back to Categories</span>
-          </button>
-          <div>
-            <h2 id="catalogPageTitle">Raw Materials Master Catalog</h2>
-            <div class="section-tagline" id="catalogPageSubtitle">Single source of truth for raw material procurement specifications</div>
-          </div>
+      <div class="section-head" style="margin-bottom: 0.85rem;">
+        <div>
+          <h2 id="catalogPageTitle">Master Item Catalog</h2>
+          <div class="section-tagline" id="catalogPageSubtitle">Single source of truth for approved engineering procurement materials</div>
         </div>
-        <div style="display: flex; gap: 0.75rem; align-items: center;">
-          <button class="btn btn-secondary" id="btnOpenExcelImport" onclick="UI.openExcelImportModal()">
-            <span>📁 Import Excel</span>
-          </button>
-          <button class="btn btn-secondary" id="btnCatalogMyImports" onclick="UI.switchView('my-imports')">
-            <span>📄 My Imports</span>
-          </button>
-          <button class="btn btn-primary" id="btnOpenNewSku" onclick="UI.openNewSkuModal()">
-            <span>+ Create New SKU</span>
-          </button>
-        </div>
+      </div>
+
+      <!-- Category Tab Bar: All · Raw Materials · Fasteners · Piping & Fittings · Electrical -->
+      <div class="catalog-category-tabs" id="catalogCategoryTabs">
+        <button type="button" class="catalog-cat-tab active" data-category="All" onclick="UI.switchCatalogCategory('All')">
+          <span class="tab-label">All</span>
+          <span class="tab-count" id="tabCountAll">651</span>
+        </button>
+        <button type="button" class="catalog-cat-tab" data-category="Raw Materials" onclick="UI.switchCatalogCategory('Raw Materials')">
+          <span class="tab-label">Raw Materials</span>
+          <span class="tab-count" id="tabCountRaw">320</span>
+        </button>
+        <button type="button" class="catalog-cat-tab" data-category="Fasteners" onclick="UI.switchCatalogCategory('Fasteners')">
+          <span class="tab-label">Fasteners</span>
+          <span class="tab-count" id="tabCountFasteners">114</span>
+        </button>
+        <button type="button" class="catalog-cat-tab" data-category="Piping & Fittings" onclick="UI.switchCatalogCategory('Piping & Fittings')">
+          <span class="tab-label">Piping &amp; Fittings</span>
+          <span class="tab-count" id="tabCountPiping">107</span>
+        </button>
+        <button type="button" class="catalog-cat-tab" data-category="Electrical Materials" onclick="UI.switchCatalogCategory('Electrical Materials')">
+          <span class="tab-label">Electrical</span>
+          <span class="tab-count" id="tabCountElectrical">110</span>
+        </button>
       </div>
 
       <!-- Toolbar: Search & Subcategory Filters -->
@@ -550,11 +567,6 @@
           <div class="search-box-wrapper">
             <span class="search-icon">🔍</span>
             <input type="text" id="catalogSearchInput" class="search-input" placeholder="Search by SKU (e.g. FF4186), Product Name, Material, Size, or Spec...">
-          </div>
-          <div class="toolbar-actions">
-            <button class="btn btn-secondary btn-sm" onclick="UI.switchView('prs')">
-              <span>📋 View PR Register</span>
-            </button>
           </div>
         </div>
 
@@ -577,6 +589,7 @@
               <tr>
                 <th style="width: 50px;">#</th>
                 <th style="width: 110px;">SKU</th>
+                <th id="catalogCategoryTh" style="width: 130px; display: none;">Category</th>
                 <th>Product Name</th>
                 <th style="min-width: 250px;">Item Description</th>
                 <th>Subcategory</th>
@@ -704,10 +717,10 @@
           <div class="sku-preview-banner" style="margin-top: 1.25rem; padding: 0.85rem 1rem; background: var(--bg-surface-subtle); border: 1px solid var(--border-default); border-radius: var(--radius-md); display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap;">
             <div>
               <div style="font-size: var(--text-xs); color: var(--text-muted); font-weight: var(--font-medium);">Next Generated SKU Preview:</div>
-              <div style="font-family: var(--font-mono); font-size: var(--text-base); font-weight: var(--font-bold); color: var(--brand-600);" id="skuPreviewCode">FF-4236</div>
+              <div style="font-family: var(--font-mono); font-size: var(--text-base); font-weight: var(--font-bold); color: var(--brand-600);" id="skuPreviewCode">FF4236</div>
             </div>
             <div style="font-size: var(--text-xs); color: var(--text-secondary);" id="skuPreviewRange">
-              Current registered sequence reference: <strong id="skuCurrentReference">FF-4186 — FF-4235</strong>
+              Current registered sequence reference: <strong id="skuCurrentReference">FF4186 — FF4235</strong>
             </div>
           </div>
 
