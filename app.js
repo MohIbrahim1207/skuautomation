@@ -5714,69 +5714,192 @@
           elPrsMonth.textContent = kpis.prsThisMonth;
         }
 
-        // 3. Store and render Recent Activity Stream with filtering & single-line status
-        this.recentActivityLogs = Array.isArray(data.recentActivity) ? data.recentActivity : [];
-        this.renderRecentActivityStream();
+        // 3. Populate Recent Activity Card (Last 5 business events in plain sentences)
+        let rawLogs = Array.isArray(data.recentActivity) ? data.recentActivity : [];
+        let businessEvents = rawLogs.filter(act => this.isBusinessEvent(act));
+
+        // If fewer than 5 business events found in dashboard telemetry, scan audit-logs endpoint
+        if (businessEvents.length < 5) {
+          try {
+            const auditResp = await fetch('/api/admin/audit-logs?limit=200', {
+              headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (auditResp.ok) {
+              const auditData = await auditResp.json();
+              if (Array.isArray(auditData.logs)) {
+                businessEvents = auditData.logs.filter(act => this.isBusinessEvent(act));
+              }
+            }
+          } catch (err) {
+            console.warn('[Admin UI] Audit logs fetch warning:', err);
+          }
+        }
+
+        this.renderRecentActivityCard(businessEvents);
       } catch (err) {
         console.warn('[Admin UI] Telemetry fetch error:', err);
       }
     },
 
-    renderRecentActivityStream() {
-      const recentTbody = document.getElementById('recentActivityTbody');
-      if (!recentTbody) return;
+    formatRelativeTime(dateInput) {
+      if (!dateInput) return '';
+      const date = new Date(dateInput);
+      if (isNaN(date.getTime())) return '';
 
-      const filterCheckbox = document.getElementById('toggleHideLogins');
-      if (filterCheckbox && !filterCheckbox._bound) {
-        filterCheckbox._bound = true;
-        filterCheckbox.addEventListener('change', () => {
-          this.renderRecentActivityStream();
-        });
+      const now = new Date();
+      const diffMs = now.getTime() - date.getTime();
+      const diffSec = Math.floor(diffMs / 1000);
+
+      if (diffSec < 45) return 'just now';
+      const diffMin = Math.floor(diffSec / 60);
+      if (diffMin < 60) return `${diffMin}m ago`;
+      const diffHours = Math.floor(diffMin / 60);
+      if (diffHours < 24) return `${diffHours}h ago`;
+      const diffDays = Math.floor(diffHours / 24);
+      if (diffDays === 1) return 'yesterday';
+      if (diffDays < 7) return `${diffDays}d ago`;
+      if (diffDays < 30) {
+        const weeks = Math.floor(diffDays / 7);
+        return `${weeks}w ago`;
+      }
+      const months = Math.floor(diffDays / 30);
+      if (months < 12) return `${months}mo ago`;
+      return `${Math.floor(months / 12)}y ago`;
+    },
+
+    isBusinessEvent(act) {
+      if (!act) return false;
+      const action = (act.action || '').toUpperCase();
+
+      // Exclude sign-ins, DOCUMENT_UPDATED, ducting REPLACED/ACTIVATED and other system events
+      if (
+        action.startsWith('LOGIN') ||
+        action.startsWith('AUTH') ||
+        action === 'DOCUMENT_UPDATED' ||
+        action === 'DOCUMENT_DOWNLOADED' ||
+        action === 'DOCUMENT_VIEWED' ||
+        action === 'DOCUMENT_UPLOADED' ||
+        action === 'DOCUMENT_DELETED' ||
+        action === 'DOCUMENT_GENERATED' ||
+        action === 'ACTIVATED' ||
+        action === 'REPLACED' ||
+        action === 'DEACTIVATED' ||
+        action.startsWith('REMOVAL_') ||
+        action === 'TEST_ACTION' ||
+        action.startsWith('USER_') ||
+        action === 'FORCE_PASSWORD_CHANGE' ||
+        action === 'PRICE_CHANGED' ||
+        action === 'SKU_UPDATED'
+      ) {
+        return false;
       }
 
-      const hideLogins = filterCheckbox ? filterCheckbox.checked : true;
-      const logs = this.recentActivityLogs || [];
-      const filtered = hideLogins
-        ? logs.filter(act => {
-            const action = (act.action || '').toUpperCase();
-            return action !== 'LOGIN' && action !== 'LOGIN_SUCCESS' && !action.startsWith('LOGIN');
-          })
-        : logs;
+      // 1. PR created / approved / rejected
+      if (action === 'PR_CREATED' || action === 'PR_APPROVED' || action === 'PR_REJECTED') {
+        return true;
+      }
 
-      if (filtered.length === 0) {
-        recentTbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:1.5rem; color:var(--text-muted);">No activity logged yet matching filter criteria.</td></tr>';
+      // 2. Items imported
+      if (action === 'SKU_BATCH_IMPORTED' || action === 'ITEMS_IMPORTED' || action === 'IMPORT_APPROVED' || action === 'EXCEL_IMPORTED') {
+        return true;
+      }
+
+      // 3. SKUs created
+      if (action === 'SKU_CREATED') {
+        return true;
+      }
+
+      return false;
+    },
+
+    formatBusinessEventItem(act) {
+      const action = (act.action || '').toUpperCase();
+      const rawUser = act.performed_by_username || act.username || '';
+      const username = rawUser ? escapeHtml(rawUser) : 'System';
+      const desc = act.description || '';
+      const meta = act.metadata || {};
+      const afterVal = act.after_value || {};
+      const timeStr = this.formatRelativeTime(act.created_at);
+
+      // Extract PR Number (e.g. PR-0012 or PR-2026-0173)
+      const extractPrNumber = () => {
+        if (meta.prNumber) return meta.prNumber;
+        if (afterVal.prNumber) return afterVal.prNumber;
+        const match = desc.match(/PR-[\w-]+/i);
+        if (match) return match[0];
+        if (act.entity_id) return `PR-${act.entity_id}`;
+        return 'PR';
+      };
+
+      // Extract SKU (e.g. FF-RM-0321)
+      const extractSku = () => {
+        if (meta.sku) return meta.sku;
+        if (afterVal.sku) return afterVal.sku;
+        if (act.entity_id && String(act.entity_id).toUpperCase().startsWith('FF')) return act.entity_id;
+        const match = desc.match(/FF[\w-]+/i);
+        if (match) return match[0];
+        return act.entity_id || 'item';
+      };
+
+      // Extract import count
+      const extractImportCount = () => {
+        if (meta.count) return meta.count;
+        if (afterVal.count) return afterVal.count;
+        const match = desc.match(/(\d+)\s*(?:SKUs|items)/i);
+        if (match) return match[1];
+        return null;
+      };
+
+      let dotClass = 'dot-indigo';
+      let sentence = '';
+
+      if (action === 'PR_CREATED') {
+        dotClass = 'dot-indigo';
+        const prNum = extractPrNumber();
+        sentence = `<span class="activity-event-entity">${escapeHtml(prNum)}</span> created by ${username}`;
+      } else if (action === 'PR_APPROVED') {
+        dotClass = 'dot-emerald';
+        const prNum = extractPrNumber();
+        sentence = `<span class="activity-event-entity">${escapeHtml(prNum)}</span> approved by ${username}`;
+      } else if (action === 'PR_REJECTED') {
+        dotClass = 'dot-rose';
+        const prNum = extractPrNumber();
+        sentence = `<span class="activity-event-entity">${escapeHtml(prNum)}</span> rejected by ${username}`;
+      } else if (action === 'SKU_BATCH_IMPORTED' || action.includes('IMPORT')) {
+        dotClass = 'dot-indigo';
+        const count = extractImportCount();
+        const countText = count ? `${count} items` : 'Items';
+        sentence = `<span class="activity-event-entity">${escapeHtml(countText)}</span> imported by ${username}`;
+      } else if (action === 'SKU_CREATED') {
+        dotClass = 'dot-amber';
+        const sku = extractSku();
+        sentence = `New SKU <span class="activity-event-entity">${escapeHtml(sku)}</span> created`;
+      } else {
+        dotClass = 'dot-indigo';
+        sentence = `${escapeHtml(desc || action)} by ${username}`;
+      }
+
+      return `
+        <div class="activity-event-row">
+          <span class="activity-event-dot ${dotClass}"></span>
+          <span class="activity-event-sentence">${sentence}</span>
+          <span class="activity-event-time">&middot; ${timeStr}</span>
+        </div>
+      `;
+    },
+
+    renderRecentActivityCard(businessEvents = []) {
+      const container = document.getElementById('recentActivityList');
+      if (!container) return;
+
+      const events = (businessEvents || []).slice(0, 5);
+
+      if (events.length === 0) {
+        container.innerHTML = '<div class="activity-empty-state">No recent activity</div>';
         return;
       }
 
-      recentTbody.innerHTML = filtered.slice(0, 15).map(act => {
-        const isSuccess = (act.status || '').toUpperCase() === 'SUCCESS';
-        // Show status only when it isn't SUCCESS, and keep the status dot and text on one line
-        const statusHtml = isSuccess
-          ? '<span style="color:var(--text-dim);">—</span>'
-          : `<span style="white-space:nowrap; display:inline-flex; align-items:center; gap:5px; color:var(--rose-600); font-weight:600; font-size:0.75rem;"><span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--rose-500); flex-shrink:0;"></span>${escapeHtml(act.status || 'FAILED')}</span>`;
-
-        // Drop Description when it only repeats Action + Entity
-        const actionStr = (act.action || '').toLowerCase();
-        const entityStr = String(act.entity_id || '').toLowerCase();
-        const descStr = (act.description || '').toLowerCase().trim();
-        const isRedundantDesc = !descStr || descStr === '-' ||
-          (descStr.includes(actionStr) && (entityStr === '' || descStr.includes(entityStr)));
-
-        const extraDescHtml = (!isRedundantDesc && act.description)
-          ? `<div style="font-size:0.7rem; color:var(--text-muted); font-weight:normal; margin-top:2px;">${escapeHtml(act.description)}</div>`
-          : '';
-
-        return `
-          <tr>
-            <td style="font-size:0.75rem; color:var(--text-muted); font-family:var(--font-mono);">${formatDateDisplay(act.created_at)}</td>
-            <td><span class="role-pill" style="font-size:0.7rem;">${escapeHtml(act.module || 'SYSTEM')}</span></td>
-            <td style="font-weight:600; font-size:0.8rem; color:var(--text-primary);">${escapeHtml(act.action)}${extraDescHtml}</td>
-            <td style="font-family:var(--font-mono); font-size:0.75rem; color:var(--brand-600);">${escapeHtml(act.entity_id || '-')}</td>
-            <td style="font-size:0.8rem;"><strong>${escapeHtml(act.performed_by_username || 'System')}</strong> <span style="font-size:0.7rem; color:var(--text-muted);">(${escapeHtml(act.role || '-')})</span></td>
-            <td>${statusHtml}</td>
-          </tr>
-        `;
-      }).join('');
+      container.innerHTML = events.map(act => this.formatBusinessEventItem(act)).join('');
     },
 
     // =========================================================================
@@ -6403,7 +6526,7 @@
             <td style="font-family:var(--font-mono); font-size:0.75rem; color:#0284c7;">${escapeHtml(log.entity_id || '-')}</td>
             <td style="font-size:0.8rem;">
               <strong>${escapeHtml(log.performed_by_username || 'System')}</strong>
-              <div style="font-size:0.7rem; color:#64748b;">${escapeHtml(log.role || '-')}</div>
+              ${log.role ? `<div style="font-size:0.7rem; color:#64748b;">${escapeHtml(log.role)}</div>` : ''}
             </td>
             <td style="font-family:var(--font-mono); font-size:0.75rem; color:#64748b;">${escapeHtml(log.ip_address || '-')}</td>
             <td>${statusPill}</td>

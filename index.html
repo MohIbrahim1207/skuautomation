@@ -361,39 +361,19 @@
           </div>
         </div>
 
-        <!-- Recent Activity Audit Stream -->
-        <div class="table-container" style="margin-top: 1rem; margin-bottom: 2rem;">
-          <div class="table-header-bar" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
-            <div class="table-title-group">
-              <h3>Recent Activity Stream</h3>
-              <span class="table-subtitle">Audit trail of recent system events</span>
+        <!-- Compact Recent Activity Card -->
+        <div class="recent-activity-card" id="recentActivityCard">
+          <div class="recent-activity-card-header">
+            <div class="recent-activity-card-title">
+              <span class="recent-activity-card-icon">🕒</span>
+              <h3>Recent activity</h3>
             </div>
-            <div style="display: flex; align-items: center; gap: 1rem;">
-              <label class="filter-toggle-label" style="display: inline-flex; align-items: center; gap: 6px; font-size: 0.8rem; color: var(--text-secondary); cursor: pointer; user-select: none;">
-                <input type="checkbox" id="toggleHideLogins" checked style="cursor: pointer; accent-color: var(--brand-600);">
-                <span>Hide sign-in events</span>
-              </label>
-              <button type="button" class="btn btn-secondary btn-sm" onclick="UI.switchView('audit-logs')">
-                <span>View All Activity Logs →</span>
-              </button>
-            </div>
+            <a href="javascript:void(0)" class="recent-activity-card-link" onclick="UI.switchView('audit-logs')">
+              View all activity &rarr;
+            </a>
           </div>
-          <div class="table-scroll">
-            <table class="data-table">
-              <thead>
-                <tr>
-                  <th style="width: 150px;">TIMESTAMP</th>
-                  <th style="width: 120px;">MODULE</th>
-                  <th style="width: 180px;">ACTION</th>
-                  <th style="width: 130px;">ENTITY ID</th>
-                  <th style="width: 180px;">USER / ROLE</th>
-                  <th style="width: 110px;">STATUS</th>
-                </tr>
-              </thead>
-              <tbody id="recentActivityTbody">
-                <tr><td colspan="6" style="text-align:center; padding: 1.5rem; color:var(--text-muted);">Loading recent activity...</td></tr>
-              </tbody>
-            </table>
+          <div class="recent-activity-card-body" id="recentActivityList">
+            <div class="activity-empty-state">Loading recent activity...</div>
           </div>
         </div>
       </div>
