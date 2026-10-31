@@ -979,3 +979,90 @@ body.is-login .app-shell {
     display: none;
   }
 }
+
+/* ==========================================================================
+   DASHBOARD KPI & RECENT ACTIVITY ENHANCEMENTS
+   ========================================================================== */
+#dashboardKpiGrid {
+  display: grid !important;
+  grid-template-columns: repeat(6, 1fr) !important;
+  gap: var(--space-4) !important;
+  margin-bottom: var(--space-6) !important;
+}
+
+@media (max-width: 1400px) {
+  #dashboardKpiGrid {
+    grid-template-columns: repeat(3, 1fr) !important;
+  }
+}
+
+@media (max-width: 768px) {
+  #dashboardKpiGrid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: var(--space-3) !important;
+  }
+}
+
+@media (max-width: 480px) {
+  #dashboardKpiGrid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+.admin-kpi-grid {
+  display: grid !important;
+  grid-template-columns: repeat(3, 1fr) !important;
+  gap: var(--space-4) !important;
+  margin-bottom: var(--space-6) !important;
+}
+
+@media (max-width: 900px) {
+  .admin-kpi-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* Ensure KPI card paddings and alignment are crisp */
+#dashboardKpiGrid .kpi-card,
+.admin-kpi-grid .kpi-card {
+  padding: 1.1rem 1.25rem;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-xs);
+  transition: transform var(--motion-fast), box-shadow var(--motion-fast), border-color var(--motion-fast);
+}
+
+#dashboardKpiGrid .kpi-card:hover,
+.admin-kpi-grid .kpi-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-sm);
+  border-color: var(--brand-300);
+}
+
+#dashboardKpiGrid .kpi-val,
+.admin-kpi-grid .kpi-val {
+  font-size: 1.65rem;
+  font-weight: var(--font-bold);
+  line-height: 1.2;
+}
+
+#dashboardKpiGrid .kpi-label,
+.admin-kpi-grid .kpi-label {
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  font-weight: var(--font-semibold);
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+/* Category cards badge and meta polish */
+.category-card .category-status-pill.disabled {
+  background: var(--bg-surface-sunken);
+  color: var(--text-muted);
+  border: 1px solid var(--border-subtle);
+  font-size: 0.7rem;
+  font-weight: 500;
+  padding: 3px 8px;
+  border-radius: var(--radius-full);
+}

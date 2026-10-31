@@ -5594,29 +5594,41 @@
       const lblPending = document.getElementById('kpiLabelPendingPrs');
       const lblApproved = document.getElementById('kpiLabelApprovedPrs');
       const lblRejected = document.getElementById('kpiLabelRejectedPrs');
+      const lblPrsThisMonth = document.getElementById('kpiLabelPrsThisMonth');
 
       if (lblTotal) lblTotal.textContent = isAdmin ? 'Total PRs' : 'My PRs';
       if (lblPending) lblPending.textContent = isAdmin ? 'Pending Approval' : 'My Pending PRs';
       if (lblApproved) lblApproved.textContent = isAdmin ? 'Approved' : 'My Approved PRs';
       if (lblRejected) lblRejected.textContent = isAdmin ? 'Rejected' : 'My Rejected PRs';
+      if (lblPrsThisMonth) lblPrsThisMonth.textContent = isAdmin ? 'PRs This Month' : 'My PRs This Month';
 
       const elTotalSkus = document.getElementById('kpiTotalSkus');
       const elTotalPrs = document.getElementById('kpiTotalPrs');
       const elPendingPrs = document.getElementById('kpiPendingPrs');
       const elApprovedPrs = document.getElementById('kpiApprovedPrs');
       const elRejectedPrs = document.getElementById('kpiRejectedPrs');
+      const elPrsMonth = document.getElementById('kpiPrsThisMonth');
       const elNavPrCount = document.getElementById('navPrBadge');
       const elNavSkuCount = document.getElementById('navCatalogBadge');
+
+      // Calculate PRs created in current calendar month
+      const now = new Date();
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      const prsThisMonthCount = userPrs.filter(p => {
+        const d = new Date(p.created_at || p.createdAt || p.date);
+        return !isNaN(d.getTime()) && d >= startOfMonth;
+      }).length;
 
       if (elTotalSkus) elTotalSkus.textContent = masterItems.length;
       if (elTotalPrs) elTotalPrs.textContent = userPrs.length;
       if (elPendingPrs) elPendingPrs.textContent = pendingCount;
       if (elApprovedPrs) elApprovedPrs.textContent = approvedCount;
       if (elRejectedPrs) elRejectedPrs.textContent = rejectedCount;
+      if (elPrsMonth) elPrsMonth.textContent = prsThisMonthCount;
       if (elNavPrCount) elNavPrCount.textContent = userPrs.length;
       if (elNavSkuCount) elNavSkuCount.textContent = masterItems.length;
 
-      // Actual Category Items from PostgreSQL Database using shared normalizeCategory
+      // Actual Category Items from Database using shared normalizeCategory
       const rawMaterialsItems = masterItems.filter(i => normalizeCategory(i.category) === 'Raw Materials');
       const fastenersItems = masterItems.filter(i => normalizeCategory(i.category) === 'Fasteners');
       const pipingItems = masterItems.filter(i => normalizeCategory(i.category) === 'Piping & Fittings');
@@ -5631,6 +5643,16 @@
       if (elCatFasteners) elCatFasteners.textContent = `${fastenersItems.length} Items`;
       if (elCatPiping) elCatPiping.textContent = `${pipingItems.length} Items`;
       if (elCatElectrical) elCatElectrical.textContent = `${electricalItems.length} Items`;
+
+      // Dynamically calculate active and upcoming module counts from DOM
+      const activeCatCards = document.querySelectorAll('.category-card.active-category');
+      const upcomingCatCards = document.querySelectorAll('.category-card.future-card');
+      const elCategoryCountSummary = document.getElementById('categoryCountSummary');
+      if (elCategoryCountSummary) {
+        const activeCount = activeCatCards.length || 5;
+        const upcomingCount = upcomingCatCards.length || 2;
+        elCategoryCountSummary.textContent = `${activeCount} Active Categories · ${upcomingCount} Upcoming Modules`;
+      }
 
       // Reset nav tab label when returning to / displaying Dashboard
       const elNavCatalogLabel = document.getElementById('navCatalogLabel');
@@ -5657,7 +5679,7 @@
         const data = await resp.json();
         if (!data.success) return;
 
-        // 1. Populate System Health indicators
+        // 1. Populate System Health indicators with plain wording
         const sh = data.systemHealth || {};
         const elDb = document.getElementById('healthDbText');
         const elStorage = document.getElementById('healthStorageModeText');
@@ -5665,9 +5687,12 @@
         const elAppUptime = document.getElementById('healthAppUptimeText');
         const elAppMem = document.getElementById('healthAppMemoryText');
 
-        if (elDb) elDb.textContent = `PostgreSQL: ${sh.database?.status === 'connected' ? 'Connected' : 'Unavailable'}`;
-        if (elStorage) elStorage.textContent = sh.drawingStorageMode || 'LOCAL_FALLBACK';
-        if (elAppStatus) elAppStatus.textContent = sh.app?.status || 'Healthy';
+        if (elDb) elDb.textContent = `Database: ${sh.database?.status === 'connected' ? 'Connected' : 'Unavailable'}`;
+        if (elStorage) {
+          const mode = sh.drawingStorageMode || 'LOCAL_FALLBACK';
+          elStorage.textContent = (mode === 'LOCAL_FALLBACK') ? 'Local Storage' : (mode === 'CLOUDINARY' ? 'Cloud Storage' : mode);
+        }
+        if (elAppStatus) elAppStatus.textContent = (sh.app?.status === 'ok' || sh.app?.status === 'Healthy') ? 'Healthy' : (sh.app?.status || 'Healthy');
         if (elAppUptime) {
           const upSec = sh.app?.uptimeSeconds || 0;
           const mins = Math.floor(upSec / 60);
@@ -5678,46 +5703,80 @@
         // 2. Populate Operational KPIs
         const kpis = data.kpis || {};
         const elActUsers = document.getElementById('adminKpiActiveUsers');
-        const elPendPrs = document.getElementById('adminKpiPendingPrs');
         const elPendRem = document.getElementById('adminKpiPendingRemovals');
-        const elTotSkus = document.getElementById('adminKpiTotalSkus');
         const elActDrw = document.getElementById('adminKpiActiveDrawings');
-        const elPrsMonth = document.getElementById('adminKpiPrsThisMonth');
+        const elPrsMonth = document.getElementById('kpiPrsThisMonth');
 
         if (elActUsers) elActUsers.textContent = kpis.activeUsers ?? '-';
-        if (elPendPrs) elPendPrs.textContent = kpis.pendingPrs ?? '-';
         if (elPendRem) elPendRem.textContent = kpis.pendingDrawingRemovals ?? '-';
-        if (elTotSkus) elTotSkus.textContent = kpis.totalSkus ?? '-';
         if (elActDrw) elActDrw.textContent = kpis.activeStandardDrawings ?? '-';
-        if (elPrsMonth) elPrsMonth.textContent = kpis.prsThisMonth ?? '-';
-
-        // 3. Populate Recent Activity Stream (Live real audit logs)
-        const recentTbody = document.getElementById('recentActivityTbody');
-        if (recentTbody && Array.isArray(data.recentActivity)) {
-          if (data.recentActivity.length === 0) {
-            recentTbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding:1.5rem; color:#64748b;">No recent activity logged yet.</td></tr>';
-          } else {
-            recentTbody.innerHTML = data.recentActivity.slice(0, 15).map(act => {
-              const statusPill = act.status === 'SUCCESS' 
-                ? '<span style="color:#047857; font-weight:600; font-size:0.75rem;">● SUCCESS</span>' 
-                : '<span style="color:#e11d48; font-weight:600; font-size:0.75rem;">● FAILURE</span>';
-              return `
-                <tr>
-                  <td style="font-size:0.75rem; color:#64748b; font-family:var(--font-mono);">${formatDateDisplay(act.created_at)}</td>
-                  <td><span class="role-pill" style="background:#f1f5f9; color:#475569; font-size:0.7rem;">${escapeHtml(act.module || 'SYSTEM')}</span></td>
-                  <td style="font-weight:600; font-size:0.8rem; color:#1e293b;">${escapeHtml(act.action)}</td>
-                  <td style="font-family:var(--font-mono); font-size:0.75rem; color:#0284c7;">${escapeHtml(act.entity_id || '-')}</td>
-                  <td style="font-size:0.8rem;"><strong>${escapeHtml(act.performed_by_username || 'System')}</strong> <span style="font-size:0.7rem; color:#64748b;">(${escapeHtml(act.role || '-')})</span></td>
-                  <td>${statusPill}</td>
-                  <td style="font-size:0.8rem; color:#334155;">${escapeHtml(act.description || '-')}</td>
-                </tr>
-              `;
-            }).join('');
-          }
+        if (elPrsMonth && kpis.prsThisMonth !== undefined) {
+          elPrsMonth.textContent = kpis.prsThisMonth;
         }
+
+        // 3. Store and render Recent Activity Stream with filtering & single-line status
+        this.recentActivityLogs = Array.isArray(data.recentActivity) ? data.recentActivity : [];
+        this.renderRecentActivityStream();
       } catch (err) {
         console.warn('[Admin UI] Telemetry fetch error:', err);
       }
+    },
+
+    renderRecentActivityStream() {
+      const recentTbody = document.getElementById('recentActivityTbody');
+      if (!recentTbody) return;
+
+      const filterCheckbox = document.getElementById('toggleHideLogins');
+      if (filterCheckbox && !filterCheckbox._bound) {
+        filterCheckbox._bound = true;
+        filterCheckbox.addEventListener('change', () => {
+          this.renderRecentActivityStream();
+        });
+      }
+
+      const hideLogins = filterCheckbox ? filterCheckbox.checked : true;
+      const logs = this.recentActivityLogs || [];
+      const filtered = hideLogins
+        ? logs.filter(act => {
+            const action = (act.action || '').toUpperCase();
+            return action !== 'LOGIN' && action !== 'LOGIN_SUCCESS' && !action.startsWith('LOGIN');
+          })
+        : logs;
+
+      if (filtered.length === 0) {
+        recentTbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:1.5rem; color:var(--text-muted);">No activity logged yet matching filter criteria.</td></tr>';
+        return;
+      }
+
+      recentTbody.innerHTML = filtered.slice(0, 15).map(act => {
+        const isSuccess = (act.status || '').toUpperCase() === 'SUCCESS';
+        // Show status only when it isn't SUCCESS, and keep the status dot and text on one line
+        const statusHtml = isSuccess
+          ? '<span style="color:var(--text-dim);">—</span>'
+          : `<span style="white-space:nowrap; display:inline-flex; align-items:center; gap:5px; color:var(--rose-600); font-weight:600; font-size:0.75rem;"><span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--rose-500); flex-shrink:0;"></span>${escapeHtml(act.status || 'FAILED')}</span>`;
+
+        // Drop Description when it only repeats Action + Entity
+        const actionStr = (act.action || '').toLowerCase();
+        const entityStr = String(act.entity_id || '').toLowerCase();
+        const descStr = (act.description || '').toLowerCase().trim();
+        const isRedundantDesc = !descStr || descStr === '-' ||
+          (descStr.includes(actionStr) && (entityStr === '' || descStr.includes(entityStr)));
+
+        const extraDescHtml = (!isRedundantDesc && act.description)
+          ? `<div style="font-size:0.7rem; color:var(--text-muted); font-weight:normal; margin-top:2px;">${escapeHtml(act.description)}</div>`
+          : '';
+
+        return `
+          <tr>
+            <td style="font-size:0.75rem; color:var(--text-muted); font-family:var(--font-mono);">${formatDateDisplay(act.created_at)}</td>
+            <td><span class="role-pill" style="font-size:0.7rem;">${escapeHtml(act.module || 'SYSTEM')}</span></td>
+            <td style="font-weight:600; font-size:0.8rem; color:var(--text-primary);">${escapeHtml(act.action)}${extraDescHtml}</td>
+            <td style="font-family:var(--font-mono); font-size:0.75rem; color:var(--brand-600);">${escapeHtml(act.entity_id || '-')}</td>
+            <td style="font-size:0.8rem;"><strong>${escapeHtml(act.performed_by_username || 'System')}</strong> <span style="font-size:0.7rem; color:var(--text-muted);">(${escapeHtml(act.role || '-')})</span></td>
+            <td>${statusHtml}</td>
+          </tr>
+        `;
+      }).join('');
     },
 
     // =========================================================================

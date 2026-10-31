@@ -256,12 +256,12 @@
         </p>
       </div>
 
-      <!-- KPI Ribbon (Dynamic for Admin and Employee) -->
+      <!-- KPI Ribbon: Single Unified Row of 6 Cards -->
       <div class="kpi-grid" id="dashboardKpiGrid">
         <div class="kpi-card">
           <div class="kpi-info">
-            <div class="kpi-label">Master Raw Materials</div>
-            <div class="kpi-val" id="kpiTotalSkus">50</div>
+            <div class="kpi-label">Total SKUs</div>
+            <div class="kpi-val tabular-nums" id="kpiTotalSkus">0</div>
           </div>
           <div class="kpi-icon primary">📦</div>
         </div>
@@ -269,7 +269,7 @@
         <div class="kpi-card">
           <div class="kpi-info">
             <div class="kpi-label" id="kpiLabelTotalPrs">Total PRs</div>
-            <div class="kpi-val" id="kpiTotalPrs" style="color: var(--accent-indigo);">0</div>
+            <div class="kpi-val tabular-nums" id="kpiTotalPrs" style="color: var(--accent-indigo);">0</div>
           </div>
           <div class="kpi-icon indigo">📋</div>
         </div>
@@ -277,7 +277,7 @@
         <div class="kpi-card">
           <div class="kpi-info">
             <div class="kpi-label" id="kpiLabelPendingPrs">Pending Approval</div>
-            <div class="kpi-val" id="kpiPendingPrs" style="color: var(--accent-amber);">0</div>
+            <div class="kpi-val tabular-nums" id="kpiPendingPrs" style="color: var(--accent-amber);">0</div>
           </div>
           <div class="kpi-icon amber">⏳</div>
         </div>
@@ -285,7 +285,7 @@
         <div class="kpi-card">
           <div class="kpi-info">
             <div class="kpi-label" id="kpiLabelApprovedPrs">Approved</div>
-            <div class="kpi-val" id="kpiApprovedPrs" style="color: var(--accent-emerald);">0</div>
+            <div class="kpi-val tabular-nums" id="kpiApprovedPrs" style="color: var(--accent-emerald);">0</div>
           </div>
           <div class="kpi-icon emerald">✓</div>
         </div>
@@ -293,95 +293,86 @@
         <div class="kpi-card">
           <div class="kpi-info">
             <div class="kpi-label" id="kpiLabelRejectedPrs">Rejected</div>
-            <div class="kpi-val" id="kpiRejectedPrs" style="color: var(--accent-rose);">0</div>
+            <div class="kpi-val tabular-nums" id="kpiRejectedPrs" style="color: var(--accent-rose);">0</div>
           </div>
           <div class="kpi-icon rose">✗</div>
         </div>
+
+        <div class="kpi-card">
+          <div class="kpi-info">
+            <div class="kpi-label" id="kpiLabelPrsThisMonth">PRs This Month</div>
+            <div class="kpi-val tabular-nums" id="kpiPrsThisMonth" style="color: #4f46e5;">0</div>
+          </div>
+          <div class="kpi-icon indigo">📅</div>
+        </div>
       </div>
 
-      <!-- Admin Operational Operations & System Health Ribbon (Admin Only) -->
+      <!-- Admin Operational Overview & System Health (Admin Only) -->
       <div id="adminDashboardSection" style="display: none; margin-bottom: 2rem; margin-top: 1.5rem;">
         
         <!-- System Health Bar -->
-        <div class="system-health-panel" style="background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 1.25rem; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+        <div class="system-health-panel" style="background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: 8px; padding: 1rem 1.25rem; margin-bottom: 1.5rem; box-shadow: var(--shadow-xs);">
           <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
             <div style="display: flex; align-items: center; gap: 0.6rem;">
               <span style="font-size: 1.1rem;">🛡️</span>
-              <strong style="color: #0f172a; font-size: 0.95rem;">System Health &amp; Operational Infrastructure</strong>
+              <strong style="color: var(--text-primary); font-size: 0.95rem;">System Health &amp; Operations</strong>
             </div>
             <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; font-size: 0.82rem;">
-              <div id="healthDbBadge" style="display: flex; align-items: center; gap: 0.4rem; padding: 0.25rem 0.65rem; border-radius: 9999px; background: #ecfdf5; color: #047857; font-weight: 600; border: 1px solid #a7f3d0;">
-                <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #10b981;"></span>
-                <span id="healthDbText">PostgreSQL: Connected</span>
+              <div id="healthDbBadge" style="display: flex; align-items: center; gap: 0.4rem; padding: 0.25rem 0.65rem; border-radius: 9999px; background: var(--emerald-50); color: var(--emerald-700); font-weight: 600; border: 1px solid var(--emerald-200);">
+                <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--emerald-500);"></span>
+                <span id="healthDbText">Database: Connected</span>
               </div>
-              <div id="healthStorageBadge" style="display: flex; align-items: center; gap: 0.4rem; padding: 0.25rem 0.65rem; border-radius: 9999px; background: #f0f9ff; color: #0369a1; font-weight: 600; border: 1px solid #bae6fd;">
-                <span>📦 Storage Mode: <strong id="healthStorageModeText">LOCAL_FALLBACK</strong></span>
+              <div id="healthStorageBadge" style="display: flex; align-items: center; gap: 0.4rem; padding: 0.25rem 0.65rem; border-radius: 9999px; background: var(--brand-50); color: var(--brand-700); font-weight: 600; border: 1px solid var(--brand-200);">
+                <span>📦 Storage: <strong id="healthStorageModeText">Local Storage</strong></span>
               </div>
-              <div id="healthAppBadge" style="display: flex; align-items: center; gap: 0.4rem; padding: 0.25rem 0.65rem; border-radius: 9999px; background: #f8fafc; color: #475569; font-weight: 500; border: 1px solid #e2e8f0;">
-                <span>App: <strong id="healthAppStatusText" style="color: #10b981;">Healthy</strong> (Uptime: <span id="healthAppUptimeText">0m</span>, RAM: <span id="healthAppMemoryText">-</span>)</span>
+              <div id="healthAppBadge" style="display: flex; align-items: center; gap: 0.4rem; padding: 0.25rem 0.65rem; border-radius: 9999px; background: var(--bg-surface-subtle); color: var(--text-secondary); font-weight: 500; border: 1px solid var(--border-default);">
+                <span>App: <strong id="healthAppStatusText" style="color: var(--emerald-600);">Healthy</strong> (Uptime: <span id="healthAppUptimeText">0m</span>, Memory: <span id="healthAppMemoryText">-</span>)</span>
               </div>
             </div>
           </div>
         </div>
 
-        <!-- Admin Operational KPIs -->
+        <!-- Admin Operational KPIs: 3 Admin-Only Cards -->
         <div style="margin-bottom: 0.75rem; display: flex; justify-content: space-between; align-items: center;">
-          <h3 style="font-size: 1rem; font-weight: 700; color: #1e293b; margin: 0;">Operational KPIs (Enterprise Real-Time)</h3>
-          <span style="font-size: 0.78rem; color: #64748b;">Live PostgreSQL Single-Source-of-Truth</span>
+          <h3 style="font-size: 0.95rem; font-weight: 700; color: var(--text-primary); margin: 0;">Administration &amp; Drawings Overview</h3>
+          <span style="font-size: 0.78rem; color: var(--text-muted);">Real-time metrics</span>
         </div>
-        <div class="kpi-grid" style="margin-bottom: 1.5rem;">
+        <div class="kpi-grid admin-kpi-grid" style="margin-bottom: 1.5rem;">
           <div class="kpi-card">
             <div class="kpi-info">
               <div class="kpi-label">Active Users</div>
-              <div class="kpi-val" id="adminKpiActiveUsers" style="color: #047857;">-</div>
+              <div class="kpi-val tabular-nums" id="adminKpiActiveUsers" style="color: var(--emerald-600);">-</div>
             </div>
             <div class="kpi-icon emerald">👥</div>
           </div>
           <div class="kpi-card">
             <div class="kpi-info">
-              <div class="kpi-label">Pending PRs</div>
-              <div class="kpi-val" id="adminKpiPendingPrs" style="color: #b45309;">-</div>
-            </div>
-            <div class="kpi-icon amber">⏳</div>
-          </div>
-          <div class="kpi-card">
-            <div class="kpi-info">
-              <div class="kpi-label">Pending Drawing Removals</div>
-              <div class="kpi-val" id="adminKpiPendingRemovals" style="color: #e11d48;">-</div>
-            </div>
-            <div class="kpi-icon rose">🗑️</div>
-          </div>
-          <div class="kpi-card">
-            <div class="kpi-info">
-              <div class="kpi-label">Total SKUs</div>
-              <div class="kpi-val" id="adminKpiTotalSkus" style="color: #2563eb;">-</div>
-            </div>
-            <div class="kpi-icon primary">📦</div>
-          </div>
-          <div class="kpi-card">
-            <div class="kpi-info">
               <div class="kpi-label">Active Standard Drawings</div>
-              <div class="kpi-val" id="adminKpiActiveDrawings" style="color: #0284c7;">-</div>
+              <div class="kpi-val tabular-nums" id="adminKpiActiveDrawings" style="color: var(--brand-600);">-</div>
             </div>
             <div class="kpi-icon indigo">📐</div>
           </div>
           <div class="kpi-card">
             <div class="kpi-info">
-              <div class="kpi-label">PRs Created This Month</div>
-              <div class="kpi-val" id="adminKpiPrsThisMonth" style="color: #4f46e5;">-</div>
+              <div class="kpi-label">Pending Drawing Removals</div>
+              <div class="kpi-val tabular-nums" id="adminKpiPendingRemovals" style="color: var(--rose-600);">-</div>
             </div>
-            <div class="kpi-icon indigo">📅</div>
+            <div class="kpi-icon rose">🗑️</div>
           </div>
         </div>
 
         <!-- Recent Activity Audit Stream -->
         <div class="table-container" style="margin-top: 1rem; margin-bottom: 2rem;">
-          <div class="table-header-bar" style="display: flex; justify-content: space-between; align-items: center;">
+          <div class="table-header-bar" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.75rem;">
             <div class="table-title-group">
-              <h3>Recent Activity Audit Stream</h3>
-              <span class="table-subtitle">Append-only audit trail backed by PostgreSQL activity logs</span>
+              <h3>Recent Activity Stream</h3>
+              <span class="table-subtitle">Audit trail of recent system events</span>
             </div>
-            <div>
+            <div style="display: flex; align-items: center; gap: 1rem;">
+              <label class="filter-toggle-label" style="display: inline-flex; align-items: center; gap: 6px; font-size: 0.8rem; color: var(--text-secondary); cursor: pointer; user-select: none;">
+                <input type="checkbox" id="toggleHideLogins" checked style="cursor: pointer; accent-color: var(--brand-600);">
+                <span>Hide sign-in events</span>
+              </label>
               <button type="button" class="btn btn-secondary btn-sm" onclick="UI.switchView('audit-logs')">
                 <span>View All Activity Logs →</span>
               </button>
@@ -391,17 +382,16 @@
             <table class="data-table">
               <thead>
                 <tr>
-                  <th style="width: 140px;">TIMESTAMP</th>
-                  <th style="width: 130px;">MODULE</th>
-                  <th style="width: 150px;">ACTION</th>
-                  <th style="width: 120px;">ENTITY ID</th>
-                  <th style="width: 140px;">USER / ROLE</th>
-                  <th style="width: 90px;">STATUS</th>
-                  <th>DESCRIPTION</th>
+                  <th style="width: 150px;">TIMESTAMP</th>
+                  <th style="width: 120px;">MODULE</th>
+                  <th style="width: 180px;">ACTION</th>
+                  <th style="width: 130px;">ENTITY ID</th>
+                  <th style="width: 180px;">USER / ROLE</th>
+                  <th style="width: 110px;">STATUS</th>
                 </tr>
               </thead>
               <tbody id="recentActivityTbody">
-                <tr><td colspan="7" style="text-align:center; padding: 1.5rem; color:#64748b;">Loading recent activity...</td></tr>
+                <tr><td colspan="6" style="text-align:center; padding: 1.5rem; color:var(--text-muted);">Loading recent activity...</td></tr>
               </tbody>
             </table>
           </div>
@@ -412,10 +402,10 @@
       <div class="section-head">
         <div>
           <h2>Material Categories</h2>
-          <div class="section-tagline">Fixed-size modular category grid with expandable architecture for enterprise materials</div>
+          <div class="section-tagline">Browse and search procurement materials by category</div>
         </div>
         <div>
-          <span style="font-size: 0.8rem; color: var(--text-dim);">4 Active Categories • 3 Upcoming Modules</span>
+          <span id="categoryCountSummary" style="font-size: 0.8rem; color: var(--text-muted); font-weight: 500;">5 Active Categories · 2 Upcoming Modules</span>
         </div>
       </div>
 
@@ -426,7 +416,6 @@
         <div class="category-card active-category" id="cardRawMaterials" onclick="UI.openCategory('Raw Materials')">
           <div class="category-card-top">
             <div class="category-icon-box">🏗️</div>
-            <span class="category-status-pill">● Active</span>
           </div>
           <div class="category-card-body">
             <h3 class="category-card-title">RAW MATERIALS</h3>
@@ -446,7 +435,6 @@
         <div class="category-card active-category" id="cardFasteners" onclick="UI.openCategory('Fasteners')">
           <div class="category-card-top">
             <div class="category-icon-box">🔩</div>
-            <span class="category-status-pill">● Active</span>
           </div>
           <div class="category-card-body">
             <h3 class="category-card-title">FASTENERS</h3>
@@ -466,7 +454,6 @@
         <div class="category-card active-category" id="cardPiping" onclick="UI.openCategory('Piping & Fittings')">
           <div class="category-card-top">
             <div class="category-icon-box">🚰</div>
-            <span class="category-status-pill">● Active</span>
           </div>
           <div class="category-card-body">
             <h3 class="category-card-title">PIPING & FITTINGS</h3>
@@ -486,7 +473,6 @@
         <div class="category-card active-category" id="cardElectrical" onclick="UI.openCategory('Electrical')">
           <div class="category-card-top">
             <div class="category-icon-box">⚡</div>
-            <span class="category-status-pill">● Active</span>
           </div>
           <div class="category-card-body">
             <h3 class="category-card-title">ELECTRICAL</h3>
@@ -506,7 +492,6 @@
         <div class="category-card active-category" id="cardDucting" onclick="UI.openCategory('Ducting')" title="Ducting: Straight Duct, Y-Duct, Elbow, Twin Duct">
           <div class="category-card-top">
             <div class="category-icon-box">💨</div>
-            <span class="category-status-pill">● Active</span>
           </div>
           <div class="category-card-body">
             <h3 class="category-card-title">DUCTING</h3>
@@ -526,19 +511,16 @@
         <div class="category-card future-card" title="Upcoming Phase: Flat Bar & Profiles">
           <div class="category-card-top">
             <div class="category-icon-box">📏</div>
-            <span class="category-status-pill disabled">Upcoming Phase</span>
+            <span class="category-status-pill disabled">Coming soon</span>
           </div>
           <div class="category-card-body">
             <h3 class="category-card-title">FLAT BAR</h3>
             <p class="category-card-desc">
               Hot-rolled and cold-drawn mild steel and stainless steel flat bars for fabrication.
             </p>
-            <div class="category-card-meta">
-              <span>Status: <strong>Architecture Expandable</strong></span>
-            </div>
           </div>
           <div class="category-card-footer">
-            <span style="font-size: 0.8rem; color: var(--text-dim);">Upcoming Module</span>
+            <span style="font-size: 0.8rem; color: var(--text-muted);">In development</span>
           </div>
         </div>
 
@@ -546,19 +528,16 @@
         <div class="category-card future-card" title="Upcoming Phase: Cut/Paint Materials & Consumables">
           <div class="category-card-top">
             <div class="category-icon-box">🎨</div>
-            <span class="category-status-pill disabled">Upcoming Phase</span>
+            <span class="category-status-pill disabled">Coming soon</span>
           </div>
           <div class="category-card-body">
             <h3 class="category-card-title">CUT/PAINT MATERIALS</h3>
             <p class="category-card-desc">
               Primer paints, industrial coatings, thinners, abrasives, and cutting consumables.
             </p>
-            <div class="category-card-meta">
-              <span>Status: <strong>Architecture Expandable</strong></span>
-            </div>
           </div>
           <div class="category-card-footer">
-            <span style="font-size: 0.8rem; color: var(--text-dim);">Upcoming Module</span>
+            <span style="font-size: 0.8rem; color: var(--text-muted);">In development</span>
           </div>
         </div>
 
@@ -934,7 +913,7 @@
       <div class="section-head">
         <div>
           <h2>Activity &amp; Operational Audit Trail</h2>
-          <div class="section-tagline">PostgreSQL append-only compliance log recording all critical administrative and operational events</div>
+          <div class="section-tagline">Comprehensive compliance audit trail recording all administrative and operational events</div>
         </div>
         <div>
           <button type="button" class="btn btn-secondary btn-sm" id="btnRefreshAuditLogs">
@@ -1228,7 +1207,7 @@
 
       <!-- App Footer -->
       <footer class="app-footer" id="mainAppFooter">
-        <div>Enterprise SKU &amp; Purchase Request Automation • Flow Force Engineering &amp; Procurement Platform</div>
+        <div>&copy; 2026 PT. Flow Force Indonesia &middot; Enterprise SKU &amp; Purchase Request</div>
       </footer>
     </div><!-- /.app-viewport -->
   </div><!-- /.app-shell -->
