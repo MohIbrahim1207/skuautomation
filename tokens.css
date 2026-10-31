@@ -1,0 +1,470 @@
+/* ==========================================================================
+   FLOW FORCE ENTERPRISE DESIGN SYSTEM - TOKENS & FOUNDATION
+   Phase 0: Design System Architecture (Light & Dark Themes)
+   ========================================================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap');
+
+:root {
+  /* -------------------------------------------------------------------------
+     1. BRAND PALETTE (Flow Force Sky / Ocean 50–950)
+     ------------------------------------------------------------------------- */
+  --brand-50:  #f0f9ff;
+  --brand-100: #e0f2fe;
+  --brand-200: #bae6fd;
+  --brand-300: #7dd3fc;
+  --brand-400: #38bdf8;
+  --brand-500: #0ea5e9;
+  --brand-600: #0284c7; /* Primary Flow Force Brand Hue */
+  --brand-700: #0369a1;
+  --brand-800: #075985;
+  --brand-900: #0c4a6e;
+  --brand-950: #082f49;
+
+  /* Primary Aliases */
+  --primary-50:  var(--brand-50);
+  --primary-100: var(--brand-100);
+  --primary-200: var(--brand-200);
+  --primary-300: var(--brand-300);
+  --primary-400: var(--brand-400);
+  --primary-500: var(--brand-500);
+  --primary-600: var(--brand-600);
+  --primary-700: var(--brand-700);
+  --primary-800: var(--brand-800);
+  --primary-900: var(--brand-900);
+
+  /* -------------------------------------------------------------------------
+     2. NEUTRALS (Slate & Zinc Precision Scale)
+     ------------------------------------------------------------------------- */
+  --slate-50:  #f8fafc;
+  --slate-100: #f1f5f9;
+  --slate-200: #e2e8f0;
+  --slate-300: #cbd5e1;
+  --slate-400: #94a3b8;
+  --slate-500: #64748b;
+  --slate-600: #475569;
+  --slate-700: #334155;
+  --slate-800: #1e293b;
+  --slate-900: #0f172a;
+  --slate-950: #020617;
+
+  /* -------------------------------------------------------------------------
+     3. SEMANTIC PALETTES (Success, Warning, Danger, Info)
+     ------------------------------------------------------------------------- */
+  /* Success: Emerald */
+  --emerald-50:  #ecfdf5;
+  --emerald-100: #d1fae5;
+  --emerald-200: #a7f3d0;
+  --emerald-300: #6ee7b7;
+  --emerald-400: #34d399;
+  --emerald-500: #10b981;
+  --emerald-600: #059669;
+  --emerald-700: #047857;
+  --emerald-800: #065f46;
+  --emerald-900: #064e3b;
+
+  /* Warning: Amber */
+  --amber-50:  #fffbeb;
+  --amber-100: #fef3c7;
+  --amber-200: #fde68a;
+  --amber-300: #fcd34d;
+  --amber-400: #fbbf24;
+  --amber-500: #f59e0b;
+  --amber-600: #d97706;
+  --amber-700: #b45309;
+  --amber-800: #92400e;
+  --amber-900: #78350f;
+
+  /* Danger: Rose */
+  --rose-50:  #fff1f2;
+  --rose-100: #ffe4e6;
+  --rose-200: #fecdd3;
+  --rose-300: #fda4af;
+  --rose-400: #fb7185;
+  --rose-500: #f43f5e;
+  --rose-600: #e11d48;
+  --rose-700: #be123c;
+  --rose-800: #9f1239;
+  --rose-900: #881337;
+
+  /* Info: Sky */
+  --sky-50:  #f0f9ff;
+  --sky-100: #e0f2fe;
+  --sky-400: #38bdf8;
+  --sky-500: #0ea5e9;
+  --sky-600: #0284c7;
+  --sky-700: #0369a1;
+
+  /* Accent aliases for legacy compatibility */
+  --accent-emerald: var(--emerald-600);
+  --accent-emerald-bg: var(--emerald-50);
+  --accent-emerald-border: var(--emerald-500);
+
+  --accent-amber: var(--amber-600);
+  --accent-amber-bg: var(--amber-50);
+  --accent-amber-border: var(--amber-500);
+
+  --accent-rose: var(--rose-600);
+  --accent-rose-bg: var(--rose-50);
+  --accent-rose-border: var(--rose-500);
+
+  --accent-indigo: #4f46e5;
+  --accent-cyan: #0891b2;
+
+  /* -------------------------------------------------------------------------
+     4. TYPOGRAPHY
+     ------------------------------------------------------------------------- */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  /* Type Scale: 12 / 13 / 14 / 16 / 20 / 24 / 32 px */
+  --text-2xs: 0.6875rem; /* 11px */
+  --text-xs:  0.75rem;    /* 12px */
+  --text-sm:  0.8125rem;  /* 13px */
+  --text-base:0.875rem;   /* 14px */
+  --text-md:  1rem;       /* 16px */
+  --text-lg:  1.25rem;    /* 20px */
+  --text-xl:  1.5rem;     /* 24px */
+  --text-2xl: 2rem;       /* 32px */
+  --text-3xl: 2.5rem;     /* 40px */
+
+  /* Font Weights */
+  --font-regular: 400;
+  --font-medium:  500;
+  --font-semibold:600;
+  --font-bold:    700;
+  --font-extrabold: 800;
+
+  /* -------------------------------------------------------------------------
+     5. SPACING (4px Grid)
+     ------------------------------------------------------------------------- */
+  --space-0-5: 2px;
+  --space-1:   4px;
+  --space-1-5: 6px;
+  --space-2:   8px;
+  --space-2-5: 10px;
+  --space-3:   12px;
+  --space-4:   16px;
+  --space-5:   20px;
+  --space-6:   24px;
+  --space-7:   28px;
+  --space-8:   32px;
+  --space-10:  40px;
+  --space-12:  48px;
+  --space-16:  64px;
+
+  /* -------------------------------------------------------------------------
+     6. RADII SPECIFICATIONS
+     ------------------------------------------------------------------------- */
+  --radius-xs: 4px;
+  --radius-sm: 6px;      /* 6px inputs per spec */
+  --radius-md: 10px;     /* 10px cards per spec */
+  --radius-lg: 14px;     /* 14px modals per spec */
+  --radius-xl: 18px;
+  --radius-full: 9999px;
+
+  /* -------------------------------------------------------------------------
+     7. MOTION & TRANSITIONS
+     ------------------------------------------------------------------------- */
+  --ease-enterprise: cubic-bezier(0.16, 1, 0.3, 1);
+  --motion-fast:   150ms var(--ease-enterprise);
+  --motion-normal: 200ms var(--ease-enterprise);
+  --motion-panel:  250ms var(--ease-enterprise);
+  --motion-bounce: 350ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* ==========================================================================
+   THEME MATRICES: LIGHT & DARK
+   ========================================================================== */
+
+/* LIGHT THEME (Default) */
+:root, [data-theme="light"] {
+  color-scheme: light;
+
+  /* Canvas & Surfaces */
+  --bg-canvas: #f8fafc;
+  --bg-surface: #ffffff;
+  --bg-surface-subtle: #f8fafc;
+  --bg-surface-hover: #f1f5f9;
+  --bg-surface-active: #e2e8f0;
+  --bg-overlay: rgba(15, 23, 42, 0.55);
+  --bg-glass: rgba(255, 255, 255, 0.82);
+  --bg-glass-card: rgba(255, 255, 255, 0.95);
+
+  /* Sidebar Tokens (Light Mode - Crisp enterprise slate) */
+  --sidebar-bg: #ffffff;
+  --sidebar-border: #e2e8f0;
+  --sidebar-text: #334155;
+  --sidebar-text-muted: #64748b;
+  --sidebar-item-hover: #f1f5f9;
+  --sidebar-item-active-bg: rgba(2, 132, 199, 0.08);
+  --sidebar-item-active-text: #0284c7;
+  --sidebar-item-active-bar: #0284c7;
+  --sidebar-badge-bg: #f1f5f9;
+  --sidebar-badge-text: #475569;
+
+  /* Topbar Tokens */
+  --topbar-bg: #ffffff;
+  --topbar-border: #e2e8f0;
+  --topbar-text: #0f172a;
+  --topbar-search-bg: #f1f5f9;
+  --topbar-search-border: #e2e8f0;
+  --topbar-search-text: #64748b;
+
+  /* Borders */
+  --border-subtle: #f1f5f9;
+  --border-default: #e2e8f0;
+  --border-strong: #cbd5e1;
+  --border-focus: #0284c7;
+
+  /* Text Hierarchy */
+  --text-primary: #0f172a;
+  --text-secondary: #334155;
+  --text-muted: #64748b;
+  --text-subtle: #94a3b8;
+  --text-inverse: #ffffff;
+
+  /* Elevation Shadows */
+  --shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 4px 6px -1px rgba(15, 23, 42, 0.07), 0 2px 4px -2px rgba(15, 23, 42, 0.04);
+  --shadow-lg: 0 10px 15px -3px rgba(15, 23, 42, 0.08), 0 4px 6px -4px rgba(15, 23, 42, 0.03);
+  --shadow-xl: 0 20px 25px -5px rgba(15, 23, 42, 0.09), 0 8px 10px -6px rgba(15, 23, 42, 0.03);
+  --shadow-focus: 0 0 0 3px rgba(2, 132, 199, 0.22);
+  --shadow-command: 0 25px 50px -12px rgba(15, 23, 42, 0.25);
+
+  /* Legacy Bridge Aliases */
+  --bg-base: var(--bg-canvas);
+  --bg-card: var(--bg-surface);
+  --bg-card-hover: var(--bg-surface-hover);
+  --bg-card-active: var(--bg-surface-active);
+  --border-color: var(--border-default);
+  --text-main: var(--text-primary);
+  --text-dim: var(--text-muted);
+}
+
+/* DARK THEME (Linear / Vercel style deep obsidian) */
+html[data-theme="dark"],
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* Canvas & Surfaces */
+  --bg-canvas: #090d16 !important;
+  --bg-surface: #0f172a !important;
+  --bg-surface-subtle: #131c31 !important;
+  --bg-surface-hover: #1e293b !important;
+  --bg-surface-active: #334155 !important;
+  --bg-overlay: rgba(2, 6, 23, 0.8) !important;
+  --bg-glass: rgba(15, 23, 42, 0.85) !important;
+  --bg-glass-card: rgba(15, 23, 42, 0.95) !important;
+
+  /* Sidebar Tokens (Dark Mode) */
+  --sidebar-bg: #090d16 !important;
+  --sidebar-border: #1e293b !important;
+  --sidebar-text: #94a3b8 !important;
+  --sidebar-text-muted: #64748b !important;
+  --sidebar-item-hover: #1e293b !important;
+  --sidebar-item-active-bg: rgba(56, 189, 248, 0.12) !important;
+  --sidebar-item-active-text: #38bdf8 !important;
+  --sidebar-item-active-bar: #38bdf8 !important;
+  --sidebar-badge-bg: #1e293b !important;
+  --sidebar-badge-text: #94a3b8 !important;
+
+  /* Topbar Tokens */
+  --topbar-bg: #0f172a !important;
+  --topbar-border: #1e293b !important;
+  --topbar-text: #f8fafc !important;
+  --topbar-search-bg: #1e293b !important;
+  --topbar-search-border: #334155 !important;
+  --topbar-search-text: #94a3b8 !important;
+
+  /* Borders */
+  --border-subtle: #1e293b !important;
+  --border-default: #334155 !important;
+  --border-strong: #475569 !important;
+  --border-focus: #38bdf8 !important;
+
+  /* Text Hierarchy */
+  --text-primary: #f8fafc !important;
+  --text-secondary: #cbd5e1 !important;
+  --text-muted: #94a3b8 !important;
+  --text-subtle: #64748b !important;
+  --text-inverse: #0f172a !important;
+
+  /* Elevation Shadows */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.5) !important;
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.6), 0 1px 2px rgba(0, 0, 0, 0.4) !important;
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.65), 0 2px 4px -2px rgba(0, 0, 0, 0.45) !important;
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.7), 0 4px 6px -4px rgba(0, 0, 0, 0.5) !important;
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.8), 0 8px 10px -6px rgba(0, 0, 0, 0.6) !important;
+  --shadow-focus: 0 0 0 3px rgba(56, 189, 248, 0.35) !important;
+  --shadow-command: 0 25px 50px -12px rgba(0, 0, 0, 0.7) !important;
+
+  /* Semantic Overrides for Dark Mode */
+  --brand-50:  #082f49 !important;
+  --brand-100: #0c4a6e !important;
+  --brand-400: #7dd3fc !important;
+  --brand-500: #38bdf8 !important;
+  --brand-600: #0ea5e9 !important;
+
+  --emerald-50:  #064e3b !important;
+  --emerald-100: #065f46 !important;
+  --emerald-500: #34d399 !important;
+  --emerald-600: #10b981 !important;
+
+  --amber-50:  #78350f !important;
+  --amber-100: #92400e !important;
+  --amber-500: #fbbf24 !important;
+  --amber-600: #f59e0b !important;
+
+  --rose-50:  #881337 !important;
+  --rose-100: #9f1239 !important;
+  --rose-500: #fb7185 !important;
+  --rose-600: #f43f5e !important;
+
+  /* Legacy Bridge Aliases */
+  --bg-base: #090d16 !important;
+  --bg-card: #0f172a !important;
+  --bg-card-hover: #1e293b !important;
+  --bg-card-active: #334155 !important;
+  --border-color: #334155 !important;
+  --text-main: #f8fafc !important;
+  --text-dim: #94a3b8 !important;
+}
+
+/* ==========================================================================
+   DARK MODE COMPONENT ELEVATION OVERRIDES
+   ========================================================================== */
+[data-theme="dark"] body {
+  background-color: var(--bg-canvas);
+  color: var(--text-primary);
+}
+
+[data-theme="dark"] .kpi-card,
+[data-theme="dark"] .dash-card,
+[data-theme="dark"] .quick-actions-card,
+[data-theme="dark"] .catalog-card,
+[data-theme="dark"] .catalog-controls,
+[data-theme="dark"] .table-container,
+[data-theme="dark"] .card,
+[data-theme="dark"] .modal-box,
+[data-theme="dark"] .pr-white-document-modal,
+[data-theme="dark"] .pr-cart-modal-box,
+[data-theme="dark"] .cart-summary-bar {
+  background-color: var(--bg-surface) !important;
+  border-color: var(--border-default) !important;
+  color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] .modal-header,
+[data-theme="dark"] .modal-footer {
+  background-color: var(--bg-surface-subtle) !important;
+  border-color: var(--border-default) !important;
+  color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] .modal-title,
+[data-theme="dark"] .modal-box h3,
+[data-theme="dark"] .modal-box h4 {
+  color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] table th {
+  background-color: var(--bg-surface-subtle) !important;
+  color: var(--text-secondary) !important;
+  border-color: var(--border-default) !important;
+}
+
+[data-theme="dark"] table td {
+  border-color: var(--border-subtle) !important;
+  color: var(--text-primary) !important;
+  background-color: transparent !important;
+}
+
+[data-theme="dark"] table tbody tr:hover td {
+  background-color: var(--bg-surface-hover) !important;
+}
+
+[data-theme="dark"] .form-input,
+[data-theme="dark"] .form-select,
+[data-theme="dark"] .form-textarea,
+[data-theme="dark"] input[type="text"],
+[data-theme="dark"] input[type="search"],
+[data-theme="dark"] input[type="number"],
+[data-theme="dark"] input[type="password"],
+[data-theme="dark"] select,
+[data-theme="dark"] textarea {
+  background-color: var(--bg-surface-subtle) !important;
+  border-color: var(--border-default) !important;
+  color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] .form-input:focus,
+[data-theme="dark"] .form-select:focus,
+[data-theme="dark"] .form-textarea:focus,
+[data-theme="dark"] input:focus,
+[data-theme="dark"] select:focus,
+[data-theme="dark"] textarea:focus {
+  border-color: var(--brand-400) !important;
+  box-shadow: var(--shadow-focus) !important;
+}
+
+[data-theme="dark"] .btn-secondary,
+[data-theme="dark"] .btn-outline {
+  background-color: var(--bg-surface-subtle) !important;
+  border-color: var(--border-default) !important;
+  color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] .btn-secondary:hover,
+[data-theme="dark"] .btn-outline:hover {
+  background-color: var(--bg-surface-hover) !important;
+  border-color: var(--border-strong) !important;
+}
+
+[data-theme="dark"] .app-footer {
+  background-color: var(--bg-surface) !important;
+  border-color: var(--border-default) !important;
+  color: var(--text-muted) !important;
+}
+
+[data-theme="dark"] .login-card-box {
+  background-color: var(--bg-surface) !important;
+  border-color: var(--border-default) !important;
+  box-shadow: var(--shadow-xl) !important;
+}
+
+[data-theme="dark"] .login-form-title {
+  color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] .login-form-subtitle {
+  color: var(--text-muted) !important;
+}
+
+/* Tabular Numbers Utility for Numeric Columns */
+.tabular-nums,
+[data-tabular-nums],
+.kpi-val,
+.stat-val,
+.badge-count,
+.sku-code,
+.mono-num,
+.currency-val,
+.qty-cell,
+.price-cell {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+/* Reduced Motion Respect */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

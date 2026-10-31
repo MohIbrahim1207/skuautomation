@@ -3,7 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Enterprise SKU & Purchase Request Automation Portal</title>
+  <title>Flow Force — Enterprise SKU &amp; Purchase Request Portal</title>
+  <link rel="stylesheet" href="tokens.css">
+  <link rel="stylesheet" href="shell.css">
   <link rel="stylesheet" href="app.css">
 </head>
 <body>
@@ -66,80 +68,177 @@
   </div>
 
   <!-- =========================================================================
-       APP HEADER
+       APP SHELL (PHASE 1: COLLAPSIBLE SIDEBAR & MODERN TOPBAR)
        ========================================================================= -->
-  <header class="app-header" id="mainAppHeader">
-    <!-- Top Header Bar: Logo/Brand on Left, Actions & Profile on Right -->
-    <div class="header-top-bar">
-      <div class="header-brand">
-        <img src="assets/flow-force-logo.png" alt="Flow Force — Bulk Material Handling and Processing Equipment Specialists" class="flow-force-logo" id="flowForceHeaderLogo">
+  <div class="app-shell" id="appShell">
+    <!-- Mobile Drawer Overlay -->
+    <div class="sidebar-drawer-overlay" id="sidebarDrawerOverlay"></div>
+
+    <!-- Collapsible Left Sidebar -->
+    <aside class="app-sidebar" id="appSidebar">
+      <!-- Sidebar Brand Header -->
+      <div class="sidebar-brand-box">
+        <div class="sidebar-logo-group" onclick="UI.switchView('dashboard')">
+          <div class="sidebar-logo-icon">⚡</div>
+          <div class="sidebar-brand-text">
+            <span class="brand-title">FLOW FORCE</span>
+            <span class="brand-subtitle">Enterprise SKU &amp; PR</span>
+          </div>
+        </div>
+        <button type="button" class="sidebar-toggle-btn" id="btnToggleSidebar" title="Toggle Sidebar (Ctrl+B)">
+          <i data-lucide="panel-left-close" class="toggle-icon-close"></i>
+          <i data-lucide="panel-left-open" class="toggle-icon-open"></i>
+        </button>
       </div>
 
-      <div class="header-top-actions">
-        <!-- PR Cart Quick Action -->
-        <button class="btn btn-cart" id="btnHeaderCart" title="Open PR Cart">
-          <span class="cart-icon">🛒</span>
-          <span class="cart-text">PR Cart</span>
-          <span class="cart-badge" id="headerCartBadge">0</span>
+      <!-- Quick Search Action -->
+      <div class="sidebar-search-action">
+        <button type="button" class="sidebar-search-btn" onclick="CommandPalette.open()" title="Quick search &amp; actions (Ctrl+K)">
+          <i data-lucide="search"></i>
+          <span class="search-label">Quick Actions...</span>
+          <kbd class="sidebar-kbd">⌘K</kbd>
+        </button>
+      </div>
+
+      <!-- Sidebar Navigation Menu -->
+      <nav class="sidebar-nav" id="sidebarNavBar">
+        <div class="nav-section-label">CORE WORKFLOW</div>
+        <button type="button" class="sidebar-nav-item active" data-view-target="dashboard" id="sidebarNavDashboard">
+          <i data-lucide="layout-dashboard"></i>
+          <span class="nav-item-text">Dashboard</span>
+        </button>
+        <button type="button" class="sidebar-nav-item" data-view-target="catalog" id="navBtnCatalog">
+          <i data-lucide="package"></i>
+          <span class="nav-item-text" id="navCatalogLabel">Master Catalog</span>
+          <span class="sidebar-badge badge-brand" id="navCatalogBadge">50</span>
+        </button>
+        <button type="button" class="sidebar-nav-item" data-view-target="prs" id="sidebarNavPrs">
+          <i data-lucide="clipboard-list"></i>
+          <span class="nav-item-text">PR Register</span>
+          <span class="sidebar-badge" id="navPrBadge">0</span>
+        </button>
+        <button type="button" class="sidebar-nav-item" data-view-target="projects" id="navBtnProjects">
+          <i data-lucide="folder-kanban"></i>
+          <span class="nav-item-text">Project Library</span>
         </button>
 
-        <!-- New SKU for Engineering/Admin -->
-        <button class="btn btn-primary btn-sm" id="btnHeaderNewSku" style="display: none;">
-          <span>+ New SKU</span>
+        <div class="nav-section-label">SPECIALIZED MODULES</div>
+        <button type="button" class="sidebar-nav-item" id="sidebarBtnImportItems" onclick="UI.openExcelImportModal()">
+          <i data-lucide="file-spreadsheet"></i>
+          <span class="nav-item-text">Import Items</span>
+        </button>
+        <button type="button" class="sidebar-nav-item" id="sidebarBtnDucting" onclick="DuctingWorkflowController.open(window.UI ? window.UI.currentProjectId : null)">
+          <i data-lucide="compass"></i>
+          <span class="nav-item-text">Ducting Workflow</span>
+        </button>
+        <button type="button" class="sidebar-nav-item" id="sidebarBtnFasteners" onclick="UI.openCategory('Fasteners')">
+          <i data-lucide="wrench"></i>
+          <span class="nav-item-text">Fasteners</span>
+        </button>
+        <button type="button" class="sidebar-nav-item" data-view-target="my-imports" id="navBtnMyImports">
+          <i data-lucide="file-check"></i>
+          <span class="nav-item-text">My Imports</span>
         </button>
 
-        <!-- User Profile Widget -->
-        <div class="header-user-widget" id="headerUserWidget">
-          <span class="user-avatar" id="headerUserAvatar" style="display: none;">A</span>
-          <div class="header-user-stack">
-            <div class="user-name-line">
-              <span class="user-name" id="headerUserName">System Administrator</span>
-            </div>
-            <div class="user-meta-line">
-              <span class="role-pill role-admin" id="headerUserRole">ADMIN</span>
-              <button type="button" class="btn btn-logout" id="btnLogout" title="Sign out of Flow Force">Logout</button>
+        <div class="nav-section-label" id="sidebarAdminLabel">ADMINISTRATION</div>
+        <button type="button" class="sidebar-nav-item" data-view-target="import-review" id="navBtnImportReview" style="display: none;">
+          <i data-lucide="inbox"></i>
+          <span class="nav-item-text">Import Review</span>
+          <span class="sidebar-badge badge-warning" id="navImportReviewBadge" style="display: none;">0</span>
+        </button>
+        <button type="button" class="sidebar-nav-item" data-view-target="users" id="navBtnUsers">
+          <i data-lucide="users"></i>
+          <span class="nav-item-text">User Management</span>
+        </button>
+        <button type="button" class="sidebar-nav-item" data-view-target="audit-logs" id="navBtnAuditLogs" style="display: none;">
+          <i data-lucide="history"></i>
+          <span class="nav-item-text">Activity &amp; Audit Logs</span>
+        </button>
+        <button type="button" class="sidebar-nav-item" data-view-target="settings" id="navBtnSettings">
+          <i data-lucide="settings"></i>
+          <span class="nav-item-text">Settings</span>
+        </button>
+      </nav>
+
+      <!-- Sidebar Status Footer -->
+      <div class="sidebar-footer">
+        <div class="system-status-indicator">
+          <span class="status-pulse-dot"></span>
+          <span class="status-text">Flow Force Core v2.0</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Viewport Area -->
+    <div class="app-viewport">
+      <!-- Modern Top Bar -->
+      <header class="app-topbar" id="mainAppHeader">
+        <!-- Left: Mobile Trigger & Breadcrumbs -->
+        <div class="topbar-left">
+          <button type="button" class="mobile-drawer-btn" id="mobileDrawerBtn" aria-label="Toggle Navigation">
+            <i data-lucide="menu"></i>
+          </button>
+          <div class="topbar-breadcrumb">
+            <span class="crumb-root">Flow Force</span>
+            <span class="crumb-sep">/</span>
+            <span class="crumb-current" id="topbarBreadcrumb">Dashboard</span>
+          </div>
+        </div>
+
+        <!-- Center: Command Palette Trigger Search Bar -->
+        <div class="topbar-center">
+          <button type="button" class="topbar-search-bar" onclick="CommandPalette.open()" title="Open Command Palette (Ctrl+K)">
+            <i data-lucide="search" class="search-icon"></i>
+            <span class="search-text">Search SKUs, PRs, actions...</span>
+            <kbd class="search-kbd">Ctrl K</kbd>
+          </button>
+        </div>
+
+        <!-- Right: Actions & User Profile -->
+        <div class="topbar-right">
+          <!-- + New SKU Button for Admin/Engineering -->
+          <button type="button" class="btn btn-primary btn-sm btn-header-new-sku" id="btnHeaderNewSku" style="display: none;" onclick="UI.openNewSkuModal()">
+            <i data-lucide="plus"></i>
+            <span>New SKU</span>
+          </button>
+
+          <!-- PR Cart Button -->
+          <button type="button" class="btn btn-cart" id="btnHeaderCart" title="Open PR Cart">
+            <i data-lucide="shopping-cart"></i>
+            <span class="cart-text">PR Cart</span>
+            <span class="cart-badge" id="headerCartBadge">0</span>
+          </button>
+
+          <!-- Theme Toggle Button -->
+          <button type="button" class="icon-btn theme-toggle-btn" id="themeToggleBtn" title="Toggle Light / Dark Theme" aria-label="Toggle theme">
+            <i data-lucide="sun" class="sun-icon"></i>
+            <i data-lucide="moon" class="moon-icon"></i>
+          </button>
+
+          <!-- Notification Bell -->
+          <button type="button" class="icon-btn notification-bell-btn" id="btnNotificationBell" title="System Notifications" onclick="if(window.UI &amp;&amp; window.UI.showToast) window.UI.showToast('All procurement services and database nodes are fully operational.', 'info')">
+            <i data-lucide="bell"></i>
+            <span class="notification-indicator-dot"></span>
+          </button>
+
+          <!-- User Profile Widget -->
+          <div class="header-user-widget" id="headerUserWidget">
+            <span class="user-avatar" id="headerUserAvatar">A</span>
+            <div class="header-user-stack">
+              <div class="user-name-line">
+                <span class="user-name" id="headerUserName">System Administrator</span>
+              </div>
+              <div class="user-meta-line">
+                <span class="role-pill role-admin" id="headerUserRole">ADMIN</span>
+                <button type="button" class="btn btn-logout" id="btnLogout" title="Sign out of Flow Force">
+                  <i data-lucide="log-out"></i>
+                  <span>Logout</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
-      </div>
-    </div>
-
-    <!-- Second Navigation Bar: Primary App Views -->
-    <nav class="header-nav-bar" id="headerNavBar">
-      <div class="header-nav-inner">
-        <button class="nav-tab-btn active" data-view-target="dashboard">
-          <span>📊 Dashboard</span>
-        </button>
-        <button class="nav-tab-btn" data-view-target="catalog" id="navBtnCatalog">
-          <span id="navCatalogLabel">📦 Master Catalog</span>
-          <span class="nav-badge" id="navCatalogBadge">50</span>
-        </button>
-        <button class="nav-tab-btn" data-view-target="prs">
-          <span>📋 PR Register</span>
-          <span class="nav-badge" id="navPrBadge">0</span>
-        </button>
-        <button class="nav-tab-btn" data-view-target="projects" id="navBtnProjects">
-          <span>📁 Project Library</span>
-        </button>
-        <button class="nav-tab-btn" data-view-target="import-review" id="navBtnImportReview" style="display: none;">
-          <span>📥 Import Review</span>
-          <span class="nav-badge" id="navImportReviewBadge" style="display: none; background: #f59e0b;">0</span>
-        </button>
-        <button class="nav-tab-btn" data-view-target="my-imports" id="navBtnMyImports">
-          <span>📄 My Imports</span>
-        </button>
-        <button class="nav-tab-btn" data-view-target="users" id="navBtnUsers">
-          <span>👥 User Management</span>
-        </button>
-        <button class="nav-tab-btn" data-view-target="audit-logs" id="navBtnAuditLogs" style="display: none;">
-          <span>📜 Activity &amp; Audit Logs</span>
-        </button>
-        <button class="nav-tab-btn" data-view-target="settings" id="navBtnSettings">
-          <span>⚙️ Settings</span>
-        </button>
-      </div>
-    </nav>
-  </header>
+      </header>
 
   <!-- =========================================================================
        MAIN CONTENT CONTAINER
@@ -1126,6 +1225,13 @@
     </section>
 
   </main>
+
+      <!-- App Footer -->
+      <footer class="app-footer" id="mainAppFooter">
+        <div>Enterprise SKU &amp; Purchase Request Automation • Flow Force Engineering &amp; Procurement Platform</div>
+      </footer>
+    </div><!-- /.app-viewport -->
+  </div><!-- /.app-shell -->
 
   <!-- =========================================================================
        MODAL 1: NEW SKU — SIMPLE DRAG & DROP WORKFLOW
@@ -2908,18 +3014,39 @@
   <!-- Toast Notification Container -->
   <div class="toast-container" id="toastContainer"></div>
 
-  <!-- App Footer -->
-  <footer class="app-footer" id="mainAppFooter">
-    <div>Enterprise SKU &amp; Purchase Request Automation • Proof of Concept for Raw Materials • PT Persada Nusantara Steel Standard Specs</div>
-  </footer>
+  <!-- Command Palette Modal Overlay (Ctrl+K / ⌘K) -->
+  <div class="cmd-palette-backdrop" id="cmdPaletteBackdrop">
+    <div class="cmd-palette-box">
+      <div class="cmd-input-wrap">
+        <i data-lucide="search"></i>
+        <input type="text" class="cmd-palette-input" id="cmdPaletteInput" placeholder="Type a command or search SKUs, PRs... (Esc to close)" autocomplete="off">
+        <kbd class="cmd-esc-badge">ESC</kbd>
+      </div>
+      <div class="cmd-results-list" id="cmdResultsList">
+        <!-- Dynamically populated by CommandPalette -->
+      </div>
+      <div class="cmd-palette-footer">
+        <div class="cmd-footer-keys">
+          <span class="cmd-footer-key"><kbd>↑</kbd><kbd>↓</kbd> to navigate</span>
+          <span class="cmd-footer-key"><kbd>↵</kbd> to select</span>
+          <span class="cmd-footer-key"><kbd>esc</kbd> to close</span>
+        </div>
+        <div>Flow Force Enterprise Search</div>
+      </div>
+    </div>
+  </div>
 
   <!-- Client-side Document Extractors & OCR: SheetJS (Excel), PDF.js (PDFs), Tesseract.js (Images & Scanned Docs) -->
   <script src="assets/libs/xlsx.full.min.js"></script>
   <script src="assets/libs/pdf.min.js"></script>
   <script src="assets/libs/tesseract.min.js"></script>
+  <!-- Lucide Modern Icons Engine -->
+  <script src="assets/libs/lucide.min.js"></script>
   <!-- Authentication & Access Control Module -->
   <script src="auth.js"></script>
   <!-- Core Application Script with Cache Buster -->
   <script src="app.js?v=20260922_v4"></script>
+  <!-- App Shell & Presentation Controller (Theme, Sidebar, Command Palette) -->
+  <script src="shell.js"></script>
 </body>
 </html>
