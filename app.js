@@ -796,7 +796,7 @@
           unit: masterItem.unit || (isDucting ? 'Pcs' : 'Sheet'),
           quantity: parseFloat(options.quantity || masterItem.quantity) || 1,
           weightKg: masterItem.weightKg || null,
-          unitPrice: (masterItem.unitPrice !== undefined && masterItem.unitPrice !== null && masterItem.unitPrice !== '') ? parseFloat(masterItem.unitPrice) : null,
+          unitPrice: (masterItem.unitPrice !== undefined && masterItem.unitPrice !== null && masterItem.unitPrice !== '' && !isNaN(Number(masterItem.unitPrice)) && Number(masterItem.unitPrice) > 0) ? Number(masterItem.unitPrice) : null,
           status: (masterItem.status === 'Out of Stock') ? 'Out of Stock' : 'Available',
           supplyType: supplyType,
           cutLength: cutLength,
@@ -851,17 +851,22 @@
     },
 
     getGrandTotalCost() {
-      let allHavePrice = true;
-      const total = this.items.reduce((sum, it) => {
-        const p = (it.unitPrice !== undefined && it.unitPrice !== null && it.unitPrice !== '') ? parseFloat(it.unitPrice) : null;
-        if (p !== null && !isNaN(p) && p >= 0) {
+      // Excludes missing / TBA prices; sums priced items only
+      return this.items.reduce((sum, it) => {
+        const raw = it.unitPrice;
+        const p = (raw !== undefined && raw !== null && raw !== '' && !isNaN(Number(raw)) && Number(raw) > 0) ? Number(raw) : null;
+        if (p !== null) {
           return sum + (p * (parseFloat(it.quantity) || 1));
-        } else {
-          allHavePrice = false;
-          return sum;
         }
+        return sum;
       }, 0);
-      return (allHavePrice && this.items.length > 0) ? total : null;
+    },
+
+    getUnpricedItems() {
+      return this.items.filter(it => {
+        const raw = it.unitPrice;
+        return (raw === undefined || raw === null || raw === '' || isNaN(Number(raw)) || Number(raw) <= 0);
+      });
     },
 
     async open() {
@@ -948,19 +953,20 @@
       if (!tbody) return;
 
       tbody.innerHTML = this.items.map((item, idx) => {
-        const p = (item.unitPrice !== undefined && item.unitPrice !== null && item.unitPrice !== '') ? parseFloat(item.unitPrice) : null;
-        const hasValidPrice = p !== null && !isNaN(p) && p >= 0;
-        const total = hasValidPrice ? (p * item.quantity) : null;
+        const rawPrice = item.unitPrice;
+        const p = (rawPrice !== undefined && rawPrice !== null && rawPrice !== '' && !isNaN(Number(rawPrice)) && Number(rawPrice) > 0) ? Number(rawPrice) : null;
+        const hasValidPrice = p !== null;
+        const total = hasValidPrice ? (p * (parseFloat(item.quantity) || 1)) : null;
         const formattedPrice = hasValidPrice
           ? `IDR ${Number(p).toLocaleString('id-ID')} / ${escapeHtml(item.unit || 'Unit')}`
           : (REQUIRE_UNIT_PRICE
               ? '<span style="color:#e11d48; font-weight:700; font-size:0.8rem;">⚠️ Price Required</span>'
-              : '—');
-        const formattedTotal = (hasValidPrice && total !== null)
+              : '<span class="badge-price-tba" style="background:#fef3c7; color:#92400e; font-weight:700; font-size:0.75rem; padding:2px 8px; border-radius:4px; border:1px solid #fde68a; display:inline-block;">Price TBA</span>');
+        const formattedTotal = hasValidPrice
           ? `IDR ${Number(total).toLocaleString('id-ID')}`
           : (REQUIRE_UNIT_PRICE
               ? '<span style="color:#e11d48; font-weight:600; font-size:0.8rem;">Missing Price</span>'
-              : '—');
+              : '<span style="color:#d97706; font-weight:600; font-size:0.8rem; font-family:var(--font-mono);">Price TBA</span>');
 
         const isCut = (item.supplyType === 'Cut Size');
         const itemStatus = (item.status === 'Out of Stock') ? 'Out of Stock' : 'Available';
@@ -1162,10 +1168,50 @@
     updateSummary() {
       const totalCountEl = document.getElementById('cartTotalItemsCount');
       const grandCostEl = document.getElementById('cartGrandTotalCost');
+      const grandLabelEl = document.getElementById('cartGrandTotalLabel');
+      const unpricedNoticeEl = document.getElementById('cartUnpricedNotice');
+
       if (totalCountEl) totalCountEl.textContent = this.getTotalItems();
+
+      const unpricedItems = (typeof this.getUnpricedItems === 'function') ? this.getUnpricedItems() : [];
+      const hasUnpriced = unpricedItems.length > 0;
+      const totalCost = this.getGrandTotalCost();
+
+      if (grandLabelEl) {
+        grandLabelEl.textContent = hasUnpriced ? 'Total (priced items only):' : 'Estimated Grand Total:';
+      }
+
       if (grandCostEl) {
-        const total = this.getGrandTotalCost();
-        grandCostEl.textContent = (total !== null && total > 0) ? `IDR ${Number(total).toLocaleString('id-ID')}` : '—';
+        if (totalCost > 0) {
+          grandCostEl.textContent = `IDR ${Number(totalCost).toLocaleString('id-ID')}`;
+        } else if (hasUnpriced && this.items.length > 0) {
+          grandCostEl.textContent = 'Price TBA';
+        } else {
+          grandCostEl.textContent = '—';
+        }
+      }
+
+      if (unpricedNoticeEl) {
+        if (hasUnpriced && this.items.length > 0) {
+          unpricedNoticeEl.style.display = 'block';
+          unpricedNoticeEl.innerHTML = `
+            <div style="font-weight:700; display:flex; align-items:center; gap:6px; margin-bottom:4px;">
+              <span>⚠️</span> Items awaiting quotation (${unpricedItems.length} item${unpricedItems.length > 1 ? 's' : ''} marked as Price TBA):
+            </div>
+            <div style="margin-bottom:6px; color:#b45309;">These items are excluded from the estimated total and will be quoted during procurement review:</div>
+            <ul style="margin:0; padding-left:1.25rem; display:flex; flex-direction:column; gap:2px;">
+              ${unpricedItems.map(it => `
+                <li>
+                  <strong>${escapeHtml(it.sku || 'Non-SKU')}</strong> — ${escapeHtml(it.productName || it.itemDescription || 'Item')} 
+                  <span style="color:#78350f;">(${it.quantity || 1} ${escapeHtml(it.unit || 'Unit')})</span>
+                </li>
+              `).join('')}
+            </ul>
+          `;
+        } else {
+          unpricedNoticeEl.style.display = 'none';
+          unpricedNoticeEl.innerHTML = '';
+        }
       }
     },
 
